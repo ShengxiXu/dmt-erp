@@ -245,7 +245,7 @@ export default function Customer() {
                   {opps.length ? (
                     <div className="overflow-x-auto rounded-[4px] border border-[#E5E6EB]">
                       <table className="w-full">
-                        <thead><tr className="border-b bg-[#F7F8FA] text-left text-[#4E5969]"><th className="px-2 py-1.5">编号 / 名称</th><th className="px-2 py-1.5">意向产品</th><th className="px-2 py-1.5 text-right">预计合同额</th><th className="px-2 py-1.5">阶段</th><th className="px-2 py-1.5">预估毛利</th><th className="px-2 py-1.5" /></tr></thead>
+                        <thead><tr className="border-b bg-[#F7F8FA] text-left text-[#4E5969]"><th className="px-2 py-1.5">编号 / 名称</th><th className="px-2 py-1.5">意向产品</th><th className="px-2 py-1.5 text-right">预计合同额</th><th className="px-2 py-1.5">阶段</th><th className="px-2 py-1.5" /></tr></thead>
                         <tbody>
                           {opps.map((d) => (
                             <tr key={d.id} className="border-b last:border-0 hover:bg-[#F7F8FA]">
@@ -253,7 +253,6 @@ export default function Customer() {
                               <td className="px-2 py-1.5 text-[#4E5969]">{d.products.map((p) => p.ptype).join(" + ")}</td>
                               <td className="px-2 py-1.5 text-right font-mono">{d.expectAmount ? `${fmtMoney(d.expectAmount)} 元 / ${d.expectMonths ?? "?"} 月` : "—"}</td>
                               <td className="px-2 py-1.5"><span className={`rounded-[2px] px-1 py-0.5 text-[10px] ${STAGE_CLS[d.stage] ?? "bg-[#F2F3F5] text-[#4E5969]"}`}>{d.stage}</span></td>
-                              <td className="px-2 py-1.5">{d.est ? <span className={`font-mono ${d.est.marginPct >= 40 ? "text-[#00B42A]" : d.est.marginPct >= 20 ? "text-[#FF7D00]" : "text-[#F53F3F]"}`}>{d.est.marginPct}%</span> : "—"}</td>
                               <td className="px-2 py-1.5 text-right">{d.stage === "赢单" && !CONTRACTS.some((c) => c.dealId === d.id) && (
                                 <button onClick={() => { setViewing(null); navigate(`/contract/edit?customer=${encodeURIComponent(v.name)}&deal=${d.id}`); }} className="rounded-[2px] bg-[#165DFF] px-2 py-0.5 text-[10px] text-white hover:bg-[#4080FF]">去签约</button>
                               )}</td>

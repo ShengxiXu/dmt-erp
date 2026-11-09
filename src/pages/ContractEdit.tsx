@@ -137,7 +137,7 @@ export default function ContractEdit() {
                   onChange={(e) => applyDeal(e.target.value)}>
                   <option value="">{base.customer ? (oppsOfCust.length ? "选择该客户名下的商机（选定后按意向产品自动预填订单行）" : "该客户暂无可签商机（请到商机管理创建）") : "请先选择客户"}</option>
                   {oppsOfCust.map((d) => (
-                    <option key={d.id} value={d.id}>{d.id} · {d.name} · {d.products.map((p) => p.ptype).join(" + ")} · 预计合同 {fmtMoney(d.expectAmount)} 元{d.expectMonths ? `（${d.expectMonths} 个月 · 月均 ${fmtMoney(Math.round(d.expectAmount / d.expectMonths))}）` : ""}{d.est ? ` · 预估毛利 ${d.est.marginPct}%` : ""}{d.stage === "赢单" ? "（已赢单）" : ""}</option>
+                    <option key={d.id} value={d.id}>{d.id} · {d.name} · {d.products.map((p) => p.ptype).join(" + ")} · 预计合同 {fmtMoney(d.expectAmount)} 元{d.expectMonths ? `（${d.expectMonths} 个月 · 月均 ${fmtMoney(Math.round(d.expectAmount / d.expectMonths))}）` : ""}{d.stage === "赢单" ? "（已赢单）" : ""}</option>
                   ))}
                 </select>
                 <div className="mt-0.5 text-[10px] text-[#C9CDD4]">形成 客户 → 商机 → 特批 → 合同 链路；合同生效后商机自动关闭并转生成订单</div>
