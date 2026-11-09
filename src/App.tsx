@@ -2,6 +2,7 @@ import { Routes, Route, Navigate } from 'react-router'
 import { ShellLayout } from './components/ArcoShell'
 import Home from './pages/Home'
 import Workbench from './pages/Workbench'
+import Analytics from './pages/Analytics'
 import Entities from './pages/Entities'
 import Resources from './pages/Resources'
 import CostList from './pages/CostList'
@@ -42,6 +43,7 @@ export default function App() {
       <Route element={<ShellLayout />}>
       <Route path="/" element={<Home />} />
       <Route path="/workbench" element={<Workbench />} />
+      <Route path="/analytics" element={<Analytics />} />
       <Route path="/resources" element={<Navigate to="/resources/r1" replace />} />
       <Route path="/resources/chain-map" element={<ChainMap />} />
       <Route path="/resources/r5" element={<Navigate to="/purchase/orders" replace />} />

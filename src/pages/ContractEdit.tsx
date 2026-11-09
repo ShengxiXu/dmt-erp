@@ -1,7 +1,7 @@
 // 合同起草（/contract/edit）—— 合同与订单合二为一；销售发起，提交后由业务支撑部出具正式合同并上传
 // 分步：① 合同要素（选择客户 / 关联特批单带出锁定折扣）→ ② 订单行（规格来自产品基础数据选项）→ ③ 确认并提交申请
-import { useState } from "react";
-import { useNavigate } from "react-router";
+import { useEffect, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router";
 import { SPECIALS, CONTRACTS, checkDiscount, fmtMoney, initContractApproval, type OrderLine } from "@/data/contracts";
 import { GET_OPP, CUSTOMERS, OPPS_OF } from "@/data/customers";
 import { ENTITIES, ENTITY_BY_ID } from "@/data/entities";
@@ -16,6 +16,7 @@ const emptyLine = (): OrderLine => ({ cat: CATS()[0] ?? "", ptype: PTYPES(CATS()
 export default function ContractEdit() {
   useCatalog(); // 订阅产品目录：产品定义页的改动实时反映到订单行
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [step, setStep] = useState(0);
   const [base, setBase] = useState({
     customer: "", dealId: "", specialId: "", discount: "0", terms: "", entityId: "ENT-HQ",
@@ -42,10 +43,42 @@ export default function ContractEdit() {
       discount: sp ? String(sp.discount) : b.discount,
       terms: sp ? sp.terms : b.terms,
     }));
+    if (sp) applyDeal(sp.dealId); // 特批锁商机，同步按商机意向产品预填订单行
   };
 
   const patchLine = (i: number, patch: Partial<OrderLine>) =>
     setLines((ls) => ls.map((x, j) => (j === i ? { ...x, ...patch } : x)));
+
+  /** 选中商机后：按商机的多个意向产品预填订单行（有套餐自动带规格与价格）；该商机有且仅有一张已通过的特批单时自动锁定（折扣与条款随特批） */
+  const applyDeal = (dealId: string) => {
+    const opp = GET_OPP(dealId);
+    const approved = SPECIALS.filter((s) => s.status === "已通过" && s.dealId === dealId);
+    const sp = approved.length === 1 ? approved[0] : null;
+    setBase((b) => ({
+      ...b, dealId,
+      specialId: sp ? sp.id : "",
+      discount: sp ? String(sp.discount) : "0",
+      terms: sp ? sp.terms : "",
+    }));
+    if (!opp) return;
+    setLines(opp.products.map((p) => {
+      const plan = PLANS(p.cat, p.ptype)[0];
+      if (!plan) return { cat: p.cat, ptype: p.ptype, spec: "", specs: {}, price: 0 };
+      const specs = { ...plan.values };
+      return { cat: p.cat, ptype: p.ptype, plan: plan.id, specs, spec: buildSpec(p.cat, p.ptype, specs), price: plan.price ?? 0 };
+    }));
+  };
+
+  /** 商机「去签约」直达：?customer=客户名&deal=CJ-xxx —— 进页面自动选客户、锁定商机（含自动特批）并预填订单行 */
+  useEffect(() => {
+    const dealId = searchParams.get("deal");
+    const custName = searchParams.get("customer");
+    const opp = dealId ? GET_OPP(dealId) : undefined;
+    const name = custName ?? (opp ? CUSTOMERS.find((c) => c.id === opp.customerId)?.name ?? "" : "");
+    if (name) setBase((b) => ({ ...b, customer: name }));
+    if (dealId && opp) applyDeal(dealId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const submit = () => {
     if (discountErr) return alert(`折扣校验未通过：${discountErr}`);
@@ -98,26 +131,29 @@ export default function ContractEdit() {
                 <CustomerSelect value={base.customer} onChange={(name) => setBase((b) => ({ ...b, customer: name, dealId: "", specialId: "", discount: "0", terms: "" }))} />
               </div>
               <div>
-                <div className="mb-0.5 text-xs text-[#4E5969]">关联商机 <span className="text-[#F53F3F]">*</span>{!base.customer && <span className="ml-1 text-[#86909C]">（先选客户）</span>}</div>
+                <div className="mb-0.5 text-xs text-[#4E5969]">关联商机 <span className="text-[#F53F3F]">*</span>{!base.customer && <span className="ml-1 text-[#86909C]">（先选客户）</span>}{base.specialId && <span className="ml-1 text-[#165DFF]">（特批单锁定，不可改）</span>}</div>
                 <select className={`w-full rounded-[2px] border border-[#E5E6EB] bg-white px-2 py-1.5 text-sm ${base.customer && !oppsOfCust.length ? "text-[#FF7D00]" : ""}`}
-                  value={base.dealId} disabled={!base.customer}
-                  onChange={(e) => setBase((b) => ({ ...b, dealId: e.target.value }))}>
-                  <option value="">{base.customer ? (oppsOfCust.length ? "选择该客户名下的商机" : "该客户暂无可签商机（请到商机管理创建）") : "请先选择客户"}</option>
+                  value={base.dealId} disabled={!base.customer || !!base.specialId}
+                  onChange={(e) => applyDeal(e.target.value)}>
+                  <option value="">{base.customer ? (oppsOfCust.length ? "选择该客户名下的商机（选定后按意向产品自动预填订单行）" : "该客户暂无可签商机（请到商机管理创建）") : "请先选择客户"}</option>
                   {oppsOfCust.map((d) => (
-                    <option key={d.id} value={d.id}>{d.id} · {d.name} · {d.ptype} · 预计 {fmtMoney(d.expectAmount)} 元/月{d.stage === "赢单" ? "（已赢单）" : ""}</option>
+                    <option key={d.id} value={d.id}>{d.id} · {d.name} · {d.products.map((p) => p.ptype).join(" + ")} · 预计合同 {fmtMoney(d.expectAmount)} 元{d.expectMonths ? `（${d.expectMonths} 个月 · 月均 ${fmtMoney(Math.round(d.expectAmount / d.expectMonths))}）` : ""}{d.est ? ` · 预估毛利 ${d.est.marginPct}%` : ""}{d.stage === "赢单" ? "（已赢单）" : ""}</option>
                   ))}
                 </select>
                 <div className="mt-0.5 text-[10px] text-[#C9CDD4]">形成 客户 → 商机 → 特批 → 合同 链路；合同生效后商机自动关闭并转生成订单</div>
               </div>
               <div>
-                <div className="mb-0.5 text-xs text-[#4E5969]">关联特批单（非标时必选，通过后折扣与条款自动锁定）</div>
-                <select className="w-full rounded-[2px] border border-[#E5E6EB] bg-white px-2 py-1.5 text-sm" value={base.specialId} onChange={(e) => pickSpecial(e.target.value)}>
-                  <option value="">无偏离 · 标准合同</option>
-                  {SPECIALS.filter((s) => s.status === "已通过").map((s) => {
+                <div className="mb-0.5 text-xs text-[#4E5969]">关联特批单（该商机有且仅有一张已通过的特批单时自动锁定；多张时手动选择）</div>
+                <select className="w-full rounded-[2px] border border-[#E5E6EB] bg-white px-2 py-1.5 text-sm disabled:bg-[#F7F8FA]" value={base.specialId} disabled={!base.dealId} onChange={(e) => pickSpecial(e.target.value)}>
+                  <option value="">{base.dealId ? "无偏离 · 标准合同" : "请先选择商机（特批单挂在具体商机上）"}</option>
+                  {SPECIALS.filter((s) => s.status === "已通过" && s.dealId === base.dealId).map((s) => {
                     const d = GET_OPP(s.dealId);
-                    return <option key={s.id} value={s.id}>{s.id} · {s.customer} · {d ? d.name : s.dealId} · 折扣 {s.discount}%</option>;
+                    return <option key={s.id} value={s.id}>{s.id} · {s.customer} · {d ? d.name : s.dealId} · 折扣 {s.discount}%{base.dealId && SPECIALS.filter((x) => x.status === "已通过" && x.dealId === base.dealId).length === 1 ? "（自动锁定）" : ""}</option>;
                   })}
                 </select>
+                {base.dealId && !SPECIALS.some((s) => s.status === "已通过" && s.dealId === base.dealId) && (
+                  <div className="mt-0.5 text-[10px] text-[#86909C]">该商机暂无已通过的特批单；非标条款请先到特批申请发起</div>
+                )}
               </div>
               <div>
                 <div className="mb-0.5 text-xs text-[#4E5969]">折扣率（%）{base.specialId && <span className="text-[#165DFF]">（特批单锁定，不可改）</span>}</div>

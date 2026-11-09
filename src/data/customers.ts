@@ -21,13 +21,27 @@ export type OppStage = "跟进中" | "已报价" | "赢单" | "输单";
 export const OPP_STAGES: OppStage[] = ["跟进中", "已报价", "赢单", "输单"];
 export const OPP_SOURCES = ["老客户续扩", "转介绍", "市场活动", "招标", "陌拜", "其他"];
 
+export interface OppProduct {
+  cat: string;           // 意向产品类别（来自产品定义）
+  ptype: string;         // 意向产品类型（来自产品定义，不可自由输入）
+}
+
+/** 商机阶段的成本预估（签约前粗估，与合同后成本核算不同场景）：录入预估月成本与一次性投入，推算毛利 */
+export interface OppEstimate {
+  monthlyCost: number;   // 预估月成本合计（元/月）
+  oneOff: number;        // 预估一次性投入（设备 / 施工等，元）
+  marginPct: number;     // 预估毛利率（对预计月租）
+  at: string;            // 预估时间
+}
+
 export interface Opportunity {
   id: string;            // CJ-2026-xxx 商机编号
   customerId: string;    // 归属客户（CU-xxx）
   name: string;          // 商机名称（如「二期算力扩容」）
-  cat: string;           // 意向产品类别（来自产品定义）
-  ptype: string;         // 意向产品类型（来自产品定义，不可自由输入）
-  expectAmount: number;  // 预计月租（元/月）
+  products: OppProduct[]; // 意向产品（可多个，来自产品定义）
+  expectAmount: number;  // 预计合同金额（元，赢单口径；非月租）
+  expectMonths?: number; // 预计合同期（月），用于推算月均合同额
+  est?: OppEstimate;     // 成本预估（签约前粗估，可反复测算）
   expectedCloseAt?: string; // 预计成交日期
   stage: OppStage;
   source?: string;       // 来源渠道
@@ -38,12 +52,12 @@ export interface Opportunity {
 
 // ---------- 轻量 store：商机跨页面共享（商机管理 / 客户档案 / 特批申请 / 合同） ----------
 let opps: Opportunity[] = [
-  { id: "CJ-2026-001", customerId: "CU-001", name: "AI 算力一期 · AI 专线扩容", cat: "ISP 互联网接入", ptype: "AI 专线", expectAmount: 96000, expectedCloseAt: "2026-10-20", stage: "赢单", source: "老客户续扩", sales: "张弛", createdAt: "2026-09-02", remark: "合同 HT-2026-021 签署中，生效后自动关闭" },
-  { id: "CJ-2026-002", customerId: "CU-001", name: "二期算力扩容 · BGP 三网互通", cat: "ISP 互联网接入", ptype: "BGP 三网互通", expectAmount: 88000, expectedCloseAt: "2026-11-15", stage: "已报价", source: "老客户续扩", sales: "张弛", createdAt: "2026-10-10" },
-  { id: "CJ-2026-003", customerId: "CU-002", name: "行情加速专线项目", cat: "ISP 互联网接入", ptype: "国内精品网", expectAmount: 21000, expectedCloseAt: "2026-11-30", stage: "已报价", source: "转介绍", sales: "张弛", createdAt: "2026-10-15" },
-  { id: "CJ-2026-004", customerId: "CU-006", name: "总部带宽升级项目", cat: "ISP 互联网接入", ptype: "BGP 三网互通", expectAmount: 30000, expectedCloseAt: "2026-11-01", stage: "赢单", source: "老客户续扩", sales: "李骁", createdAt: "2026-10-08", remark: "特批 SA-2026-013 被驳回，重新谈判中" },
-  { id: "CJ-2026-005", customerId: "CU-007", name: "临港算力 10G AI 专线", cat: "ISP 互联网接入", ptype: "AI 专线", expectAmount: 150000, expectedCloseAt: "2026-12-20", stage: "已报价", source: "市场活动", sales: "张弛", createdAt: "2026-10-25" },
-  { id: "CJ-2026-006", customerId: "CU-005", name: "核心系统长账期专线项目", cat: "ISP 互联网接入", ptype: "国内精品网", expectAmount: 26000, expectedCloseAt: "2026-12-31", stage: "跟进中", source: "招标", sales: "张弛", createdAt: "2026-10-20" },
+  { id: "CJ-2026-001", customerId: "CU-001", name: "AI 算力一期 · AI 专线扩容", products: [{ cat: "ISP 互联网接入", ptype: "AI 专线" }], expectAmount: 2304000, expectMonths: 24, est: { monthlyCost: 58800, oneOff: 12600, marginPct: 38.8, at: "2026-09-10" }, expectedCloseAt: "2026-10-20", stage: "赢单", source: "老客户续扩", sales: "张弛", createdAt: "2026-09-02", remark: "合同 HT-2026-021 签署中，生效后自动关闭" },
+  { id: "CJ-2026-002", customerId: "CU-001", name: "二期算力扩容 · BGP 三网互通", products: [{ cat: "ISP 互联网接入", ptype: "BGP 三网互通" }, { cat: "ISP 互联网接入", ptype: "AI 专线" }], expectAmount: 2112000, expectMonths: 24, est: { monthlyCost: 52400, oneOff: 8600, marginPct: 40.5, at: "2026-11-05" }, expectedCloseAt: "2026-11-15", stage: "已报价", source: "老客户续扩", sales: "张弛", createdAt: "2026-10-10" },
+  { id: "CJ-2026-003", customerId: "CU-002", name: "行情加速专线项目", products: [{ cat: "ISP 互联网接入", ptype: "国内精品网" }], expectAmount: 252000, expectMonths: 12, expectedCloseAt: "2026-11-30", stage: "已报价", source: "转介绍", sales: "张弛", createdAt: "2026-10-15" },
+  { id: "CJ-2026-004", customerId: "CU-006", name: "总部带宽升级项目", products: [{ cat: "ISP 互联网接入", ptype: "BGP 三网互通" }], expectAmount: 360000, expectMonths: 12, est: { monthlyCost: 19400, oneOff: 4300, marginPct: 35.3, at: "2026-10-28" }, expectedCloseAt: "2026-11-01", stage: "赢单", source: "老客户续扩", sales: "李骁", createdAt: "2026-10-08", remark: "特批 SA-2026-013 被驳回，重新谈判中" },
+  { id: "CJ-2026-005", customerId: "CU-007", name: "临港算力 10G AI 专线", products: [{ cat: "ISP 互联网接入", ptype: "AI 专线" }, { cat: "IDC", ptype: "机柜托管" }], expectAmount: 5400000, expectMonths: 36, est: { monthlyCost: 96800, oneOff: 12000, marginPct: 35.5, at: "2026-11-02" }, expectedCloseAt: "2026-12-20", stage: "已报价", source: "市场活动", sales: "张弛", createdAt: "2026-10-25" },
+  { id: "CJ-2026-006", customerId: "CU-005", name: "核心系统长账期专线项目", products: [{ cat: "数据专线", ptype: "OTN" }], expectAmount: 936000, expectMonths: 36, expectedCloseAt: "2026-12-31", stage: "跟进中", source: "招标", sales: "张弛", createdAt: "2026-10-20" },
 ];
 
 let version = 0;

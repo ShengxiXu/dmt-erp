@@ -184,7 +184,7 @@ export default function Special() {
               <select className="w-full rounded-[2px] border border-[#E5E6EB] bg-white px-2 py-1.5 text-sm disabled:bg-[#F7F8FA]" disabled={!form.customer}
                 value={form.dealId} onChange={(e) => setForm({ ...form, dealId: e.target.value })}>
                 <option value="">{form.customer ? "选择该客户下的商机" : "—"}</option>
-                {dealOptions.map((d) => <option key={d.id} value={d.id}>{d.name} · {d.cat} / {d.ptype} · 预计 {d.expectAmount.toLocaleString("zh-CN")} 元/月（{d.stage}）</option>)}
+                {dealOptions.map((d) => <option key={d.id} value={d.id}>{d.name} · {d.products.map((p) => `${p.cat}/${p.ptype}`).join("、")} · 预计合同 {d.expectAmount.toLocaleString("zh-CN")} 元{d.expectMonths ? `（${d.expectMonths} 个月）` : ""}（{d.stage}）</option>)}
               </select>
               {form.customer && !dealOptions.length && (
                 <div className="mt-1 text-[10px] leading-4 text-[#FF7D00]">该客户暂无商机，请先到商机管理创建后再发起特批</div>

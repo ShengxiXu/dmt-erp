@@ -4,7 +4,7 @@ import {
   LayoutGrid, FileText, Calculator, CheckSquare, Wrench, FolderOpen, ReceiptText, Receipt,
   Users, Lightbulb, Package, ListChecks, Boxes, Coins, Layers, Warehouse, CircleAlert,
   FileSignature, ShoppingCart, ClipboardList, Landmark, RefreshCcw, CalendarCheck,
-  Settings2, Building2, ChevronRight, ChevronDown, Search, Bell,
+  Settings2, Building2, ChevronRight, ChevronDown, Search, Bell, TrendingUp,
 } from "lucide-react";
 import { SHEETS } from "@/data/sheets";
 
@@ -12,7 +12,10 @@ import { SHEETS } from "@/data/sheets";
 const NAV_GROUPS = [
   {
     group: "概览",
-    items: [{ to: "/workbench", label: "工作台", icon: LayoutGrid }],
+    items: [
+      { to: "/workbench", label: "工作台", icon: LayoutGrid },
+      { to: "/analytics", label: "经营分析", icon: TrendingUp },
+    ],
   },
   {
     group: "销售与合同",
