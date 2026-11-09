@@ -5,6 +5,7 @@ import { Link, useNavigate } from "react-router";
 import { CUSTOMERS, useOpps, OPPS_OF, type Customer } from "@/data/customers";
 import { CONTRACTS, fmtMoney } from "@/data/contracts";
 import { RECEIVABLES, PAYMENTS, invBalance } from "@/data/receivables";
+import { customerFinance, FIN_TODAY } from "@/data/finance";
 import { R1_ROWS } from "@/data/resources";
 import ArcoShell from "@/components/ArcoShell";
 import CenterModal from "@/components/CenterModal";
@@ -94,12 +95,13 @@ export default function Customer() {
         const invs = RECEIVABLES.filter((r) => r.customer === v.name);
         const pays = PAYMENTS.filter((p) => p.customer === v.name);
         const resources = R1_ROWS.flatMap((r) => r.dynamic.orders.filter((o) => o.customer.startsWith(v.name)).map((o) => ({ pool: r.name, ...o })));
-        const invTotal = invs.reduce((s, r) => s + r.amount, 0);
-        const recvTotal = invs.reduce((s, r) => s + r.received, 0);
+        const cf = customerFinance(v.name);   // 财务口径唯一出处（finance.ts）：DSO / 逾期 / 账龄 / 催收
+        const invTotal = cf.invTotal;
+        const recvTotal = cf.recvTotal;
         const activeRent = contracts.filter((c) => c.status === "已生效").reduce((s, c) => s + c.amount, 0);
         const wonUnsigned = opps.filter((d) => d.stage === "赢单" && !CONTRACTS.some((c) => c.dealId === d.id));
-        const overdue = invs.filter((r) => r.status === "逾期" || r.status === "欠停");
-        const overdueAmt = overdue.reduce((s, r) => s + invBalance(r), 0);
+        // 催收关注映射（账单号 → 阶段/天数/破约），供应收表与催收卡使用
+        const collectMap = new Map(cf.collect.map((c) => [c.inv.invNo, c]));
         // 客户健康度：A/B/C 级 × 欠费 × 商机活跃度 的综合评分（演示口径）
         const levelScore = { A: 40, B: 28, C: 16 }[v.level ?? "C"] ?? 16;
         const payScore = invTotal === 0 ? 30 : Math.round((recvTotal / invTotal) * 30);
@@ -120,6 +122,7 @@ export default function Customer() {
 
         const STAGE_CLS: Record<string, string> = { 赢单: "bg-[#E8F8F2] text-[#00B42A]", 输单: "bg-[#F2F3F5] text-[#86909C]", 跟进中: "bg-[#E8F3FF] text-[#165DFF]", 已报价: "bg-[#FFF3E8] text-[#FF7D00]", 线索: "bg-[#F2F3F5] text-[#4E5969]" };
         const INV_CLS: Record<string, string> = { 已收讫: "bg-[#E8F8F2] text-[#00B42A]", 逾期: "bg-[#FFECE8] text-[#F53F3F]", 欠停: "bg-[#FFECE8] text-[#F53F3F]", 部分收款: "bg-[#FFF3E8] text-[#FF7D00]" };
+        const COLLECT_CLS: Record<string, string> = { 正常: "bg-[#F2F3F5] text-[#4E5969]", 宽限提醒: "bg-[#FFF3E8] text-[#FF7D00]", 催收跟进: "bg-[#FFECE8] text-[#F53F3F]", 停机预警: "bg-[#F53F3F] text-white", 坏账候选: "bg-[#722ED1] text-white" };
 
         return (
           <CenterModal title={`客户 360° 视图 · ${v.name}`} sub={`${v.id} · ${v.level ?? "C"} 级 · ${v.industry} · 归属销售 ${v.sales} · 联系人 ${v.contact}（${v.contactTitle || "—"}）${v.phone ? ` · ${v.phone}` : ""}`} width={880} onClose={() => { setViewing(null); setViewTab("overview"); }}>
@@ -144,8 +147,8 @@ export default function Customer() {
                     className="rounded-[2px] bg-[#165DFF] px-3 py-1.5 text-[11px] text-white hover:bg-[#4080FF]">✍ 去签约（{wonUnsigned[0].id}）→</button>
                 )}
                 <button onClick={() => { setViewing(null); navigate(`/opportunity?customer=${v.id}`); }} className="rounded-[2px] border border-[#165DFF] px-3 py-1.5 text-[11px] text-[#165DFF] hover:bg-[#F0F5FF]">商机管理 →</button>
-                <button onClick={() => { setViewing(null); navigate("/finance/invoices"); }} className="rounded-[2px] border border-[#E5E6EB] px-3 py-1.5 text-[11px] text-[#4E5969] hover:border-[#0D9488] hover:text-[#0D9488]">开票管理</button>
-                <button onClick={() => { setViewing(null); navigate("/finance/payments"); }} className="rounded-[2px] border border-[#E5E6EB] px-3 py-1.5 text-[11px] text-[#4E5969] hover:border-[#00B42A] hover:text-[#00B42A]">收款管理</button>
+                <button onClick={() => { setViewing(null); navigate("/finance?tab=invoice"); }} className="rounded-[2px] border border-[#E5E6EB] px-3 py-1.5 text-[11px] text-[#4E5969] hover:border-[#0D9488] hover:text-[#0D9488]">开票管理</button>
+                <button onClick={() => { setViewing(null); navigate("/finance?tab=pay"); }} className="rounded-[2px] border border-[#E5E6EB] px-3 py-1.5 text-[11px] text-[#4E5969] hover:border-[#00B42A] hover:text-[#00B42A]">收款管理</button>
                 <button onClick={() => { setEditing({ ...v }); setViewing(null); }} className="rounded-[2px] border border-[#E5E6EB] px-3 py-1.5 text-[11px] text-[#4E5969] hover:border-[#165DFF] hover:text-[#165DFF]">编辑主数据</button>
               </div>
             </div>
@@ -155,7 +158,7 @@ export default function Customer() {
               {([
                 ["contracts", "生效合同月租", `${fmtMoney(activeRent)} 元`, contracts.length ? `${contracts.length} 份 · ${v.status}` : "暂无合同", "#165DFF"],
                 ["opps", "商机管线", `${opps.filter((d) => !["赢单", "输单"].includes(d.stage)).length} 个进行中`, `赢单 ${opps.filter((d) => d.stage === "赢单").length} · 预计合同额 ${fmtMoney(opps.filter((d) => d.stage !== "输单").reduce((s, d) => s + (d.expectAmount || 0), 0))} 元`, "#7B61FF"],
-                ["bills", "应收 / 回款率", `${fmtMoney(invTotal)} / ${invTotal ? Math.round((recvTotal / invTotal) * 100) : 0}%`, overdueAmt > 0 ? <span className="text-[#F53F3F]">逾期余额 {fmtMoney(overdueAmt)} 元</span> : "无逾期", "#FF7D00"],
+                ["bills", "应收 / 回款率", `${fmtMoney(invTotal)} / ${invTotal ? Math.round((recvTotal / invTotal) * 100) : 0}%`, cf.overdueAmt > 0 ? <span className="text-[#F53F3F]">逾期余额 {fmtMoney(cf.overdueAmt)} 元（{Math.round(cf.overdueRate * 100)}%）· DSO {cf.dso} 天</span> : `无逾期 · DSO ${cf.dso} 天`, "#FF7D00"],
                 ["resources", "在用资源", `${resources.length} 条出口订单`, `带宽合计 ${resources.reduce((s, o) => s + o.bw, 0)}M`, "#0D9488"],
               ] as const).map(([tab, k, val, sub, color]) => (
                 <button key={tab} onClick={() => setViewTab(tab)} className={`rounded-[4px] border px-3 py-2 text-left transition-all ${viewTab === tab ? "border-[#165DFF] bg-[#F0F5FF] shadow-sm" : "border-[#E5E6EB] bg-white hover:border-[#BEDAFF]"}`}>
@@ -198,17 +201,18 @@ export default function Customer() {
                         <button onClick={() => setViewTab("bills")} className="text-[11px] text-[#165DFF] hover:underline">明细 →</button>
                       </div>
                       {(() => {
-                        const buckets = [["未逾期", invs.filter((r) => invBalance(r) > 0 && r.status !== "逾期" && r.status !== "欠停").reduce((s, r) => s + invBalance(r), 0), "#165DFF"],
-                          ["逾期 1-30 天", invs.filter((r) => (r.status === "逾期" || r.status === "欠停") && invBalance(r) > 0 && new Date("2026-10-31").getTime() - new Date(r.dueDate).getTime() <= 30 * 86400000).reduce((s, r) => s + invBalance(r), 0), "#FF7D00"],
-                          ["逾期 >30 天", invs.filter((r) => (r.status === "逾期" || r.status === "欠停") && new Date("2026-10-31").getTime() - new Date(r.dueDate).getTime() > 30 * 86400000).reduce((s, r) => s + invBalance(r), 0), "#F53F3F"]] as const;
-                        const max = Math.max(...buckets.map((b) => b[1]), 1);
-                        return buckets.map(([label, amt, color]) => (
+                        // 账龄分桶取 finance.ts 共享口径（与财务中心一致，基准日 FIN_TODAY），本页不重算
+                        const colors = ["#165DFF", "#4080FF", "#FF7D00", "#F53F3F", "#722ED1"];
+                        const buckets = cf.buckets.map((b, i) => ({ label: `${b.label}（${b.n} 笔）`, amt: b.amount, color: colors[i] }));
+                        const max = Math.max(...buckets.map((b) => b.amt), 1);
+                        return buckets.map(({ label, amt, color }) => (
                           <div key={label} className="mb-1.5">
-                            <div className="mb-0.5 flex justify-between text-[11px]"><span className="text-[#4E5969]">{label}</span><span className="font-mono">{fmtMoney(amt as number)} 元</span></div>
-                            <div className="h-1.5 overflow-hidden rounded-[2px] bg-[#F2F3F5]"><div className="h-full rounded-[2px] transition-all" style={{ width: `${((amt as number) / max) * 100}%`, background: color as string }} /></div>
+                            <div className="mb-0.5 flex justify-between text-[11px]"><span className="text-[#4E5969]">{label}</span><span className="font-mono">{fmtMoney(amt)} 元</span></div>
+                            <div className="h-1.5 overflow-hidden rounded-[2px] bg-[#F2F3F5]"><div className="h-full rounded-[2px] transition-all" style={{ width: `${(amt / max) * 100}%`, background: color }} /></div>
                           </div>
                         ));
                       })()}
+                      <div className="mt-1 text-[10px] text-[#C9CDD4]">口径与财务中心一致 · 基准日 {FIN_TODAY}</div>
                     </div>
                   </div>
                   <div className="rounded-[4px] border border-[#E5E6EB] p-3">
@@ -294,20 +298,43 @@ export default function Customer() {
                     {invs.length ? (
                       <div className="overflow-x-auto rounded-[4px] border border-[#E5E6EB]">
                         <table className="w-full">
-                          <thead><tr className="border-b bg-[#F7F8FA] text-left text-[#4E5969]"><th className="px-2 py-1.5">账单号</th><th className="px-2 py-1.5 text-right">金额 / 余额</th><th className="px-2 py-1.5">应收日期</th><th className="px-2 py-1.5">状态</th></tr></thead>
+                          <thead><tr className="border-b bg-[#F7F8FA] text-left text-[#4E5969]"><th className="px-2 py-1.5">账单号</th><th className="px-2 py-1.5 text-right">金额 / 余额</th><th className="px-2 py-1.5">应收日期</th><th className="px-2 py-1.5">状态</th><th className="px-2 py-1.5">催收阶段</th></tr></thead>
                           <tbody>
-                            {invs.map((r) => (
-                              <tr key={r.invNo} className="cursor-pointer border-b last:border-0 hover:bg-[#F7F8FA]" onClick={() => { setViewing(null); navigate("/billing"); }}>
+                            {invs.map((r) => {
+                              const c = collectMap.get(r.invNo);
+                              return (
+                              <tr key={r.invNo} className="cursor-pointer border-b last:border-0 hover:bg-[#F7F8FA]" onClick={() => { setViewing(null); navigate("/finance?tab=ledger"); }}>
                                 <td className="px-2 py-1.5 font-mono">{r.invNo}</td>
                                 <td className="px-2 py-1.5 text-right font-mono">{fmtMoney(r.amount)} / {fmtMoney(invBalance(r))}</td>
                                 <td className="px-2 py-1.5 text-[#4E5969]">{r.dueDate}</td>
                                 <td className="px-2 py-1.5"><span className={`rounded-[2px] px-1 py-0.5 text-[10px] ${INV_CLS[r.status] ?? "bg-[#F2F3F5] text-[#4E5969]"}`}>{r.status}</span></td>
+                                <td className="px-2 py-1.5">{c ? <span className={`rounded-[2px] px-1 py-0.5 text-[10px] ${COLLECT_CLS[c.stage]}`}>{c.stage} · {c.days} 天{c.broken ? " · 破约" : ""}</span> : <span className="text-[10px] text-[#C9CDD4]">—</span>}</td>
                               </tr>
-                            ))}
+                              );
+                            })}
                           </tbody>
                         </table>
                       </div>
                     ) : <div className="rounded-[4px] bg-[#F7F8FA] px-3 py-4 text-center text-[#86909C]">暂无应收账单</div>}
+                    {cf.collect.length > 0 && (
+                      <div className="mt-3 rounded-[4px] border border-[#FFECE8] bg-[#FFF7F5] p-3">
+                        <div className="mb-1.5 flex items-center justify-between">
+                          <span className="font-semibold text-[#1D2129]">催收关注（{cf.collect.length} 笔 · 跟进留痕 {cf.collectRecords} 条）</span>
+                          <button onClick={() => { setViewing(null); navigate("/finance?tab=collect"); }} className="text-[11px] text-[#165DFF] hover:underline">催收行动 →</button>
+                        </div>
+                        <div className="space-y-1.5">
+                          {cf.collect.slice(0, 4).map((c) => (
+                            <div key={c.inv.invNo} className="flex items-center justify-between gap-2 text-[11px]">
+                              <span className="font-mono text-[#4E5969]">{c.inv.invNo}</span>
+                              <span className={`rounded-[2px] px-1 py-0.5 text-[10px] ${COLLECT_CLS[c.stage]}`}>{c.stage}</span>
+                              <span className="text-[#86909C]">逾期 {c.days} 天 · 余额 {fmtMoney(invBalance(c.inv))} 元</span>
+                              {c.broken ? <span className="text-[#F53F3F]">承诺 {c.inv.promiseDate} 已破约</span> : c.inv.promiseDate ? <span className="text-[#4E5969]">承诺 {c.inv.promiseDate}</span> : <span />}
+                            </div>
+                          ))}
+                          {cf.collect.length > 4 && <div className="text-[10px] text-[#86909C]">其余 {cf.collect.length - 4} 笔见财务中心「催收行动」</div>}
+                        </div>
+                      </div>
+                    )}
                   </div>
                   <div>
                     <div className="mb-1.5 font-semibold text-[#1D2129]">回款记录（{pays.length}）</div>

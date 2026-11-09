@@ -122,8 +122,8 @@ export function dueFollowUps() {
 
 // ---------- 对账看板派生指标（「对账看板」页签唯一出处） ----------
 /** DSO（原型口径）：已收讫账单的平均回款延迟天数 = Σ max(0, 最后一笔实收日 − 应收日) ÷ 收讫笔数 */
-export function dsoDays(): number {
-  const settled = RECEIVABLES.filter((r) => r.status === "已收讫");
+function dsoOf(invs: Receivable[]): number {
+  const settled = invs.filter((r) => r.status === "已收讫");
   if (!settled.length) return 0;
   const sum = settled.reduce((s, r) => {
     const last = PAYMENTS.filter((p) => p.invNo === r.invNo && p.status === "已登记").map((p) => p.paidAt.slice(0, 10)).sort().pop();
@@ -132,6 +132,7 @@ export function dsoDays(): number {
   }, 0);
   return Math.round((sum / settled.length) * 10) / 10;
 }
+export function dsoDays(): number { return dsoOf(RECEIVABLES); }
 export interface AgingBucket { label: string; amount: number; n: number }
 /** 账龄结构（未收讫且非坏账的账单，按逾期天数分桶） */
 export function agingBuckets(): AgingBucket[] {
@@ -159,4 +160,49 @@ export function paidUninvoiced(): Receivable[] {
 /** 坏账风险：坏账候选阶段余额合计（审批中的坏账申请另行展示在欠费与坏账页） */
 export function badDebtRisk(): number {
   return RECEIVABLES.filter((r) => collectStage(r) === "坏账候选").reduce((s, r) => s + invBalance(r), 0);
+}
+
+// ---------- 客户 360 驾驶舱（Customer.tsx 财务区块的唯一出处，与财务中心严格同口径） ----------
+export interface CustomerCollect { inv: Receivable; stage: CollectStage; days: number; broken: boolean }
+export interface CustomerFinance {
+  invTotal: number;      // Σ 账单金额（不含坏账）
+  recvTotal: number;     // Σ 已收
+  overdueAmt: number;    // 逾期 + 欠停的未收余额
+  overdueRate: number;   // 逾期金额 ÷ 应收总额
+  dso: number;           // 该客户平均回款延迟天数
+  buckets: AgingBucket[];// 账龄结构（分桶口径与财务中心一致）
+  collect: CustomerCollect[];  // 催收关注项（逾期天数倒序）
+  collectRecords: number;      // 催收跟进留痕条数
+}
+export function customerFinance(name: string): CustomerFinance {
+  const invs = RECEIVABLES.filter((r) => r.customer === name && r.status !== "坏账");
+  const invTotal = invs.reduce((s, r) => s + r.amount, 0);
+  const recvTotal = invs.reduce((s, r) => s + r.received, 0);
+  const overdue = invs.filter((r) => r.status === "逾期" || r.status === "欠停");
+  const overdueAmt = overdue.reduce((s, r) => s + invBalance(r), 0);
+  // 账龄分桶（口径与 agingBuckets 一致）
+  const buckets: AgingBucket[] = [
+    { label: "未到期", amount: 0, n: 0 }, { label: "宽限期内", amount: 0, n: 0 },
+    { label: "逾期 ≤30 天", amount: 0, n: 0 }, { label: "逾期 31-90 天", amount: 0, n: 0 }, { label: "逾期 >90 天", amount: 0, n: 0 },
+  ];
+  const grace = cfgNum("overdue.graceDays");
+  const open = invs.filter((r) => r.status !== "已收讫");
+  open.forEach((inv) => {
+    const d = agingDays(inv);
+    const put = (b: AgingBucket) => { b.amount += invBalance(inv); b.n++; };
+    if (d <= 0) put(buckets[0]);
+    else if (d <= grace) put(buckets[1]);
+    else if (d <= 30) put(buckets[2]);
+    else if (d <= 90) put(buckets[3]);
+    else put(buckets[4]);
+  });
+  const collect: CustomerCollect[] = open.filter((r) => agingDays(r) > 0)
+    .map((r) => ({ inv: r, stage: collectStage(r), days: agingDays(r), broken: promiseBroken(r) }))
+    .sort((a, b) => b.days - a.days);
+  return {
+    invTotal, recvTotal, overdueAmt,
+    overdueRate: invTotal ? overdueAmt / invTotal : 0,
+    dso: dsoOf(invs), buckets, collect,
+    collectRecords: COLLECT_RECORDS.filter((c) => invs.some((r) => r.invNo === c.invNo)).length,
+  };
 }
