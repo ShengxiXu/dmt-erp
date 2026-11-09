@@ -5,8 +5,9 @@ import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { useOpps, getOpps, addOpp, updateOpp, CUSTOMERS, OPP_STAGES, OPP_SOURCES, type Opportunity, type OppProduct, type OppStage } from "@/data/customers";
 import { CONTRACTS } from "@/data/contracts";
-import { useCatalog, CATS, PTYPES, GET_TYPE } from "@/data/products";
+import { useCatalog, CATS, PTYPES } from "@/data/products";
 import { DEMO_TODAY } from "@/data/settings";
+import { bomMonthlyCost } from "@/data/bomEstimate";
 import ArcoShell from "@/components/ArcoShell";
 import CenterModal from "@/components/CenterModal";
 import CustomerSelect from "@/components/CustomerSelect";
@@ -154,53 +155,92 @@ function OppForm({ initial, presetCustomer, onClose }: { initial?: Opportunity |
   );
 }
 
-/** 成本预估（签约前粗估，与合同后的成本核算不同场景）：按意向产品录预估月成本 + 一次性投入，推算预估毛利率与合同毛利额 */
+/** 成本预估（签约前粗估，与合同后的成本核算不同场景）：
+    按意向产品从产品组成（成本条目装配）自动推导月成本——出口池边际计价 + 基础线路档案 + IP 档案单价（复用 bomEstimate 同一实现），
+    推导明细逐条可核对、合计可手工调整；一次性投入手工录入（组成中一次性条目无档案单价）；保存写回 est（含推导依据 basis，留痕可追溯） */
 function EstimateModal({ opp, onClose }: { opp: Opportunity; onClose: () => void }) {
+  const [specs, setSpecs] = useState(opp.products.map(() => ({ bw: "", ip: "" })));
   const [cost, setCost] = useState(opp.est ? String(opp.est.monthlyCost) : "");
   const [oneOff, setOneOff] = useState(opp.est ? String(opp.est.oneOff) : "");
   const months = opp.expectMonths ?? 0;
   const rent = months > 0 ? Math.round(opp.expectAmount / months) : 0; // 预计月租 = 月均合同额
-  const mc = Number(cost) || 0;
+  // 逐产品推导：规格（带宽 / IP 数）→ 产品组成 → 条目取数档案 → 计价
+  const derived = opp.products.map((p, i) => {
+    const bw = Number(specs[i]?.bw) || 0;
+    const ip = Number(specs[i]?.ip) || 0;
+    return { p, bw, ip, bom: bomMonthlyCost(p.ptype, bw, ip) };
+  });
+  const autoMonthly = derived.reduce((s, d) => s + d.bom.total, 0);
+  const mc = cost !== "" ? Number(cost) || 0 : autoMonthly;
   const oo = Number(oneOff) || 0;
   const margin = rent > 0 ? ((rent - mc) / rent) * 100 : null;
   const gross = months > 0 ? opp.expectAmount - mc * months - oo : null;
+  const costAdjusted = cost !== "" && Number(cost) !== autoMonthly && autoMonthly > 0;
 
   const save = () => {
     if (!(rent > 0)) return alert("请先完善商机的预计合同金额与预计合同期");
-    if (!(mc > 0)) return alert("请填写预估月成本合计");
-    updateOpp(opp.id, { est: { monthlyCost: mc, oneOff: oo, marginPct: Math.round(margin! * 10) / 10, at: DEMO_TODAY } });
+    if (!(mc > 0)) return alert("预估月成本为空：请填写带宽 / IP 让系统按产品组成推导，或手工填写预估月成本");
+    const parts = derived.filter((d) => d.bom.total > 0).map((d) => `${d.p.ptype} ${fmt(d.bom.total)}`);
+    const basis = costAdjusted
+      ? `产品组成推导 ${fmt(autoMonthly)} 元/月，手工调整为 ${fmt(mc)} 元/月`
+      : autoMonthly > 0 ? `产品组成自动推导（${parts.join(" + ")}）` : "手工录入（产品组成未推导出条目）";
+    updateOpp(opp.id, { est: { monthlyCost: mc, oneOff: oo, marginPct: Math.round(margin! * 10) / 10, at: DEMO_TODAY, basis } });
     onClose();
   };
 
   return (
-    <CenterModal title={`成本预估 · ${opp.id}`} sub="签约前粗估，用于报价与毛利把关；赢单后的正式成本以合同核算单为准（两部门填报 + 审批流）" width={560} onClose={onClose}>
+    <CenterModal title={`成本预估 · ${opp.id}`} sub="签约前粗估，用于报价与毛利把关；赢单后的正式成本以合同核算单为准（两部门填报 + 审批流）" width={640} onClose={onClose}>
       <div className="space-y-3">
-        <div className="rounded-[2px] border border-[#E5E6EB] bg-[#F7F8FA] p-3">
-          <div className="mb-1 text-[11px] font-medium text-[#4E5969]">意向产品（预估口径参考：产品类型装配的成本条目）</div>
-          {opp.products.map((p, i) => (
-            <div key={i} className="flex items-center justify-between py-1 text-[12px]">
-              <span className="text-[#1D2129]">{p.cat} · {p.ptype}</span>
-              <span className="text-[#86909C]">装配 {GET_TYPE(p.cat, p.ptype)?.costItems?.length ?? 0} 条成本条目</span>
+        {/* 意向产品：规格录入 → 产品组成推导月成本 */}
+        <div className="space-y-2">
+          {derived.map((d, i) => (
+            <div key={i} className="rounded-[2px] border border-[#E5E6EB] p-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[12px] font-medium text-[#1D2129]">{d.p.cat} · {d.p.ptype}</span>
+                <span className="font-mono text-[12px] font-semibold text-[#165DFF]">{d.bom.total > 0 ? `${fmt(d.bom.total)} 元/月` : <span className="font-normal text-[#C9CDD4]">待录入规格</span>}</span>
+              </div>
+              <div className="mt-1.5 grid grid-cols-2 gap-2">
+                <Input type="number" min={0} placeholder="带宽（M），如 200" value={specs[i]?.bw ?? ""} onChange={(e) => setSpecs(specs.map((s, j) => j === i ? { ...s, bw: e.target.value } : s))} />
+                <Input type="number" min={0} placeholder="绑定 IP 数，如 8" value={specs[i]?.ip ?? ""} onChange={(e) => setSpecs(specs.map((s, j) => j === i ? { ...s, ip: e.target.value } : s))} />
+              </div>
+              {d.bom.lines.length > 0 && (
+                <div className="mt-1.5 space-y-0.5 border-t border-dashed border-[#F2F3F5] pt-1.5">
+                  {d.bom.lines.map((l) => (
+                    <div key={l.key} className="flex items-center justify-between gap-3 text-[10px] leading-4 text-[#86909C]">
+                      <span className="truncate" title={l.note}>{l.name} — {l.note}</span>
+                      <span className="shrink-0 font-mono text-[#4E5969]">{fmt(l.monthly)} 元/月</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {d.bw === 0 && d.ip === 0 && <div className="mt-1 text-[10px] text-[#86909C]">录入带宽 / IP 数后按产品组成自动推导（与合同后核算同一套条目与档案）</div>}
+              {!d.bom.resolved && <div className="mt-1 text-[10px] text-[#FF7D00]">该产品类型未装配成本条目，月成本请手工填写</div>}
             </div>
           ))}
-          <div className="mt-1 flex items-center justify-between border-t border-[#E5E6EB] pt-1.5 text-[12px]">
-            <span className="text-[#4E5969]">预计月租（合同额 {fmt(opp.expectAmount)} 元 ÷ {months || "—"} 个月）</span>
-            <span className="font-medium tabular-nums text-[#1D2129]">{rent ? `${fmt(rent)} 元/月` : "—"}</span>
-          </div>
         </div>
+
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <div className="mb-0.5 text-xs text-[#4E5969]">预估月成本合计（元/月）<span className="text-[#F53F3F]"> *</span></div>
-            <Input type="number" placeholder="参考条目装配与市场价粗估" value={cost} onChange={(e) => setCost(e.target.value)} />
+            <div className="mb-0.5 flex items-center justify-between text-xs text-[#4E5969]">
+              <span>预估月成本合计（元/月）<span className="text-[#F53F3F]"> *</span></span>
+              {autoMonthly > 0 && cost === "" && <span className="text-[10px] text-[#165DFF]">已按组成推导</span>}
+            </div>
+            <Input type="number" placeholder={autoMonthly > 0 ? `推导值 ${fmt(autoMonthly)}，可直接采用或改填` : "参考条目装配与市场价粗估"} value={cost} onChange={(e) => setCost(e.target.value)} />
           </div>
           <div>
             <div className="mb-0.5 text-xs text-[#4E5969]">预估一次性投入（元）</div>
             <Input type="number" placeholder="设备 / 施工等首投" value={oneOff} onChange={(e) => setOneOff(e.target.value)} />
           </div>
         </div>
+        {autoMonthly > 0 && (
+          <div className="flex items-center justify-between rounded-[2px] bg-[#F0F5FF] px-3 py-1.5 text-[11px] text-[#4E5969]">
+            <span>产品组成推导合计 <strong className="font-mono text-[#165DFF]">{fmt(autoMonthly)} 元/月</strong>{costAdjusted ? `（当前已手工调整为 ${fmt(mc)}）` : ""}</span>
+            {cost !== String(autoMonthly) && <button onClick={() => setCost(String(autoMonthly))} className="text-[#165DFF] hover:underline">采用推导值</button>}
+          </div>
+        )}
         <div className="grid grid-cols-2 gap-3 rounded-[2px] border border-[#E5E6EB] p-3">
           <div>
-            <div className="text-[11px] text-[#86909C]">预估毛利率（对月租）</div>
+            <div className="text-[11px] text-[#86909C]">预估毛利率（对月租 {rent ? `${fmt(rent)} 元` : "—"}）</div>
             <div className={`mt-0.5 text-[18px] font-semibold tabular-nums ${margin === null ? "text-[#C9CDD4]" : margin >= 40 ? "text-[#00B42A]" : margin >= 20 ? "text-[#FF7D00]" : "text-[#F53F3F]"}`}>
               {margin === null ? "—" : `${margin.toFixed(1)}%`}
             </div>
@@ -212,7 +252,7 @@ function EstimateModal({ opp, onClose }: { opp: Opportunity; onClose: () => void
             </div>
           </div>
         </div>
-        <p className="text-[11px] leading-5 text-[#86909C]">预估与核算的分界：本表是签约前的粗估（单次录入、可反复测算、无审批）；合同生效后由核算单承接正式成本（业务支撑部 + 技术部两部门填报、审批流锁定、资源同步扣减）。</p>
+        <p className="text-[11px] leading-5 text-[#86909C]">预估与核算的分界：本表是签约前的粗估（反复测算、无审批、推导依据随 est 留痕）；合同生效后由核算单承接正式成本（业务支撑部 + 技术部两部门填报、审批流锁定、资源同步扣减）。推导口径与合同后核算同源：直接·周期性条目从产品组成取数，间接费用与一次性条目不进月成本。</p>
         <div className="flex justify-end gap-2 border-t border-[#F2F3F5] pt-3">
           <Button variant="outline" size="sm" onClick={onClose}>取消</Button>
           <Button size="sm" onClick={save}>保存预估</Button>
@@ -284,7 +324,7 @@ export default function Opportunities() {
                   <td className="px-3 py-2.5 text-right">
                     <div className="font-mono">{d.expectAmount ? `${fmt(d.expectAmount)} 元` : "—"}</div>
                     {d.expectMonths ? <div className="mt-0.5 text-[10px] text-[#86909C]">{d.expectMonths} 个月 · 月均 {fmt(Math.round(d.expectAmount / d.expectMonths))}</div> : null}
-                    {d.est && <div className={`mt-0.5 inline-block rounded-[2px] px-1 py-0.5 text-[10px] ${d.est.marginPct >= 40 ? "bg-[#E8F8F2] text-[#00B42A]" : d.est.marginPct >= 20 ? "bg-[#FFF3E8] text-[#FF7D00]" : "bg-[#FFECE8] text-[#F53F3F]"}`}>预估毛利 {d.est.marginPct}%</div>}
+                    {d.est && <div className={`mt-0.5 inline-block rounded-[2px] px-1 py-0.5 text-[10px] ${d.est.marginPct >= 40 ? "bg-[#E8F8F2] text-[#00B42A]" : d.est.marginPct >= 20 ? "bg-[#FFF3E8] text-[#FF7D00]" : "bg-[#FFECE8] text-[#F53F3F]"}`} title={d.est.basis ? `推导依据：${d.est.basis}（${d.est.at}）` : `预估时间 ${d.est.at}`}>预估毛利 {d.est.marginPct}%</div>}
                   </td>
                   <td className="px-3 py-2.5 text-[#4E5969]">{d.expectedCloseAt ?? "—"}</td>
                   <td className="px-3 py-2.5"><span className={`rounded-[2px] px-1.5 py-0.5 text-[10px] ${STAGE_CLS[d.stage]}`}>{d.stage}</span></td>
@@ -306,7 +346,7 @@ export default function Opportunities() {
           </table>
         </div>
         <div className="rounded-[4px] border border-[#E5E6EB] bg-white px-4 py-2.5 text-[11px] leading-5 text-[#86909C]">
-          要点：商机是客户之下的成交单元（客户 → 商机 → 特批 → 合同）。<strong>特批申请必须挂在具体商机上</strong>；商机可关联多个意向产品（来自产品定义），金额为<strong>预计合同额</strong>（含预计合同期，推算月均）；「成本预估」是签约前的粗估（单次录入、反复测算、无审批），与合同生效后的正式成本核算（两部门填报 + 审批流）分属两个场景。赢单后由合同订单行承接（合同生效自动关闭），输单保留作经营轨迹。
+          要点：商机是客户之下的成交单元（客户 → 商机 → 特批 → 合同）。<strong>特批申请必须挂在具体商机上</strong>；商机可关联多个意向产品（来自产品定义），金额为<strong>预计合同额</strong>（含预计合同期，推算月均）；「成本预估」是签约前的粗估——按意向产品填带宽 / IP，系统从产品组成自动推导月成本（与合同后核算同一套条目与档案，推导明细可逐条核对、合计可手工调整），反复测算、无审批，推导依据随预估留痕；与合同生效后的正式成本核算（两部门填报 + 审批流）分属两个场景。赢单后由合同订单行承接（合同生效自动关闭），输单保留作经营轨迹。
         </div>
       </main>
 

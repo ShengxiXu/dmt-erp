@@ -26,12 +26,13 @@ export interface OppProduct {
   ptype: string;         // 意向产品类型（来自产品定义，不可自由输入）
 }
 
-/** 商机阶段的成本预估（签约前粗估，与合同后成本核算不同场景）：录入预估月成本与一次性投入，推算毛利 */
+/** 商机阶段的成本预估（签约前粗估，与合同后成本核算不同场景）：月成本由产品组成推导（可手工调整），推算毛利 */
 export interface OppEstimate {
   monthlyCost: number;   // 预估月成本合计（元/月）
   oneOff: number;        // 预估一次性投入（设备 / 施工等，元）
   marginPct: number;     // 预估毛利率（对预计月租）
   at: string;            // 预估时间
+  basis?: string;        // 推导依据（产品组成自动推导 / 手工调整差额），留痕可追溯
 }
 
 export interface Opportunity {
