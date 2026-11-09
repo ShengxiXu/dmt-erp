@@ -8,6 +8,8 @@ import { ENTITY_BY_ID } from "@/data/entities";
 import { useBilling, getBills, getSubscriptions, periodOf, dueDateOf, fmtD } from "@/data/billing";
 import { useReceivables, getInvoices } from "@/data/receivables";
 import { useSettings } from "@/data/settings";
+import { DEMO_TODAY } from "@/data/settings";
+import { customerFinance } from "@/data/finance";
 import ArcoShell from "@/components/ArcoShell";
 import CenterModal from "@/components/CenterModal";
 import { Button } from "@/components/ui/button";
@@ -111,7 +113,7 @@ export default function ContractDetail() {
     const v = c.versions.length + 1;
     update({
       status: "待用章", step: 0,
-      versions: [...c.versions, { v, note: `版本 ${v}：${reviseType}修订 — ${reviseNote || "（无说明）"}`, at: "2026-10-26" }],
+      versions: [...c.versions, { v, note: `版本 ${v}：${reviseType}修订 — ${reviseNote || "（无说明）"}`, at: DEMO_TODAY }],
     });
     setReviseOpen(false);
     setReviseNote("");
@@ -126,8 +128,8 @@ export default function ContractDetail() {
     逾期: "bg-[#FFECE8] text-[#F53F3F]", 欠停: "bg-[#FFECE8] text-[#B3261E]", 坏账: "bg-[#F2F3F5] text-[#86909C]",
     待出账: "bg-[#F7F8FA] text-[#86909C]", 未出账: "bg-[#FFF3E8] text-[#FF7D00]",
   };
-  const CUR_MONTH = "2026-11";
-  const CUR_DAY = "2026-11-05";
+  const CUR_MONTH = DEMO_TODAY.slice(0, 7);
+  const CUR_DAY = DEMO_TODAY;
   const PAY_STEP: Record<string, number> = { 月付: 1, 季度付: 3, 半年付: 6, 年付: 12 };
   const step = PAY_STEP[c.pay] ?? 1;
   interface InvRow { invNo: string; period: string; detail: string; amount: number; received: number; dueDate: string; status: string; expected: boolean }
@@ -198,6 +200,12 @@ export default function ContractDetail() {
   const totalReceived = invRows.reduce((s, r) => s + r.received, 0);
   const totalOutstanding = occurred.reduce((s, r) => s + Math.max(0, r.amount - r.received), 0);
   const billedCount = invRows.filter((r) => !r.expected).length;
+  // 催收阶段取 finance.ts 共享口径（与客户 360 / 财务中心严格一致），合同维度只做过滤不做重算
+  const COLLECT_CLS: Record<string, string> = { 正常: "bg-[#F2F3F5] text-[#4E5969]", 宽限提醒: "bg-[#FFF3E8] text-[#FF7D00]", 催收跟进: "bg-[#FFECE8] text-[#F53F3F]", 停机预警: "bg-[#F53F3F] text-white", 坏账候选: "bg-[#722ED1] text-white" };
+  const cf = customerFinance(c.customer);
+  const contractInvNos = new Set(invRows.map((r) => r.invNo).filter(Boolean));
+  const contractCollect = cf.collect.filter((x) => contractInvNos.has(x.inv.invNo));
+  const contractCollectAmt = contractCollect.reduce((s, x) => s + (x.inv.amount - x.inv.received), 0);
 
   const submitUpload = () => {
     update({ status: "待用章", step: 0 });
@@ -417,6 +425,11 @@ export default function ContractDetail() {
               <span className="text-[#86909C]">合同总额<strong className="ml-1 text-[#1D2129]">{fmtMoney(contractTotal)} 元</strong></span>
               <span className="text-[#86909C]">已收<strong className="ml-1 text-[#00B42A]">{fmtMoney(totalReceived)} 元</strong></span>
               <span className="text-[#86909C]">已发生未收<strong className="ml-1 text-[#FF7D00]">{fmtMoney(totalOutstanding)} 元</strong></span>
+              {contractCollect.length > 0 && (
+                <Link to="/finance?tab=collect" className="rounded-[2px] bg-[#FFECE8] px-2 py-0.5 text-[#F53F3F] hover:underline">
+                  催收中 {contractCollect.length} 笔 · 余额 {fmtMoney(contractCollectAmt)} 元
+                </Link>
+              )}
               <Link to="/finance?tab=ledger" className="text-[#165DFF] hover:underline">客户账单 →</Link>
               <Link to="/finance?tab=pay" className="text-[#165DFF] hover:underline">收款管理 →</Link>
             </span>
@@ -427,7 +440,7 @@ export default function ContractDetail() {
                 <tr className="border-b bg-[#F7F8FA] text-left text-[#4E5969]">
                   <th className="px-3 py-1.5">账期</th><th className="px-3 py-1.5">账单号</th><th className="px-3 py-1.5">明细</th>
                   <th className="px-3 py-1.5 text-right">应收金额</th><th className="px-3 py-1.5 text-right">已收</th>
-                  <th className="px-3 py-1.5 text-right">未收余额</th><th className="px-3 py-1.5">应收日</th><th className="px-3 py-1.5">状态</th>
+                  <th className="px-3 py-1.5 text-right">未收余额</th><th className="px-3 py-1.5">应收日</th><th className="px-3 py-1.5">状态</th><th className="px-3 py-1.5">催收阶段</th>
                 </tr>
               </thead>
               <tbody>
@@ -441,6 +454,7 @@ export default function ContractDetail() {
                     <td className="px-3 py-2 text-right font-mono text-[#FF7D00]">{!r.expected && r.amount - r.received > 0 ? fmtMoney(r.amount - r.received) : "—"}</td>
                     <td className="whitespace-nowrap px-3 py-2 text-[#86909C]">{r.dueDate}</td>
                     <td className="px-3 py-2"><span className={`rounded-[2px] px-1.5 py-0.5 text-[10px] ${INV_CLS[r.status] ?? "bg-[#F2F3F5] text-[#4E5969]"}`}>{r.status}</span></td>
+                    <td className="px-3 py-2">{(() => { const col = contractCollect.find((x) => x.inv.invNo === r.invNo); return col ? <span className={`rounded-[2px] px-1.5 py-0.5 text-[10px] ${COLLECT_CLS[col.stage]}`}>{col.stage} · {col.days} 天{col.broken ? " · 破约" : ""}</span> : <span className="text-[10px] text-[#C9CDD4]">—</span>; })()}</td>
                   </tr>
                 ))}
               </tbody>
