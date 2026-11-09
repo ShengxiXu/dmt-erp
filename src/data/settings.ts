@@ -3,6 +3,10 @@
 // 边界：不做按客户/合同覆盖，不做灰度与审批流（正式环境建议加），修改留痕可追。
 import { useSyncExternalStore } from "react";
 
+/** 演示数据时间基准（全系统唯一出处）：演示世界里的「今天」。
+ *  数据层禁止用真实当天日期做任何逾期/账龄/时效判断；新增业务时间戳一律取此值。 */
+export const DEMO_TODAY = "2026-11-03";
+
 export interface CfgDef {
   key: string; label: string; unit: string; hint: string;
   type: "number" | "percent" | "select";

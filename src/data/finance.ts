@@ -3,10 +3,10 @@
 // 全部为 RECEIVABLES / PAYMENTS 的纯派生视图——不落库、不维护独立待办数据（行业实践：账龄是行动清单而非报表）。
 import { RECEIVABLES, PAYMENTS, COLLECT_RECORDS, invBalance, overdueDays, type Receivable } from "@/data/receivables";
 import { CUSTOMERS } from "@/data/customers";
-import { cfgNum } from "@/data/settings";
+import { cfgNum, DEMO_TODAY } from "@/data/settings";
 
-/** 演示基准日（与 receivables.runOverdueScan / overdueDays 默认值一致，勿用真实日期） */
-export const FIN_TODAY = "2026-11-03";
+/** 演示基准日（= DEMO_TODAY，与 receivables.runOverdueScan / overdueDays 默认值一致，勿用真实日期） */
+export const FIN_TODAY = DEMO_TODAY;
 
 /** 归属销售（客户主数据取真名；客户档案维护，无 CRM 同步） */
 export const salesOf = (customer: string) => CUSTOMERS.find((c) => c.name === customer)?.sales ?? "—";

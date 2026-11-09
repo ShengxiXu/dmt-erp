@@ -6,6 +6,7 @@ import { useNavigate, useSearchParams } from "react-router";
 import { useOpps, getOpps, addOpp, updateOpp, CUSTOMERS, OPP_STAGES, OPP_SOURCES, type Opportunity, type OppProduct, type OppStage } from "@/data/customers";
 import { CONTRACTS } from "@/data/contracts";
 import { useCatalog, CATS, PTYPES, GET_TYPE } from "@/data/products";
+import { DEMO_TODAY } from "@/data/settings";
 import ArcoShell from "@/components/ArcoShell";
 import CenterModal from "@/components/CenterModal";
 import CustomerSelect from "@/components/CustomerSelect";
@@ -167,7 +168,7 @@ function EstimateModal({ opp, onClose }: { opp: Opportunity; onClose: () => void
   const save = () => {
     if (!(rent > 0)) return alert("请先完善商机的预计合同金额与预计合同期");
     if (!(mc > 0)) return alert("请填写预估月成本合计");
-    updateOpp(opp.id, { est: { monthlyCost: mc, oneOff: oo, marginPct: Math.round(margin! * 10) / 10, at: "2026-11-09" } });
+    updateOpp(opp.id, { est: { monthlyCost: mc, oneOff: oo, marginPct: Math.round(margin! * 10) / 10, at: DEMO_TODAY } });
     onClose();
   };
 
