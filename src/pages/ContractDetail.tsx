@@ -417,8 +417,8 @@ export default function ContractDetail() {
               <span className="text-[#86909C]">合同总额<strong className="ml-1 text-[#1D2129]">{fmtMoney(contractTotal)} 元</strong></span>
               <span className="text-[#86909C]">已收<strong className="ml-1 text-[#00B42A]">{fmtMoney(totalReceived)} 元</strong></span>
               <span className="text-[#86909C]">已发生未收<strong className="ml-1 text-[#FF7D00]">{fmtMoney(totalOutstanding)} 元</strong></span>
-              <Link to="/billing" className="text-[#165DFF] hover:underline">客户账单 →</Link>
-              <Link to="/finance/payments" className="text-[#165DFF] hover:underline">收款管理 →</Link>
+              <Link to="/finance?tab=ledger" className="text-[#165DFF] hover:underline">客户账单 →</Link>
+              <Link to="/finance?tab=pay" className="text-[#165DFF] hover:underline">收款管理 →</Link>
             </span>
           </div>
           {invRows.length ? (

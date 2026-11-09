@@ -4,9 +4,11 @@ import {
   LayoutGrid, FileText, Calculator, CheckSquare, Wrench, FolderOpen, ReceiptText, Receipt,
   Users, Lightbulb, Package, ListChecks, Boxes, Coins, Layers, Warehouse, CircleAlert,
   FileSignature, ShoppingCart, ClipboardList, Landmark, RefreshCcw, CalendarCheck,
-  Settings2, Building2, ChevronRight, ChevronDown, Search, Bell, TrendingUp,
+  Settings2, Building2, ChevronRight, ChevronDown, TrendingUp, Wallet,
 } from "lucide-react";
 import { SHEETS } from "@/data/sheets";
+import GlobalSearch from "@/components/GlobalSearch";
+import NoticeBell from "@/components/NoticeBell";
 
 /** 导航配置（分组） */
 const NAV_GROUPS = [
@@ -65,12 +67,15 @@ const NAV_GROUPS = [
     ],
   },
   {
-    group: "计费与收款",
+    group: "财务",
     items: [
-      { to: "/billing", label: "客户账单", icon: ReceiptText },
-      { to: "/finance/invoices", label: "开票管理", icon: Receipt },
-      { to: "/finance/payments", label: "收款管理", icon: Landmark },
-      { to: "/finance/overdue", label: "欠费与坏账", icon: CircleAlert },
+      { to: "/finance", label: "财务中心", icon: Wallet,
+        children: [
+          { to: "/finance/invoices", label: "开票管理（旧）", icon: Receipt },
+          { to: "/finance/payments", label: "收款管理（旧）", icon: Landmark },
+          { to: "/finance/overdue", label: "欠费与坏账（旧）", icon: CircleAlert },
+        ] },
+      { to: "/billing", label: "计费与出账", icon: ReceiptText },
       { to: "/finance/settle", label: "月结", icon: CalendarCheck },
       { to: "/lifecycle", label: "变更与退订", icon: RefreshCcw },
     ],
@@ -188,14 +193,8 @@ export function ShellLayout() {
             <span className="text-[#1D2129]">{crumb}</span>
           </div>
           <div className="ml-auto flex items-center gap-4">
-            <div className="hidden h-9 w-72 items-center gap-2 whitespace-nowrap rounded-full border border-[#E5E6EB] bg-[#F7F8FA] px-3.5 text-[13px] text-[#86909C] transition-colors hover:border-[#C9CDD4] md:flex">
-              <Search size={14} />
-              搜索客户 / 合同 / 核算单 / 工单
-            </div>
-            <button className="relative flex h-9 w-9 items-center justify-center rounded-full text-[#4E5969] transition-colors hover:bg-[#F2F3F5]">
-              <Bell size={17} strokeWidth={1.8} />
-              <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-[#E11D48] ring-2 ring-white" />
-            </button>
+            <GlobalSearch />
+            <NoticeBell />
             <span className="hidden text-[13px] tabular-nums text-[#86909C] lg:block">{dateStr}</span>
             <span className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-[#6366F1] to-[#8B5CF6] text-[13px] font-medium text-white shadow-md ring-2 ring-white">许</span>
           </div>

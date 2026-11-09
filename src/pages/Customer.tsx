@@ -110,7 +110,7 @@ export default function Customer() {
         const timeline = [
           ...opps.map((d) => ({ at: d.createdAt, icon: "商机", text: `创建商机「${d.name}」（${d.products.map((p) => p.ptype).join("+")}）`, link: `/opportunity?customer=${v.id}`, color: "#165DFF" })),
           ...contracts.flatMap((c) => c.versions.map((ver) => ({ at: ver.at, icon: "合同", text: `${c.id} · ${ver.note}`, link: `/contract/detail?id=${c.id}`, color: "#0D9488" }))),
-          ...pays.map((p) => ({ at: p.paidAt.slice(0, 10), icon: "收款", text: `回款 ${fmtMoney(p.amount)} 元（${p.method}${p.referenceNo ? ` · ${p.referenceNo}` : ""}）`, link: "/finance/payments", color: "#00B42A" })),
+          ...pays.map((p) => ({ at: p.paidAt.slice(0, 10), icon: "收款", text: `回款 ${fmtMoney(p.amount)} 元（${p.method}${p.referenceNo ? ` · ${p.referenceNo}` : ""}）`, link: "/finance?tab=pay", color: "#00B42A" })),
         ].sort((a, b) => (a.at < b.at ? 1 : -1)).slice(0, 12);
 
         const TABS = [

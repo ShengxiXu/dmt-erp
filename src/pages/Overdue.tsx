@@ -232,7 +232,7 @@ export default function Overdue() {
                             {i.status === "逾期" && (
                               <button className="text-[#F53F3F] hover:underline" onClick={() => { const e = createSuspendTicket(i.invNo); if (e) alert(e); }}>生成停机工单</button>
                             )}
-                            <Link to="/finance/payments" className="text-[#165DFF] hover:underline">去收款</Link>
+                            <Link to="/finance?tab=pay" className="text-[#165DFF] hover:underline">去收款</Link>
                           </span>
                         </td>
                       </tr>

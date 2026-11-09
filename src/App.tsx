@@ -36,6 +36,7 @@ import Overdue from './pages/Overdue'
 import Billing from './pages/Billing'
 import Lifecycle from './pages/Lifecycle'
 import Settle from './pages/Settle'
+import FinanceCenter from './pages/FinanceCenter'
 
 export default function App() {
   return (
@@ -73,6 +74,7 @@ export default function App() {
       <Route path="/system/approval" element={<ApprovalConfig />} />
       <Route path="/system/entities" element={<Entities />} />
       <Route path="/system/settings" element={<SettingsPage />} />
+      <Route path="/finance" element={<FinanceCenter />} />
       <Route path="/finance/payments" element={<Payments />} />
       <Route path="/finance/invoices" element={<InvoiceApps />} />
       <Route path="/finance/overdue" element={<Overdue />} />

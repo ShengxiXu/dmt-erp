@@ -333,7 +333,7 @@ function ChangeModal({ onClose }: { onClose: () => void }) {
         <div>
           <div className="mb-0.5 text-[#4E5969]">生效后月租（元/月）<span className="text-[#F53F3F]"> *</span></div>
           <Input value={fee} onChange={(e) => setFee(e.target.value)} placeholder={sub ? String(sub.monthlyFee) : "如 68000"} />
-          <div className="mt-0.5 text-[10px] text-[#86909C]">提交后系统按变更类型自动测算增量成本（审批依据，展开单号行可见明细与口径）</div>
+          <div className="mt-0.5 text-[10px] text-[#86909C]">提交后系统按变更类型从产品组成自动测算增量成本（审批依据，展开单号行可见明细与口径；识别不出组成时回退 A5 兜底价）</div>
         </div>
         <div>
           <div className="mb-0.5 text-[#4E5969]">申请原因</div>

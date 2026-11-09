@@ -123,7 +123,7 @@ export default function Analytics() {
           <div className="rounded-[4px] border border-[#E5E6EB] bg-white p-4">
             <div className="mb-3 flex items-center justify-between">
               <span className="text-sm font-semibold text-[#1D2129]">月度应收趋势</span>
-              <Link to="/finance/payments" className="text-[11px] text-[#165DFF] hover:underline">收款管理 →</Link>
+              <Link to="/finance?tab=pay" className="text-[11px] text-[#165DFF] hover:underline">收款管理 →</Link>
             </div>
             <div className="flex h-40 items-end gap-4 border-b border-[#F2F3F5] pb-0">
               {data.revenueTrend.map((r) => (
@@ -183,7 +183,7 @@ export default function Analytics() {
           <div className="rounded-[4px] border border-[#E5E6EB] bg-white p-4">
             <div className="mb-3 flex items-center justify-between">
               <span className="text-sm font-semibold text-[#1D2129]">应收账龄（余额 {fmt(data.agingTotal)} 元）</span>
-              <Link to="/finance/overdue" className="text-[11px] text-[#165DFF] hover:underline">欠费与坏账 →</Link>
+              <Link to="/finance?tab=collect" className="text-[11px] text-[#165DFF] hover:underline">欠费与坏账 →</Link>
             </div>
             <Bars rows={[
               { label: "未到期", value: data.aging.current },

@@ -21,6 +21,7 @@ export const CFG_GROUPS: CfgGroup[] = [
       { key: "billing.dueDays", label: "付款期", unit: "天", hint: "后付：应收日 = 账期截止日 + N 天；预付：应收日 = 账期开始日 − N 天", type: "number", min: 0, max: 90 },
       { key: "billing.billOnSuspend", label: "欠停期间计费", unit: "", hint: "欠停订阅的周期费是否照常计入账单", type: "select", min: 0, max: 0,
         options: [{ v: "yes", label: "照常计（推荐，欠费不豁免费用）" }, { v: "no", label: "暂停计" }] },
+      { key: "billing.diffPct", label: "出账环比审核阈值", unit: "%", hint: "例外审核规则：账单金额与同一客户上期已发出账单环比波动超过该比例 → 进人工审核", type: "number", min: 1, max: 200 },
     ],
   },
   {
@@ -38,7 +39,7 @@ export const CFG_GROUPS: CfgGroup[] = [
     items: [
       { key: "cost.exitPerM", label: "出口带宽成本单价", unit: "元/M/月", hint: "带宽升级/降级的增量成本 = 带宽差 × 该单价", type: "number", min: 1, max: 1000 },
       { key: "cost.ipUnit", label: "IP 地址成本单价", unit: "元/个·月", hint: "增加/减少 IP 的增量成本 = 数量 × 该单价", type: "number", min: 1, max: 500 },
-      { key: "cost.planRatio", label: "套餐变更成本率", unit: "%", hint: "套餐变更增量成本 = 月租差 × 成本率（正式版从产品组成自动推导）", type: "percent", min: 10, max: 95 },
+      { key: "cost.planRatio", label: "套餐变更成本率（兜底）", unit: "%", hint: "兜底口径：仅当变更单识别不出产品类型组成时，增量成本 = 月租差 × 成本率；正常走产品组成自动推导", type: "percent", min: 10, max: 95 },
       { key: "cost.installFee", label: "安装调测费（一次性）", unit: "元/次", hint: "地址迁移类变更的一次性成本", type: "number", min: 0, max: 100000 },
     ],
   },
@@ -60,7 +61,7 @@ export const CFG_GROUPS: CfgGroup[] = [
 
 // ---------- 默认值与运行时值 ----------
 const DEFAULTS: Record<string, string> = {
-  "billing.payTiming": "postpaid", "billing.dueDays": "7", "billing.billOnSuspend": "yes",
+  "billing.payTiming": "postpaid", "billing.dueDays": "7", "billing.billOnSuspend": "yes", "billing.diffPct": "20",
   "overdue.graceDays": "7", "overdue.remindDays": "7", "overdue.suspendDays": "30", "overdue.lateFeeRate": "0.05", "overdue.badDebtDays": "180",
   "cost.exitPerM": "40", "cost.ipUnit": "50", "cost.planRatio": "62", "cost.installFee": "800",
   "penalty.refRate": "30",

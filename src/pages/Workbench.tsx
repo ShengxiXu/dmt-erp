@@ -8,6 +8,7 @@ import ArcoShell from "@/components/ArcoShell";
 import { SHEETS } from "@/data/sheets";
 import { WORK_ORDERS, STEP_NAMES } from "@/data/delivery";
 import { RECEIVABLES } from "@/data/receivables";
+import { promiseBroken, promiseOverDays, dueFollowUps } from "@/data/finance";
 import { R1_ROWS } from "@/data/resources";
 import { getBatches, useSettle } from "@/data/settle";
 
@@ -58,7 +59,11 @@ function buildTodos(role: Role): Todo[] {
       SHEETS.filter((s) => s.status === "变更中").forEach((s) =>
         t.push({ title: `核算单 ${s.id} · ${s.customer}`, sub: `变更复核中 · ${s.curNode ?? ""}`, link: `/cost?status=变更中&kw=${s.id}`, cta: "查看" }));
       if (overdueInv.length)
-        t.push({ title: `逾期应收 ${fmtWan(overdueSum)} 元`, sub: overdueInv.map((r) => `${r.customer} ${fmtWan(r.amount - r.received)}`).join("；"), link: "/finance/overdue", cta: "去催收" });
+        t.push({ title: `逾期应收 ${fmtWan(overdueSum)} 元`, sub: overdueInv.map((r) => `${r.customer} ${fmtWan(r.amount - r.received)}`).join("；"), link: "/finance?tab=collect", cta: "去催收" });
+      RECEIVABLES.filter((r) => promiseBroken(r)).forEach((r) =>
+        t.push({ title: `${r.customer} 承诺付款日破约 ${promiseOverDays(r)} 天`, sub: `${r.invNo} · 承诺 ${r.promiseDate} 未付，需升级催收并登记跟进`, link: "/finance?tab=collect", cta: "去跟进", hot: true }));
+      dueFollowUps().forEach((c) =>
+        t.push({ title: `催收跟进到期：${c.customer} ${c.invNo}`, sub: `${c.by} 上次${c.channel}跟进（${c.at.slice(5, 10)}），约定 ${c.nextFollowAt} 复查`, link: "/finance?tab=collect", cta: "去跟进" }));
       if (!getBatches().some((b) => b.period === "2026-10"))
         t.push({ title: "10 月账期待跑月结", sub: "跑批后生成各客户毛利与核算差异对比", link: "/finance/settle", cta: "去跑月结" });
       return t;

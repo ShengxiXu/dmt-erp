@@ -7,6 +7,7 @@ import { SUBSCRIPTIONS, updateSubscription, addManualBill } from "@/data/billing
 import { CONTRACTS } from "@/data/contracts";
 import { stockIn } from "@/data/resources";
 import { cfgNum, cfgRate } from "@/data/settings";
+import { bomMonthlyCost, ptypeOfLine, poolMarginal, ipOfLine } from "@/data/bomEstimate";
 
 // ---------- P05 变更单 ----------
 export type ChangeType = "套餐变更" | "带宽升级" | "带宽降级" | "增加 IP" | "减少 IP" | "地址迁移";
@@ -30,10 +31,20 @@ const bwOf = (s: string) => { const m = s.match(/([\d.]+)\s*(G)?M/); return m ? 
 function estimateChange(sub: { line: string; monthlyFee: number }, type: ChangeType, to: string, feeAfter: number): CostEst {
   if (type === "带宽升级" || type === "带宽降级") {
     const oldM = bwOf(sub.line), newM = bwOf(to);
+    // 正式版（2026-11-09）：从产品组成推导——同一出口池下新带宽边际成本 − 原带宽边际成本；
+    // 识别不出产品类型 / 无出口池档案时回退 A5 单价兜底
+    const pt = ptypeOfLine(sub.line) ?? ptypeOfLine(to);
+    const pool = pt ? poolMarginal(pt, Math.max(oldM, newM)) : null;
+    if (pt && pool) {
+      const after = poolMarginal(pt, newM)!, before = poolMarginal(pt, oldM)!;
+      const delta = after.cost - before.cost;
+      return { items: [{ name: `出口带宽切分 ${oldM}M → ${newM}M`, deltaMonthly: delta }], deltaMonthly: delta, onceOff: 0,
+        basis: `口径：产品组成自动推导——${pt} 出口池边际成本差（池月租 ${pool.poolCost.toLocaleString()} 元，${newM}M 边际 ${after.cost.toLocaleString()} − ${oldM}M 边际 ${before.cost.toLocaleString()}）；月结以实际账单为准` };
+    }
     const UNIT_EXIT_PER_M = cfgNum("cost.exitPerM");
     const delta = Math.round((newM - oldM) * UNIT_EXIT_PER_M);
     return { items: [{ name: `出口带宽切分 ${oldM}M → ${newM}M`, deltaMonthly: delta }], deltaMonthly: delta, onceOff: 0,
-      basis: `口径：出口带宽成本 ${UNIT_EXIT_PER_M} 元/M/月（A5 策略中心「变更测算单价」，实时读取）` };
+      basis: `口径：出口带宽成本 ${UNIT_EXIT_PER_M} 元/M/月（A5 策略中心兜底单价，未识别产品组成）` };
   }
   if (type === "增加 IP" || type === "减少 IP") {
     const n = +(to.match(/(\d+)/)?.[1] ?? 0);
@@ -43,11 +54,30 @@ function estimateChange(sub: { line: string; monthlyFee: number }, type: ChangeT
       basis: `口径：IP 地址 ${UNIT_IP} 元/个·月（A5 策略中心「变更测算单价」，实时读取）` };
   }
   if (type === "套餐变更") {
+    // 正式版（2026-11-09）：目标套餐组成月成本 − 当前套餐组成月成本（同带宽/IP 口径下比较，差在结构上）
+    const fromPt = ptypeOfLine(sub.line), toPt = ptypeOfLine(to);
+    const bw = Math.max(bwOf(sub.line), bwOf(to));
+    const ip = Math.max(ipOfLine(sub.line), ipOfLine(to));
+    if (fromPt && toPt && fromPt !== toPt) {
+      const from = bomMonthlyCost(fromPt, bw, ip), to2 = bomMonthlyCost(toPt, bw, ip);
+      if (from.resolved && to2.resolved) {
+        const delta = to2.total - from.total;
+        const names = [...new Set([...from.lines.map((l) => l.name), ...to2.lines.map((l) => l.name)])];
+        const items = names.map((n) => {
+          const a = from.lines.find((l) => l.name === n)?.monthly ?? 0;
+          const b = to2.lines.find((l) => l.name === n)?.monthly ?? 0;
+          return { name: `${n}（${fromPt} ${a.toLocaleString()} → ${toPt} ${b.toLocaleString()}）`, deltaMonthly: b - a };
+        }).filter((i) => i.deltaMonthly !== 0);
+        return { items: items.length ? items : [{ name: `套餐结构变化（组成成本一致，月租差 ${(feeAfter - sub.monthlyFee) >= 0 ? "+" : ""}${(feeAfter - sub.monthlyFee).toLocaleString("zh-CN")} 元/月）`, deltaMonthly: 0 }], deltaMonthly: delta, onceOff: 0,
+          basis: `口径：产品组成自动推导——${toPt} 组成月成本 ${to2.total.toLocaleString()} 元 − ${fromPt} 组成月成本 ${from.total.toLocaleString()} 元（出口池边际计价 + 基础线路档案 + IP 档案单价）；月结以实际账单为准` };
+      }
+    }
+    // 兜底：成本率估算（无法识别产品类型组成时）
     const feeDelta = feeAfter - sub.monthlyFee;
     const ratio = cfgRate("cost.planRatio");
     const delta = Math.round(feeDelta * ratio);
     return { items: [{ name: `套餐结构变化（月租差 ${feeDelta >= 0 ? "+" : ""}${feeDelta.toLocaleString("zh-CN")} 元/月）`, deltaMonthly: delta }], deltaMonthly: delta, onceOff: 0,
-      basis: `口径：按目标套餐成本结构估算（成本率 ${ratio * 100}%，正式版从产品组成自动推导）` };
+      basis: `口径：成本率 ${ratio * 100}% 估算（未识别产品组成，A5 兜底）` };
   }
   const MOVE_ONCE_FEE = cfgNum("cost.installFee");
   return { items: [{ name: "新址安装调测（一次性）", deltaMonthly: 0, onceOff: MOVE_ONCE_FEE }], deltaMonthly: 0, onceOff: MOVE_ONCE_FEE,
@@ -107,7 +137,7 @@ export const CHANGE_ORDERS: ChangeOrder[] = [
   { chNo: "CH-2026-005", subNo: "SUB-2026-0280", customer: "凯瑞传媒", contractNo: "HT-2026-020",
     type: "套餐变更", from: "国内精品网 100M", to: "BGP 三网互通 100M", monthlyFeeAfter: 10800, effective: "2026-11",
     costEst: { items: [{ name: "套餐结构变化（月租差 +2,300 元/月）", deltaMonthly: 1426 }], deltaMonthly: 1426, onceOff: 0,
-      basis: "口径：按目标套餐成本结构估算（成本率 62%，正式版从产品组成自动推导）" },
+      basis: "口径：产品组成自动推导（出口池边际计价 + 基础线路档案 + IP 档案单价）；月结以实际账单为准" },
     reason: "客户业务从单向精品网扩展到多网互通，整体切换套餐", status: "已生效", createdAt: "2026-10-25 11:20", reviewer: "业务支撑-许晟熙" },
 ];
 export const TERMINATE_ORDERS: TerminateOrder[] = [
@@ -233,7 +263,7 @@ export function executeRecover(rcNo: string, note: string): string | null {
 // 口径说明（页面底部展示）
 export const LIFECYCLE_RULES = [
   "变更：仅「在网」订阅可发起；欠停须先复机（收款足额核销自动触发）；审批通过后订阅行与月租即时更新，生效账期起按新价出账，当期仍按原价",
-  "变更测算：提交时按变更类型自动推导增量成本（上行变更必算，作为审批依据；下行变更简化），月结仍以实际账单为准，测算差异留待差异比对",
+  "变更测算（2026-11-09 升正式版）：提交时按变更类型从产品组成自动推导增量成本——套餐变更 = 目标类型组成月成本 − 当前类型组成月成本（出口池边际计价 + 基础线路档案 + IP 档案单价）；带宽升降 = 同一出口池新/原带宽边际成本差；识别不出产品类型组成时回退 A5 单价 / 成本率兜底（basis 中明示）。只推导直接·周期性条目，一次性条目与间接费用不进测算；月结仍以实际账单为准，测算差异留待差异比对",
   "退订：审批通过后订阅=退订，自生效账期起账期扫描跳过出账；生效账期之前的欠费账单不受影响，照常催收",
   "退订违约金：一事一议，无固定计算规则。系统仅给出参考试算（剩余未履行账期月租合计 × 参考比例），申请人填申请金额，最终金额由退订审批确定；按审批金额生成客户账单（一次性费用）走正常 审核 → 发出 → 应收 流程收取",
   "资源回收：退订生效自动生成回收单（CPE 回库 → R4 库存 +1；IP 地址释放回地址池；出口带宽切分与端口配置清除，网络侧执行留痕）",

@@ -1,12 +1,13 @@
 // P03 计费与账单生成（客户侧）—— 应收账单的唯一出生点
 // 链路：合同建档 → 开通确认 → 订阅激活（P02-8）→ 账期扫描（P03-1，按各订阅开通日滚动）→ 费用计算（P03-2：周期费 + 一次性费用 + 滞纳金回灌）
-//   → 账单生成（P03-3）→ 账单审核（P03-4 财务）→ 账单发出（P03-5）→ 应收登记（P03-6）→ 开票申请（P04-0）→ 收款（P04）。
+//   → 账单生成（P03-3）→ 异常审核（P03-4）→ 账单发出（P03-5）→ 应收登记（P03-6）→ 开票标记（P04-0）→ 收款（P04）。
+// 出账审核口径（2026-11-09 定版）：正常账单【自动发出】（金额=订阅月租的机械计算，人审不如系统校验）；
+// 仅三类例外进人工审核：① 手工账单/非周期费用；② 金额环比波动 > 阈值（billing.diffPct，A5 可配）；③ 欠停期间计费。
 // 账期锚定开通日：开通日 16 号 → 账期为 16 日 ~ 次月 15 日，与自然月无关；月中开通首月按整月收、不折算。
 // 应收日期 = 账期截止日 + 付款期（后付）或 账期开始日 − 付款期（预付），付款时点/付款期在 A5 配置。
 // 欠停期间周期费照常计（A5 可配）；滞纳金由 P04-6 按账期回灌下期账单（fee_type=滞纳金）。
 import { useSyncExternalStore } from "react";
 import { registerReceivable } from "@/data/receivables";
-import { createInvoiceApp } from "@/data/invoiceApps";
 import { cfgNum, getCfg } from "@/data/settings";
 
 // ---------- 订阅台账（P02-8 激活；从合同生成，客户账单的取数基础） ----------
@@ -32,6 +33,8 @@ export interface CustInvoice {
   amount: number;
   status: BillStatus;
   generatedAt: string; reviewedAt?: string; reviewer?: string; rejectReason?: string;
+  auto?: boolean;           // 自动发出（非例外账单，系统直接登记应收）
+  reviewReason?: string;    // 例外审核原因（命中异常规则进人工审核）
 }
 
 // ---------- 账期工具（按开通日锚定；月末日期钳制到当月最后一天） ----------
@@ -75,10 +78,12 @@ export const SUBSCRIPTIONS: Subscription[] = [
 export const CUST_INVOICES: CustInvoice[] = [
   { invNo: "INV-2026-1001", customer: "博彦软件", contractNo: "HT-2026-0309", subNo: "SUB-2026-0330",
     period: "2026-09-20 ~ 2026-10-19", periodStart: "2026-09-20", periodEnd: "2026-10-19", dueDate: "2026-10-26",
-    items: [{ name: "CN2 GIA 100M · 2026-09-20 ~ 2026-10-19 周期费", amount: 9900, feeType: "周期费" }], amount: 9900, status: "已生成", generatedAt: "2026-10-20 02:00" },
-  { invNo: "INV-2026-0994", customer: "正大物流", contractNo: "HT-2026-015", subNo: "SUB-2026-0355",
-    period: "2026-10-08 ~ 2026-11-07", periodStart: "2026-10-08", periodEnd: "2026-11-07", dueDate: "2026-11-14",
-    items: [{ name: "单线 100M · 2026-10-08 ~ 2026-11-07 周期费", amount: 5600, feeType: "周期费" }], amount: 5600, status: "审核中", generatedAt: "2026-11-07 02:00" },
+    items: [{ name: "CN2 GIA 100M · 2026-09-20 ~ 2026-10-19 周期费", amount: 9900, feeType: "周期费" }], amount: 9900, status: "已发出",
+    generatedAt: "2026-10-20 02:00", reviewedAt: "2026-10-20 02:00", reviewer: "系统自动", auto: true },
+  { invNo: "INV-2026-0994", customer: "跃游网络", contractNo: "HT-2026-024", subNo: "SUB-2026-0312",
+    period: "2026-10-20 ~ 2026-11-19", periodStart: "2026-10-20", periodEnd: "2026-11-19", dueDate: "2026-11-26",
+    items: [{ name: "D-MAN 城域通道 · 2026-10-20 ~ 2026-11-19 周期费", amount: 6800, feeType: "周期费" }], amount: 6800, status: "审核中",
+    generatedAt: "2026-11-05 02:00", reviewReason: "欠停期间计费（A5：欠停照常计），人工确认后发出" },
 ];
 
 // ---------- 轻量 store ----------
@@ -103,19 +108,63 @@ export function updateSubscription(subNo: string, patch: Partial<Pick<Subscripti
 let invSeq = 1002;
 const now = () => new Date().toISOString().slice(0, 16).replace("T", " ");
 
-/** P06 退订违约金等非订阅类一次性费用：以手工账单进入正常 审核 → 发出 → 应收 流程（账单唯一出生点不变） */
+// ---------- 出账审核（P03-4 定版：自动发出 + 例外人工审核） ----------
+/** 例外规则：命中任一即进人工审核，否则自动发出 */
+function reviewReasons(amount: number, customer: string, sub: Subscription | undefined, manual: boolean): string[] {
+  const rs: string[] = [];
+  if (manual) rs.push("手工账单 / 非周期费用");
+  if (sub?.status === "欠停") rs.push("欠停期间计费（A5：欠停照常计）");
+  // 环比波动：与同一客户最近一期已发出账单比较（首账期无基数放行）
+  const prev = CUST_INVOICES.filter((x) => x.customer === customer && x.status === "已发出" && x.subNo !== sub?.subNo)
+    .sort((a, b) => (b.reviewedAt ?? b.generatedAt).localeCompare(a.reviewedAt ?? a.generatedAt))[0];
+  if (prev && prev.amount > 0) {
+    const diffPct = cfgNum("billing.diffPct");
+    if (Math.abs(amount - prev.amount) / prev.amount > diffPct / 100)
+      rs.push(`金额环比波动 > ${diffPct}%（上期 ${prev.amount.toLocaleString("zh-CN")} → 本期 ${amount.toLocaleString("zh-CN")}）`);
+  }
+  return rs;
+}
+
+/** 账单发出（P03-5/6）：状态=已发出 → 应收登记（唯一流入）→ 自动生成开票标记 */
+function issueBill(b: CustInvoice) {
+  b.status = "已发出";
+  b.reviewedAt = b.reviewedAt ?? now();
+  registerReceivable({
+    invNo: b.invNo, customer: b.customer, contract: b.contractNo, amount: b.amount,
+    dueDate: b.dueDate, items: b.items.map((i) => ({ name: i.name, amount: i.amount })),
+    invoice: { periodText: b.period, items: b.items.map((i) => i.name) },
+  });
+}
+
+/** 生成后分流：例外 → 审核中（带原因）；正常 → 自动发出 */
+function dispatch(b: CustInvoice, sub: Subscription | undefined, manual: boolean) {
+  const rs = reviewReasons(b.amount, b.customer, sub, manual);
+  if (rs.length) {
+    b.status = "审核中";
+    b.reviewReason = rs.join("；");
+  } else {
+    b.auto = true;
+    b.reviewer = "系统自动";
+    issueBill(b);
+  }
+}
+
+/** P06 退订违约金等非订阅类一次性费用：以手工账单进入流程——手工单必审（例外规则①），通过后发出 */
 export function addManualBill(data: { customer: string; contractNo: string; period: string; items: BillItem[] }): string {
   const invNo = `INV-2026-${invSeq++}`;
   const ps = `${data.period}-01`, pe = fmtD(addDays(addMonthsClamped(parseD(ps), 1), -1));
-  CUST_INVOICES.unshift({ invNo, customer: data.customer, contractNo: data.contractNo, period: data.period, periodStart: ps, periodEnd: pe, dueDate: dueDateOf(parseD(ps), parseD(pe)), items: data.items, amount: data.items.reduce((s, i) => s + i.amount, 0), status: "已生成", generatedAt: now() });
+  const b: CustInvoice = { invNo, customer: data.customer, contractNo: data.contractNo, period: data.period, periodStart: ps, periodEnd: pe, dueDate: dueDateOf(parseD(ps), parseD(pe)), items: data.items, amount: data.items.reduce((s, i) => s + i.amount, 0), status: "已生成", generatedAt: now() };
+  CUST_INVOICES.unshift(b);
+  dispatch(b, undefined, true);
   bump();
   return invNo;
 }
 
 // P03-1/2/3：账期扫描 + 费用计算 + 账单生成。
 // 按各订阅开通日滚动：后付=账期截止后出账；预付=账期开始前（应收日已到）出账；每次扫描每个订阅至多补 1 个到期账期；月中开通整月收。
-export function runBillingScan(today = "2026-11-05"): { created: number; skipped: number } {
-  let created = 0, skipped = 0;
+// 生成后自动分流：非例外账单自动发出（登记应收 + 开票标记）；例外账单进人工审核。
+export function runBillingScan(today = "2026-11-05"): { created: number; skipped: number; auto: number; review: number } {
+  let created = 0, skipped = 0, auto = 0, review = 0;
   const t = parseD(today), dueDays = cfgNum("billing.dueDays"), prepaid = getCfg("billing.payTiming") === "prepaid";
   SUBSCRIPTIONS.forEach((sub) => {
     if (sub.status === "退订") { skipped++; return; }
@@ -132,35 +181,31 @@ export function runBillingScan(today = "2026-11-05"): { created: number; skipped
     const { start, end } = periodOf(sub, dueIdx);
     const billed = CUST_INVOICES.some((b) => b.subNo === sub.subNo && b.periodStart === fmtD(start) && b.status !== "已驳回");
     if (billed) { skipped++; return; }
-    CUST_INVOICES.unshift({
+    const b: CustInvoice = {
       invNo: `INV-2026-${invSeq++}`, customer: sub.customer, contractNo: sub.contractNo, subNo: sub.subNo,
       period: periodText(sub, dueIdx), periodStart: fmtD(start), periodEnd: fmtD(end), dueDate: dueDateOf(start, end),
       items: [{ name: `${sub.line} · ${periodText(sub, dueIdx)} 周期费`, amount: sub.monthlyFee, feeType: "周期费" }],
       amount: sub.monthlyFee, status: "已生成", generatedAt: now(),
-    });
+    };
+    CUST_INVOICES.unshift(b);
+    dispatch(b, sub, false);
+    if (b.auto) auto++; else review++;
     created++;
   });
   bump();
-  return { created, skipped };
+  return { created, skipped, auto, review };
 }
-// P03-4：提交审核
+// P03-4：提交审核（兼容旧流程保留；新账单由 dispatch 生成时即分流，不再产生「已生成」待提交状态）
 export function submitBill(invNo: string) {
   const b = BILL_BY_NO(invNo);
   if (b && b.status === "已生成") { b.status = "审核中"; bump(); }
 }
-// P03-4/5/6：审核通过 → 发出 → 应收登记（写入 receivables）→ 自动生成开票申请（P04-0）
+// P03-4/5/6：例外账单人工审核通过 → 发出 → 应收登记 → 开票标记
 export function approveBill(invNo: string, reviewer = "财务-李娜"): string | null {
   const b = BILL_BY_NO(invNo);
   if (!b || b.status !== "审核中") return "账单不存在或不在审核中";
-  b.status = "已发出"; b.reviewer = reviewer; b.reviewedAt = now();
-  registerReceivable({
-    invNo: b.invNo, customer: b.customer, contract: b.contractNo, amount: b.amount,
-    dueDate: b.dueDate, items: b.items.map((i) => ({ name: i.name, amount: i.amount })),
-  });
-  createInvoiceApp({
-    invNo: b.invNo, customer: b.customer, contractNo: b.contractNo,
-    amount: b.amount, periodText: b.period, items: b.items.map((i) => i.name),
-  });
+  b.reviewer = reviewer;
+  issueBill(b);
   bump();
   return null;
 }
@@ -179,6 +224,7 @@ export function getBillingRules(): string[] {
     "账单明细来源：周期费 = 订阅行月租（合同行单价 × 数量）；账期按各订阅开通日滚动（开通日 16 号 → 账期 16 日 ~ 次月 15 日），与自然月无关，月中开通首月整月收、不折算",
     `付款时点：${getCfg("billing.payTiming") === "prepaid" ? "预付费（账期开始前出账收款）" : "后付费（账期结束后出账收款）"}；应收日期 = ${getCfg("billing.payTiming") === "prepaid" ? "账期开始日 −" : "账期截止日 +"} ${getCfg("billing.dueDays")} 天付款期（A5 可配）`,
     `欠停订阅周期费${getCfg("billing.billOnSuspend") === "no" ? "暂停计" : "照常计"}（A5 可配）；退订订阅自退订生效账期停止出账（P06）`,
-    "应收登记（P03-6）是收款管理应收账单的唯一流入入口：审核通过 → 发出即登记，并自动生成开票申请（P04-0 开票管理）；P04 只改收款状态、不维护账单主数据",
+    "出账审核（例外管理）：正常账单【自动发出】——金额=订阅月租的机械计算，系统校验（在网/变更生效/退订停出账）比人工抽看可靠；仅三类例外进人工审核：① 手工账单/非周期费用；② 金额环比波动 > A5 阈值（billing.diffPct，默认 20%）；③ 欠停期间计费",
+    "应收登记（P03-6）是财务中心应收台账的唯一流入入口：发出即登记，并自动生成开票标记（P04-0）；收款/催收只改状态与金额，不维护账单主数据",
   ];
 }

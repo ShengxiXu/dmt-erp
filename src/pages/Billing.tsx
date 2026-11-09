@@ -2,7 +2,7 @@
 // 应收账单唯一出生点：审核通过 → 发出即写入收款管理（P03-6 应收登记 → P04）。
 import { Fragment, useState } from "react";
 import { Link } from "react-router";
-import { useBilling, getSubscriptions, getBills, runBillingScan, submitBill, approveBill, rejectBill, getBillingRules, periodText, type BillStatus, type SubStatus } from "@/data/billing";
+import { useBilling, getSubscriptions, getBills, runBillingScan, approveBill, rejectBill, getBillingRules, periodText, type BillStatus, type SubStatus } from "@/data/billing";
 import { useSettings } from "@/data/settings";
 import ArcoShell from "@/components/ArcoShell";
 import { Button } from "@/components/ui/button";
@@ -39,11 +39,12 @@ export default function Billing() {
   const pending = getBills().filter((b) => b.status === "审核中").length;
 
   return (
-    <ArcoShell breadcrumb="财务 / 客户账单">
+    <ArcoShell breadcrumb="财务 / 计费与出账">
       <main className="space-y-4 p-6">
         <div className="flex items-center justify-between rounded-[4px] border border-[#E5E6EB] bg-white px-4 py-2.5">
           <div className="flex items-center gap-2.5">
-            <span className="text-sm font-semibold text-[#1D2129]">客户账单</span>
+            <span className="text-sm font-semibold text-[#1D2129]">计费与出账</span>
+            <span className="rounded-[2px] bg-[#E8F8F2] px-1.5 py-0.5 text-[10px] text-[#00B42A]">正常账单自动发出 · 例外进人工审核</span>
             <div className="flex rounded-[2px] border border-[#E5E6EB] p-0.5">
               {(["账期出账", "订阅台账"] as const).map((t) => (
                 <button key={t} onClick={() => setTab(t)}
@@ -60,7 +61,7 @@ export default function Billing() {
               <Input className="w-32" value={today} onChange={(e) => setToday(e.target.value)} placeholder="2026-11-05" />
               <Button size="sm" onClick={() => {
                 const r = runBillingScan(today.trim() || "2026-11-05");
-                setScanMsg(`扫描完成：新出账 ${r.created} 张（各订阅按开通日滚动的到期账期），跳过 ${r.skipped} 个（未到期 / 已出账 / 已退订）`);
+                setScanMsg(`扫描完成：新出账 ${r.created} 张（自动发出 ${r.auto}、例外待审 ${r.review}），跳过 ${r.skipped} 个（未到期 / 已出账 / 已退订）`);
               }}>账期扫描出账</Button>
             </div>
           )}
@@ -72,7 +73,7 @@ export default function Billing() {
           <>
             <div className="flex items-center gap-2">
               <span className="text-[11px] text-[#86909C]">状态筛选：</span>
-              {(["全部", "已生成", "审核中", "已发出", "已驳回"] as const).map((s) => (
+              {(["全部", "审核中", "已发出", "已驳回"] as const).map((s) => (
                 <button key={s} onClick={() => setBillStatus(s)}
                   className={`rounded-[2px] px-2 py-0.5 text-[11px] ${billStatus === s ? "bg-[#165DFF] text-white" : "text-[#4E5969] hover:bg-[#F2F3F5]"}`}>{s}</button>
               ))}
@@ -98,13 +99,12 @@ export default function Billing() {
                         <td className="whitespace-nowrap px-3 py-2.5 text-[#4E5969]">{b.dueDate}</td>
                         <td className="whitespace-nowrap px-3 py-2.5 text-[#86909C]">{b.generatedAt}</td>
                         <td className="px-3 py-2.5 text-[#4E5969]">{b.reviewer ? `${b.reviewer}${b.reviewedAt ? ` · ${b.reviewedAt}` : ""}` : "—"}</td>
-                        <td className="px-3 py-2.5"><span className={`rounded-[2px] px-1.5 py-0.5 text-[10px] ${BILL_CLS[b.status]}`}>{b.status}</span></td>
+                        <td className="px-3 py-2.5"><span className={`rounded-[2px] px-1.5 py-0.5 text-[10px] ${BILL_CLS[b.status]}`}>{b.status}</span>{b.auto && <span className="ml-1 rounded-[2px] bg-[#E8F8F2] px-1 py-0.5 text-[10px] text-[#00B42A]">自动</span>}</td>
                         <td className="px-3 py-2.5 text-right">
                           <span className="flex justify-end gap-2">
-                            {b.status === "已生成" && <button className="text-[#165DFF] hover:underline" onClick={(e) => { e.stopPropagation(); submitBill(b.invNo); }}>提交审核</button>}
                             {b.status === "审核中" && (
                               <>
-                                <button className="text-[#00B42A] hover:underline" onClick={(e) => { e.stopPropagation(); if (approveBill(b.invNo)) alert("失败"); else setScanMsg(`✓ ${b.invNo} 已发出并完成应收登记 → 收款管理（应收日期 ${b.dueDate}）；开票申请已生成 → 开票管理`); }}>通过并发出</button>
+                                <button className="text-[#00B42A] hover:underline" onClick={(e) => { e.stopPropagation(); if (approveBill(b.invNo)) alert("失败"); else setScanMsg(`✓ ${b.invNo} 已发出并完成应收登记（应收日期 ${b.dueDate}）；开票标记已生成 → 财务中心 · 开票任务`); }}>通过并发出</button>
                                 <button className="text-[#F53F3F] hover:underline" onClick={(e) => { e.stopPropagation(); setRejectNo(b.invNo); }}>驳回</button>
                               </>
                             )}
@@ -122,6 +122,7 @@ export default function Billing() {
                                   <span className="text-[#4E5969]">{i.amount.toLocaleString("zh-CN")} 元</span>
                                 </div>
                               ))}
+                              {b.reviewReason && <div className="text-[#FF7D00]">例外审核原因：{b.reviewReason}</div>}
                               {b.rejectReason && <div className="text-[#F53F3F]">驳回原因：{b.rejectReason}</div>}
                             </div>
                           </td>
@@ -166,7 +167,7 @@ export default function Billing() {
         <div className="rounded-[4px] border border-[#E5E6EB] bg-white px-4 py-2.5 text-[11px] leading-5 text-[#86909C]">
           <div className="mb-0.5 font-medium text-[#4E5969]">账单从哪里来（P03 口径）</div>
           {getBillingRules().map((r, i) => <div key={i}>{i + 1}. {r}</div>)}
-          <div className="mt-1">发出后的账单在 <Link to="/finance/invoices" className="text-[#165DFF] hover:underline">开票管理</Link> 申请开票（金蝶开票后回填发票号），客户凭票付款后在 <Link to="/finance/payments" className="text-[#165DFF] hover:underline">收款管理</Link> 收款核销；逾期与欠费处置在 <Link to="/finance/overdue" className="text-[#165DFF] hover:underline">欠费与坏账</Link>。</div>
+          <div className="mt-1">发出后的账单自动进入 <Link to="/finance?tab=ledger" className="text-[#165DFF] hover:underline">财务中心 · 应收台账</Link>，开票任务、收款核销、催收行动、对账看板均在财务中心完成。</div>
         </div>
       </main>
 
