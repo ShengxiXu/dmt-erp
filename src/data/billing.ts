@@ -8,7 +8,7 @@
 // 欠停期间周期费照常计（A5 可配）；滞纳金由 P04-6 按账期回灌下期账单（fee_type=滞纳金）。
 import { useSyncExternalStore } from "react";
 import { registerReceivable } from "@/data/receivables";
-import { cfgNum, getCfg } from "@/data/settings";
+import { cfgNum, getCfg, DEMO_TODAY, demoNow } from "@/data/settings";
 
 // ---------- 订阅台账（P02-8 激活；从合同生成，客户账单的取数基础） ----------
 export type SubStatus = "在网" | "欠停" | "退订";
@@ -106,7 +106,7 @@ export function updateSubscription(subNo: string, patch: Partial<Pick<Subscripti
 }
 
 let invSeq = 1002;
-const now = () => new Date().toISOString().slice(0, 16).replace("T", " ");
+const now = demoNow;
 
 // ---------- 出账审核（P03-4 定版：自动发出 + 例外人工审核） ----------
 /** 例外规则：命中任一即进人工审核，否则自动发出 */
@@ -163,7 +163,7 @@ export function addManualBill(data: { customer: string; contractNo: string; peri
 // P03-1/2/3：账期扫描 + 费用计算 + 账单生成。
 // 按各订阅开通日滚动：后付=账期截止后出账；预付=账期开始前（应收日已到）出账；每次扫描每个订阅至多补 1 个到期账期；月中开通整月收。
 // 生成后自动分流：非例外账单自动发出（登记应收 + 开票标记）；例外账单进人工审核。
-export function runBillingScan(today = "2026-11-05"): { created: number; skipped: number; auto: number; review: number } {
+export function runBillingScan(today = DEMO_TODAY): { created: number; skipped: number; auto: number; review: number } {
   let created = 0, skipped = 0, auto = 0, review = 0;
   const t = parseD(today), dueDays = cfgNum("billing.dueDays"), prepaid = getCfg("billing.payTiming") === "prepaid";
   SUBSCRIPTIONS.forEach((sub) => {

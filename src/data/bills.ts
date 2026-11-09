@@ -7,6 +7,7 @@
 import { useSyncExternalStore } from "react";
 import { getCostItems } from "./costItems";
 import { CC_NAME, getCenters } from "./costCenters";
+import { DEMO_TODAY } from "./settings";
 
 export type BillStatus = "待入账" | "已入账" | "已月结";
 
@@ -58,7 +59,7 @@ export function addBill(patch: Omit<SupplierBill, "id" | "status" | "createdAt">
     ...patch,
     id: `HY-2026-${seq++}`,
     status: "待入账",
-    createdAt: new Date().toISOString().slice(0, 10),
+    createdAt: DEMO_TODAY,
   };
   bills.unshift(b);
   bump();

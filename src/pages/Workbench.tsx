@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router";
+import { DEMO_TODAY } from "@/data/settings";
 import {
   PencilLine, CheckSquare, Wrench, Calculator, ReceiptText, Receipt, Banknote, RefreshCcw,
   TrendingUp, TrendingDown, CircleAlert, ArrowUpRight,
@@ -96,9 +97,9 @@ export default function Workbench() {
   const [role, setRole] = useState<Role>("业务支撑部");
   useSettle(); // 跑完月结回来，月结相关卡片自动刷新
 
-  const now = new Date();
-  const wd = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"][now.getDay()];
-  const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")} ${wd}`;
+  const now = new Date(); // 时刻取真实时钟（问候语）；日期一律用演示基准日
+  const wd = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"][new Date(`${DEMO_TODAY}T00:00:00`).getDay()];
+  const dateStr = `${DEMO_TODAY} ${wd}`;
   const hour = now.getHours();
   const greet = hour < 6 ? "夜深了" : hour < 12 ? "早上好" : hour < 18 ? "下午好" : "晚上好";
 

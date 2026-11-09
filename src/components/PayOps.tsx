@@ -4,6 +4,7 @@ import CenterModal from "@/components/CenterModal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { getInvoices, addPayment, invBalance, type InvStatus } from "@/data/receivables";
+import { demoNow } from "@/data/settings";
 
 const PAYABLE: InvStatus[] = ["已发出", "部分收款", "逾期", "欠停"];
 
@@ -12,7 +13,7 @@ export function PayForm({ onClose }: { onClose: () => void }) {
   const payableInvoices = getInvoices().filter((i) => PAYABLE.includes(i.status));
   const [invNo, setInvNo] = useState("");
   const [amount, setAmount] = useState("");
-  const [paidAt, setPaidAt] = useState(new Date().toISOString().slice(0, 16).replace("T", " "));
+  const [paidAt, setPaidAt] = useState(demoNow());
   const [method, setMethod] = useState<"银行转账" | "支付宝" | "微信" | "现金">("银行转账");
   const [referenceNo, setReferenceNo] = useState("");
   const [payerAccount, setPayerAccount] = useState("");

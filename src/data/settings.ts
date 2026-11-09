@@ -7,6 +7,11 @@ import { useSyncExternalStore } from "react";
  *  数据层禁止用真实当天日期做任何逾期/账龄/时效判断；新增业务时间戳一律取此值。 */
 export const DEMO_TODAY = "2026-11-03";
 
+/** 演示「当前时间戳」：日期固定 DEMO_TODAY，时刻取真实时钟（仅用于操作留痕展示） */
+export const demoNow = () => `${DEMO_TODAY} ${new Date().toTimeString().slice(0, 5)}`;
+/** 演示「当前日期」：一律等于 DEMO_TODAY */
+export const demoDate = () => DEMO_TODAY;
+
 export interface CfgDef {
   key: string; label: string; unit: string; hint: string;
   type: "number" | "percent" | "select";
@@ -95,7 +100,7 @@ export const cfgNum = (key: string): number => { const n = parseFloat(getCfg(key
 export const cfgRate = (key: string): number => cfgNum(key) / 100;
 export const CFG_DEF = (key: string): CfgDef | undefined => CFG_GROUPS.flatMap((g) => g.items).find((i) => i.key === key);
 
-const now = () => new Date().toISOString().slice(0, 16).replace("T", " ");
+const now = demoNow;
 
 /** 保存配置：按定义校验取值范围；danger 项由调用方二次确认后传入 confirmed=true */
 export function saveCfg(key: string, raw: string, operator = "系统管理员", confirmed = false): string | null {

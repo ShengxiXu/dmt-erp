@@ -4,6 +4,7 @@
 import { useSyncExternalStore } from "react";
 import { R4_ROWS, R1_ROWS, R3_ROWS, stockIn } from "@/data/resources";
 import { PURCHASE_CONTRACTS, saveContract } from "@/data/purchase";
+import { demoNow } from "@/data/settings";
 
 // ---------- P08-1 采购需求单 ----------
 export type ReqSource = "手工提报" | "资源不足联动" | "业务规划";
@@ -122,7 +123,7 @@ export const fmtMoney = (n: number) => n.toLocaleString("zh-CN");
 export function addReq(data: Omit<PurchaseReq, "reqNo" | "status" | "createdAt" | "createdBy"> & { createdBy?: string }) {
   const req: PurchaseReq = {
     ...data, reqNo: `PR-2026-${reqSeq++}`, status: "待处理",
-    createdAt: new Date().toISOString().slice(0, 16).replace("T", " "), createdBy: data.createdBy ?? "孙工（运维）",
+    createdAt: demoNow(), createdBy: data.createdBy ?? "孙工（运维）",
   };
   PURCHASE_REQS.unshift(req);
   bump();
@@ -166,7 +167,7 @@ export function createPoFromReqs(reqNos: string[], supplier: string, contractId?
   PURCHASE_ORDERS.unshift({
     poNo, supplier, reqNos, lines, taxRate: 0.13, status: "草稿", version: 1, batches: [], inboundDone: false,
     ...(contractId ? { contractId } : {}),
-    createdAt: new Date().toISOString().slice(0, 16).replace("T", " "),
+    createdAt: demoNow(),
   });
   reqs.forEach((r) => { r.status = "已转采购单"; r.poNo = poNo; });
   bump();
@@ -231,7 +232,7 @@ export function saveContractPrice(poNo: string, data: { contractNo: string; sign
 export function addReceiptBatch(poNo: string, items: ReceiptItem[], operator = "仓管-王敏") {
   const po = PO_BY_NO(poNo);
   if (!po || (po.status !== "已下单" && po.status !== "部分到货")) return;
-  po.batches.push({ batchNo: po.batches.length + 1, at: new Date().toISOString().slice(0, 16).replace("T", " "), operator, items });
+  po.batches.push({ batchNo: po.batches.length + 1, at: demoNow(), operator, items });
   items.forEach((it) => {
     const line = po.lines[it.lineIdx];
     if (!line) return;
@@ -287,7 +288,7 @@ export function completeInbound(poNo: string, payload: {
     });
   }
   po.inboundDone = true;
-  po.inboundAt = new Date().toISOString().slice(0, 16).replace("T", " ");
+  po.inboundAt = demoNow();
   // 反向通知：需求单携带的挂起工单恢复开通
   const linkedReq = PURCHASE_REQS.find((r) => r.poNo === poNo && r.linkedWo);
   if (linkedReq) po.resumedWo = linkedReq.linkedWo;

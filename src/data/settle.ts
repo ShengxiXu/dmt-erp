@@ -9,7 +9,7 @@ import { R1_ROWS } from "@/data/resources";
 import { RECEIVABLES } from "@/data/receivables";
 import { SHEETS } from "@/data/sheets";
 import { getCenters } from "@/data/costCenters";
-import { cfgNum } from "@/data/settings";
+import { cfgNum, demoNow } from "@/data/settings";
 
 export interface ExitSplit {
   exitId: string; exitName: string; monthlyCost: number; totalBW: number;
@@ -173,7 +173,7 @@ export function runSettle(period: string, indirectTotal: number, operator = "财
 
   const batch: SettleBatch = {
     batchNo: `JS-2026-${String(SETTLE_BATCHES.length + 1).padStart(3, "0")}`,
-    period, status: "已锁定", runAt: new Date().toISOString().slice(0, 16).replace("T", " "), operator,
+    period, status: "已锁定", runAt: demoNow(), operator,
     indirectTotal, exitSplits, pools, margins, diffs,
     totals: {
       revenue: margins.reduce((s, m) => s + m.revenue, 0),

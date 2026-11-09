@@ -6,7 +6,7 @@ import { useSyncExternalStore } from "react";
 import { SUBSCRIPTIONS, updateSubscription, addManualBill } from "@/data/billing";
 import { CONTRACTS } from "@/data/contracts";
 import { stockIn } from "@/data/resources";
-import { cfgNum, cfgRate } from "@/data/settings";
+import { cfgNum, cfgRate, demoNow } from "@/data/settings";
 import { bomMonthlyCost, ptypeOfLine, poolMarginal, ipOfLine } from "@/data/bomEstimate";
 
 // ---------- P05 变更单 ----------
@@ -170,7 +170,7 @@ export const getTerminates = () => TERMINATE_ORDERS;
 export const getRecovers = () => RECOVER_ORDERS;
 
 let chSeq = 7, tmSeq = 4, rcSeq = 3;
-const now = () => new Date().toISOString().slice(0, 16).replace("T", " ");
+const now = demoNow;
 
 // P05-1/2：变更申请（仅「在网」订阅可申请；欠停需先复机）
 export function submitChange(data: Omit<ChangeOrder, "chNo" | "status" | "createdAt" | "costEst">): string | null {

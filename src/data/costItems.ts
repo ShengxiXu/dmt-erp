@@ -7,6 +7,7 @@
 //   ③ 锁定规则：被产品类型引用的条目，关键字段锁定（页面侧禁用录入）
 import { useSyncExternalStore } from "react";
 import { ITEMS, type CatalogItem } from "./catalog";
+import { demoNow } from "./settings";
 
 export type ItemStatus = "草稿" | "生效" | "停用";
 export type ItemCategory = "资源驱动" | "手工录入";
@@ -106,7 +107,7 @@ export function updateItem(key: string, patch: Partial<CostItem>) {
   if (it) {
     // 适用资源（推导桥）变更留痕：映射改错会改变历史核算口径，审计依据
     if (patch.appliesTo !== undefined && patch.appliesTo !== it.appliesTo) {
-      it.appliesToLog = [...(it.appliesToLog ?? []), { at: new Date().toISOString().slice(0, 16).replace("T", " "), from: it.appliesTo, to: patch.appliesTo || undefined }];
+      it.appliesToLog = [...(it.appliesToLog ?? []), { at: demoNow(), from: it.appliesTo, to: patch.appliesTo || undefined }];
     }
     Object.assign(it, patch);
     bump();

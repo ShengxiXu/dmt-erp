@@ -9,6 +9,7 @@ import ArcoShell from "@/components/ArcoShell";
 import CenterModal from "@/components/CenterModal";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { demoNow } from "@/data/settings";
 import { getInvoices, getPayments, getCollectRecords, addCollectRecord, invBalance, redFlushPayment, createSuspendTicket, runOverdueScan, type Receivable, type InvStatus, type CollectRecord } from "@/data/receivables";
 import { financeKPIs, agingDays, collectStage, collectActions, allCollectItems, salesOf, promiseBroken, promiseOverDays,
   dsoDays, agingBuckets, paidUninvoiced, badDebtRisk, type CollectStage } from "@/data/finance";
@@ -402,7 +403,7 @@ function CollectRecordForm({ inv, onClose }: { inv: Receivable; onClose: () => v
         <div className="flex justify-end gap-2 border-t border-[#F2F3F5] pt-3">
           <Button variant="outline" size="sm" onClick={onClose}>取消</Button>
           <Button size="sm" onClick={() => {
-            const e = addCollectRecord({ invNo: inv.invNo, customer: inv.customer, at: new Date().toISOString().slice(0, 16).replace("T", " "), by: by.trim(), role, channel, content, promiseDate: promiseDate || undefined, nextFollowAt: nextFollowAt || undefined });
+            const e = addCollectRecord({ invNo: inv.invNo, customer: inv.customer, at: demoNow(), by: by.trim(), role, channel, content, promiseDate: promiseDate || undefined, nextFollowAt: nextFollowAt || undefined });
             if (e) return setErr(e);
             onClose();
           }}>保存跟进</Button>

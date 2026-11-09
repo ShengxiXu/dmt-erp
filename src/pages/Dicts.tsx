@@ -2,6 +2,7 @@
 // 当前收录：工时费率。具体资源的价格（月租 / 单价 / 采购价）挂在 R1~R4 资源档案与采购合同上，不进本字典。
 import { useState } from "react";
 import { useRates, getRates, saveRate, addRate, type EngineerRate } from "@/data/dicts";
+import { DEMO_TODAY } from "@/data/settings";
 import CenterModal from "@/components/CenterModal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,7 +17,7 @@ export function DictsPanel() {
     if (!editing) return;
     if (!editing.role.trim()) return alert("请填写岗位 / 级别");
     if (!(editing.rate > 0)) return alert("请填写费率（元/人天）");
-    const row: EngineerRate = { role: editing.role.trim(), rate: editing.rate, effect: editing.effect || new Date().toISOString().slice(0, 10), status: editing.status ?? "启用", remark: editing.remark || undefined };
+    const row: EngineerRate = { role: editing.role.trim(), rate: editing.rate, effect: editing.effect || DEMO_TODAY, status: editing.status ?? "启用", remark: editing.remark || undefined };
     if (editing.isNew) addRate(row);
     else saveRate(editing.idx ?? 0, row);
     setEditing(null);
@@ -29,7 +30,7 @@ export function DictsPanel() {
           <span className="text-sm font-semibold text-[#1D2129]">计价标准</span>
           <span className="ml-2 text-[11px] text-[#86909C]">跨资源共用的计价规则：工时费率（开通实施 / 安装调测 / 运维投入共用一条费率线）。具体资源的价格（月租 / 单价 / 采购价）挂在 R1~R4 资源档案与采购合同上，不在此维护</span>
         </div>
-          <Button size="sm" onClick={() => setEditing({ role: "", rate: 0, effect: new Date().toISOString().slice(0, 10), status: "启用", isNew: true })}>＋ 新增费率</Button>
+          <Button size="sm" onClick={() => setEditing({ role: "", rate: 0, effect: DEMO_TODAY, status: "启用", isNew: true })}>＋ 新增费率</Button>
         </div>
 
         <div className="overflow-x-auto rounded-[4px] border border-[#E5E6EB] bg-white">

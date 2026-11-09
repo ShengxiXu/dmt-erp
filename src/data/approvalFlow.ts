@@ -95,7 +95,9 @@ export const POINT_BY_ID = (id: string) => APPROVAL_POINTS.find((p) => p.id === 
 export const CHAINS_OF = (pointId: string) => APPROVAL_CHAINS.filter((c) => c.pointId === pointId);
 export const ENABLED_POINTS = () => APPROVAL_POINTS.filter((p) => p.enabled);
 
-const now = () => new Date().toISOString().slice(0, 16).replace("T", " ");
+import { demoNow } from "@/data/settings";
+
+const now = demoNow;
 export function savePoint(patch: ApprovalPoint) {
   const i = APPROVAL_POINTS.findIndex((p) => p.id === patch.id);
   if (i >= 0) APPROVAL_POINTS[i] = { ...patch, updatedAt: now(), updatedBy: "管理员-王芳" };

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { updateInvoiceApp, fillInvoice, invoiceTitleOf, BIZ_CATS, type InvoiceApp } from "@/data/invoiceApps";
 import { CONTRACTS } from "@/data/contracts";
+import { DEMO_TODAY } from "@/data/settings";
 import { ENTITY_BY_ID } from "@/data/entities";
 
 /** 销方主体：从销售合同的签约主体带出（开票抬头 = 客户抬头，销方 = 我方主体） */
@@ -79,7 +80,7 @@ export function InvoiceEditForm({ a, onClose }: { a: InvoiceApp; onClose: () => 
 // ---------- 回填发票号（开票中 → 已开票） ----------
 export function InvoiceFillForm({ a, onClose }: { a: InvoiceApp; onClose: () => void }) {
   const [invoiceNo, setInvoiceNo] = useState("");
-  const [invoicedAt, setInvoicedAt] = useState("2026-11-05");
+  const [invoicedAt, setInvoicedAt] = useState(DEMO_TODAY);
   const [err, setErr] = useState<string | null>(null);
   return (
     <CenterModal title={`回填发票号 · ${a.apNo}`} sub={`${a.customer} · 金额 ${a.amount.toLocaleString("zh-CN")} 元（金蝶已开票，录入发票信息）`} width={480} onClose={onClose}>

@@ -3,7 +3,7 @@
 import { Fragment, useState } from "react";
 import { Link } from "react-router";
 import { useBilling, getSubscriptions, getBills, runBillingScan, approveBill, rejectBill, getBillingRules, periodText, type BillStatus, type SubStatus } from "@/data/billing";
-import { useSettings } from "@/data/settings";
+import { useSettings, DEMO_TODAY } from "@/data/settings";
 import ArcoShell from "@/components/ArcoShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,7 +25,7 @@ export default function Billing() {
   useSettings();
   const [tab, setTab] = useState<"账期出账" | "订阅台账">("账期出账");
   const [kw, setKw] = useState("");
-  const [today, setToday] = useState("2026-11-05");
+  const [today, setToday] = useState(DEMO_TODAY);
   const [billStatus, setBillStatus] = useState<"全部" | BillStatus>("全部");
   const [scanMsg, setScanMsg] = useState<string | null>(null);
   const [expand, setExpand] = useState<string | null>(null);
@@ -58,9 +58,9 @@ export default function Billing() {
           {tab === "账期出账" && (
             <div className="flex items-center gap-2">
               <span className="text-xs text-[#4E5969]">扫描日</span>
-              <Input className="w-32" value={today} onChange={(e) => setToday(e.target.value)} placeholder="2026-11-05" />
+              <Input className="w-32" value={today} onChange={(e) => setToday(e.target.value)} placeholder={DEMO_TODAY} />
               <Button size="sm" onClick={() => {
-                const r = runBillingScan(today.trim() || "2026-11-05");
+                const r = runBillingScan(today.trim() || DEMO_TODAY);
                 setScanMsg(`扫描完成：新出账 ${r.created} 张（自动发出 ${r.auto}、例外待审 ${r.review}），跳过 ${r.skipped} 个（未到期 / 已出账 / 已退订）`);
               }}>账期扫描出账</Button>
             </div>

@@ -3,7 +3,7 @@
 // 提醒（P04-5）→ 滞纳金（P04-6，入下期账单）→ 停机执行（P04-7）→ 复机执行（P04-8，仅收讫触发）→ 坏账处理（P04-9，走 P10 审批）
 // 闭环规则：复机仅由「足额核销」自动触发，不接受人工手工复机（防绕过欠费管控）；登记错误走红冲审批（AP-04），原单留痕不可删。
 import { useSyncExternalStore } from "react";
-import { cfgNum, getCfg } from "@/data/settings";
+import { cfgNum, getCfg, DEMO_TODAY, demoNow } from "@/data/settings";
 
 // ---------- 客户账单（应收） ----------
 export type InvStatus = "已发出" | "部分收款" | "已收讫" | "逾期" | "欠停" | "坏账";
@@ -140,7 +140,7 @@ export const getCollectRecords = () => COLLECT_RECORDS;
 export const INV_BY_NO = (no: string) => RECEIVABLES.find((r) => r.invNo === no);
 export const invBalance = (inv: Receivable) => inv.amount - inv.received;
 /** 逾期天数（应收日 → 今日，未收讫才算） */
-export const overdueDays = (inv: Receivable, today = "2026-11-03") =>
+export const overdueDays = (inv: Receivable, today = DEMO_TODAY) =>
   inv.status === "已收讫" || inv.dueDate >= today ? 0 : Math.round((new Date(today).getTime() - new Date(inv.dueDate).getTime()) / 86400000);
 
 // P03-6 应收登记：客户账单「审核通过 → 发出」时由计费模块（billing.ts）调用，写入本台账（已发出）。
@@ -216,7 +216,7 @@ export function getOverduePolicy() {
 }
 
 let paySeq = 213, ticketSeq = 102, bdSeq = 4;
-const now = () => new Date().toISOString().slice(0, 16).replace("T", " ");
+const now = demoNow;
 
 // P04-1/2：收款登记 → 提交即自动核销（累计比对；足额触发复机）
 export function addPayment(data: Omit<Payment, "payNo" | "status">): string | null {
@@ -282,7 +282,7 @@ export function executeTicket(ticketNo: string, data: { action: string; result: 
 }
 
 // P04-3：欠费扫描（每日定时；原型手动触发）
-export function runOverdueScan(today = "2026-11-03"): number {
+export function runOverdueScan(today = DEMO_TODAY): number {
   let n = 0;
   RECEIVABLES.forEach((inv) => {
     if (overdueDays(inv, today) > cfgNum("overdue.graceDays") && inv.status !== "已收讫" && inv.status !== "坏账" && inv.status !== "欠停") {

@@ -6,6 +6,7 @@ import { Link, useNavigate } from "react-router";
 import { usePurchaseFlow, getReqs, addReq, closeReq, createPoFromReqs, reqToContractChange, type PurchaseReq, type ReqSource, type ReqType } from "@/data/purchaseFlow";
 import { getContracts } from "@/data/purchase";
 import { SUPPLIERS, R1_ROWS } from "@/data/resources";
+import { DEMO_TODAY } from "@/data/settings";
 import ArcoShell from "@/components/ArcoShell";
 import CenterModal from "@/components/CenterModal";
 import { Button } from "@/components/ui/button";
@@ -119,7 +120,7 @@ function ReqForm({ onClose }: { onClose: () => void }) {
     if (!(Number(f.qty) > 0)) return alert("请填写数量（> 0）");
     if ((f.type === "带宽" || f.type === "IP 段") && !f.room.trim()) return alert("带宽 / IP 类需求必须填写目标机房");
     if (!f.expectDate) return alert("请填写期望到货日");
-    if (f.expectDate <= new Date().toISOString().slice(0, 10)) return alert("期望到货日须晚于当日");
+    if (f.expectDate <= DEMO_TODAY) return alert("期望到货日须晚于当日");
     addReq({ source: f.source, type: f.type, spec: f.spec.trim(), qty: Number(f.qty), unit: f.unit, room: f.room, expectDate: f.expectDate, note: f.note || undefined });
     onClose();
   };

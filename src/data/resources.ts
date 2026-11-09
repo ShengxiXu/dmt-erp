@@ -4,6 +4,7 @@
 // 类定义字段、实例填值。本文件不再写死字段（保留 fields 仅作兜底，读取一律走 ARCHIVE_FIELDS）。
 import { useSyncExternalStore } from "react";
 import { MAT_DEF } from "./products";
+import { DEMO_TODAY } from "./settings";
 import type { FieldDef, FieldMethod } from "./products";
 export type { FieldDef, FieldMethod };
 
@@ -278,7 +279,7 @@ export function stockIn(deviceId: string, qty: number, price: number, poNo: stri
   d.dynamic.stock += qty;
   const doc: InvInDoc = {
     id: `IN-2026-${String(inSeq++).padStart(3, "0")}`,
-    deviceId, qty, price, poNo, at: new Date().toISOString().slice(0, 10), operator,
+    deviceId, qty, price, poNo, at: DEMO_TODAY, operator,
   };
   INV_IN_DOCS.push(doc);
   bumpInv();
@@ -293,7 +294,7 @@ export function stockOut(deviceId: string, qty: number, refType: InvOutDoc["refT
   const doc: InvOutDoc = {
     id: `OUT-2026-${String(invSeq++).padStart(3, "0")}`,
     deviceId, qty, costPrice: d.costPrice, refType, refId,
-    at: new Date().toISOString().slice(0, 10), operator,
+    at: DEMO_TODAY, operator,
   };
   d.dynamic.stock -= qty;
   INV_OUT_DOCS.push(doc);

@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, type ReactNode } from "react";
 import { Link, Outlet, useLocation } from "react-router";
+import { DEMO_TODAY } from "@/data/settings";
 import {
   LayoutGrid, FileText, Calculator, CheckSquare, Wrench, FolderOpen, ReceiptText, Receipt,
   Users, Lightbulb, Package, ListChecks, Boxes, Coins, Layers, Warehouse, CircleAlert,
@@ -114,9 +115,8 @@ export function ShellLayout() {
   const [crumb, setCrumb] = useState("工作台");
   const pendingCount = SHEETS.filter((s) => s.status === "审批中").length;
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
-  const now = new Date();
-  const wd = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"][now.getDay()];
-  const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")} ${wd}`;
+  const wd = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"][new Date(`${DEMO_TODAY}T00:00:00`).getDay()];
+  const dateStr = `${DEMO_TODAY} ${wd}`;
 
   return (
     <div className="flex min-h-screen bg-[#F7F8FA] text-[#1D2129]"

@@ -4,6 +4,7 @@
 //   ③ 未售出的闲置容量由全池客户按带宽占比共担（新单进来，老单分摊自然下降，这是共用模式的正常表现）。
 import { useSyncExternalStore } from "react";
 import { SOURCES } from "./catalog";
+import { demoNow } from "./settings";
 
 /** 签单时锁定的预估快照（一条 = 一单在一个出口池的占用） */
 export interface PoolEst {
@@ -51,7 +52,7 @@ export const getRuns = () => runs;
 
 /** 提交审批那一刻锁存预估快照（按出口池分组，一单一组一条） */
 export function snapshotEsts(list: Omit<PoolEst, "at">[]) {
-  const at = new Date().toISOString().slice(0, 16).replace("T", " ");
+  const at = demoNow();
   ests = [...ests, ...list.map((e) => ({ ...e, at }))];
   bump();
 }
