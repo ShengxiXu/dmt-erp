@@ -93,11 +93,11 @@ backfill("财务", ["/finance/claims"]);
 const sessionBox = persistable("session", () => ({ role: "业务支撑部" }));
 let sVersion = 0;
 const sListeners = new Set<() => void>();
+const sBump = () => { sVersion += 1; sListeners.forEach((f) => f()); };
 export const sessionRole = () => sessionBox.role;
 export function setSessionRole(role: string) {
   sessionBox.role = role;
-  sVersion += 1;
-  sListeners.forEach((f) => f());
+  sBump();
 }
 export function useSessionRole(): string {
   useSyncExternalStore(
@@ -136,6 +136,7 @@ export function saveUser(patch: Omit<User, "id" | "lastLoginAt"> & { id?: string
     USERS.unshift({ ...patch, id: `U-${String(USERS.length + 1).padStart(3, "0")}`, lastLoginAt: demoNow() });
   }
   notify({ level: "blue", group: "系统", title: "用户账号变更", text: `${patch.name}（${patch.role}）账号已${patch.id ? "更新" : "创建"}`, to: "/system/users", roles: ["系统管理员"] });
+  log(`${patch.id ? "更新" : "新建"}账号「${patch.name}」（角色：${patch.role}）`);
   uBump();
 }
 
@@ -143,6 +144,7 @@ export function toggleUserStatus(id: string) {
   const u = USERS.find((x) => x.id === id);
   if (u) {
     u.status = u.status === "启用" ? "停用" : "启用";
+    log(`${u.status === "启用" ? "启用" : "停用"}账号「${u.name}」（${u.id}）`);
     uBump();
   }
 }
@@ -158,6 +160,84 @@ export function setRoleMenu(roleName: string, menu: string, on: boolean) {
     if (i >= 0) r.menus.splice(i, 1); // 原地删，保证快照引用稳定
   }
   notify({ level: "blue", group: "系统", title: "角色权限调整", text: `「${roleName}」${on ? "开通" : "关闭"}菜单「${ALL_MENUS.find((m) => m.to === menu)?.label ?? menu}」`, to: "/system/users", roles: ["系统管理员"] });
-  sVersion += 1;
-  sListeners.forEach((f) => f());
+  sBump();
+}
+
+/** 批量勾选（按组全选/清空、快捷方案） */
+export function setRoleMenus(roleName: string, paths: string[], on: boolean) {
+  const r = ROLES.find((x) => x.name === roleName);
+  if (!r) return;
+  paths.forEach((p) => {
+    const has = r.menus.includes(p);
+    if (on && !has) r.menus.push(p);
+    if (!on && has) r.menus.splice(r.menus.indexOf(p), 1);
+  });
+  notify({ level: "blue", group: "系统", title: "角色权限调整", text: `「${roleName}」批量${on ? "开通" : "关闭"} ${paths.length} 项菜单`, to: "/system/users", roles: ["系统管理员"] });
+  sBump();
+}
+
+// ---------- 角色管理与操作日志 ----------
+export interface PermLog { at: string; actor: string; action: string; }
+export const PERM_LOGS: PermLog[] = persistable("permLogs", () => []);
+const log = (action: string) => {
+  PERM_LOGS.unshift({ at: demoNow(), actor: sessionBox.role, action });
+  if (PERM_LOGS.length > 50) PERM_LOGS.length = 50; // 原地截断，保持快照引用稳定
+};
+
+export const roleMembers = (name: string) => USERS.filter((u) => u.role === name && u.status === "启用").length;
+
+/** 新建 / 更新角色（oldName 存在 = 改名/改职责；改名同步迁移其用户与会话） */
+export function saveRole(patch: { oldName?: string; name: string; desc: string }): string | null {
+  const name = patch.name.trim();
+  if (!name) return "角色名不能为空";
+  if (patch.oldName) {
+    const r = ROLES.find((x) => x.name === patch.oldName);
+    if (!r) return "角色不存在";
+    if (name !== patch.oldName && ROLES.some((x) => x.name === name)) return "角色名已存在";
+    if (name !== patch.oldName) {
+      USERS.forEach((u) => { if (u.role === patch.oldName) u.role = name; });
+      if (sessionBox.role === patch.oldName) sessionBox.role = name;
+      log(`角色「${patch.oldName}」更名为「${name}」`);
+    }
+    r.name = name;
+    r.desc = patch.desc.trim() || r.desc;
+    log(`角色「${name}」职责更新`);
+  } else {
+    if (ROLES.some((x) => x.name === name)) return "角色名已存在";
+    ROLES.push({ name, desc: patch.desc.trim() || "（未填写职责说明）", builtin: false, menus: ["/workbench"] });
+    log(`新建角色「${name}」（默认仅工作台，请到权限矩阵配置菜单）`);
+  }
+  notify({ level: "blue", group: "系统", title: "角色变更", text: `角色「${name}」已${patch.oldName ? "更新" : "创建"}`, to: "/system/users", roles: ["系统管理员"] });
+  sBump();
+  uBump();
+  return null;
+}
+
+/** 删除自定义角色（内置不可删；有成员不可删） */
+export function deleteRole(name: string): string | null {
+  const r = ROLES.find((x) => x.name === name);
+  if (!r) return "角色不存在";
+  if (r.builtin) return "内置角色不可删除";
+  const n = USERS.filter((u) => u.role === name).length;
+  if (n > 0) return `该角色下还有 ${n} 个账号，请先调整这些用户的角色`;
+  const i = ROLES.findIndex((x) => x.name === name);
+  ROLES.splice(i, 1);
+  log(`删除角色「${name}」`);
+  notify({ level: "orange", group: "系统", title: "角色已删除", text: `角色「${name}」已删除`, to: "/system/users", roles: ["系统管理员"] });
+  sBump();
+  return null;
+}
+
+/** 复制角色（菜单权限整套复制，快速派生新角色） */
+export function duplicateRole(srcName: string, newName: string): string | null {
+  const src = ROLES.find((x) => x.name === srcName);
+  const name = newName.trim();
+  if (!src) return "源角色不存在";
+  if (!name) return "新角色名不能为空";
+  if (ROLES.some((x) => x.name === name)) return "角色名已存在";
+  ROLES.push({ name, desc: `${src.desc}（复制自「${srcName}」，可按需调整）`, builtin: false, menus: [...src.menus] });
+  log(`复制角色「${srcName}」→ 新建「${name}」（${src.menus.length} 项菜单）`);
+  notify({ level: "blue", group: "系统", title: "角色复制", text: `已由「${srcName}」复制创建「${name}」`, to: "/system/users", roles: ["系统管理员"] });
+  sBump();
+  return null;
 }
