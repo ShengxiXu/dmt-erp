@@ -9,7 +9,7 @@ import CenterModal from "@/components/CenterModal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  ROLES, USERS, ALL_MENUS, PERM_LOGS, saveUser, saveRole, deleteRole, duplicateRole,
+  ROLES, USERS, ALL_MENUS, PERM_LOGS, DEPARTMENTS, saveUser, saveRole, deleteRole, duplicateRole,
   setRoleMenu, setRoleMenus, toggleUserStatus, setSessionRole, roleMembers, useSessionRole, useUsers,
   DATA_SCOPE_DESC, type DataScope, type User,
 } from "@/data/users";
@@ -31,7 +31,7 @@ export default function SystemUsers() {
   const save = () => {
     if (!editing?.name?.trim() || !editing?.role) return;
     saveUser({
-      name: editing.name.trim(), role: editing.role, phone: editing.phone ?? "",
+      name: editing.name.trim(), role: editing.role, dept: editing.dept ?? DEPARTMENTS[0], phone: editing.phone ?? "",
       email: editing.email, status: editing.status ?? "启用", id: editing.id,
       lastLoginAt: editing.lastLoginAt,
     });
@@ -51,7 +51,7 @@ export default function SystemUsers() {
             </div>
           </div>
           {tab === "users" && (
-            <Button size="sm" onClick={() => setEditing({ name: "", role: ROLES[0]?.name ?? "业务支撑部", phone: "", email: "", status: "启用" })}>
+            <Button size="sm" onClick={() => setEditing({ name: "", role: ROLES[0]?.name ?? "业务支撑部", dept: DEPARTMENTS[0], phone: "", email: "", status: "启用" })}>
               <UserPlus size={13} className="mr-1" /> 新建用户
             </Button>
           )}
@@ -79,7 +79,7 @@ export default function SystemUsers() {
 
       {/* 新建 / 编辑用户 */}
       {editing && (
-        <CenterModal title={editing.id ? `编辑用户 · ${editing.id}` : "新建用户"} sub="用户归属角色后即拥有该角色的菜单权限" width={520} onClose={() => setEditing(null)}>
+        <CenterModal title={editing.id ? `编辑用户 · ${editing.id}` : "新建用户"} sub="角色决定可见菜单（功能权限）；部门是组织归属，决定数据权限中「本部门」的范围" width={520} onClose={() => setEditing(null)}>
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -103,11 +103,19 @@ export default function SystemUsers() {
                 <Input value={editing.email ?? ""} onChange={(e) => setEditing({ ...editing, email: e.target.value })} />
               </div>
             </div>
-            <div>
-              <div className="mb-0.5 text-xs text-[#4E5969]">状态</div>
-              <select className="w-full rounded-[2px] border border-[#E5E6EB] bg-white px-2 py-1.5 text-sm" value={editing.status ?? "启用"} onChange={(e) => setEditing({ ...editing, status: e.target.value as User["status"] })}>
-                <option>启用</option><option>停用</option>
-              </select>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <div className="mb-0.5 text-xs text-[#4E5969]">部门 <span className="text-[#F53F3F]">*</span></div>
+                <select className="w-full rounded-[2px] border border-[#E5E6EB] bg-white px-2 py-1.5 text-sm" value={editing.dept ?? DEPARTMENTS[0]} onChange={(e) => setEditing({ ...editing, dept: e.target.value })}>
+                  {DEPARTMENTS.map((d) => <option key={d} value={d}>{d}</option>)}
+                </select>
+              </div>
+              <div>
+                <div className="mb-0.5 text-xs text-[#4E5969]">状态</div>
+                <select className="w-full rounded-[2px] border border-[#E5E6EB] bg-white px-2 py-1.5 text-sm" value={editing.status ?? "启用"} onChange={(e) => setEditing({ ...editing, status: e.target.value as User["status"] })}>
+                  <option>启用</option><option>停用</option>
+                </select>
+              </div>
             </div>
             <div className="flex justify-end gap-2 border-t border-[#F2F3F5] pt-3">
               <Button variant="outline" size="sm" onClick={() => setEditing(null)}>取消</Button>
@@ -169,7 +177,7 @@ export default function SystemUsers() {
 
       {/* 用户权限预览 */}
       {preview && (
-        <CenterModal title={`权限预览 · ${preview.name}`} sub={`${preview.id} · 角色「${preview.role}」`} width={560} onClose={() => setPreview(null)}>
+        <CenterModal title={`权限预览 · ${preview.name}`} sub={`${preview.id} · 部门「${preview.dept}」 · 角色「${preview.role}」`} width={560} onClose={() => setPreview(null)}>
           <PreviewBody user={preview} onClose={() => setPreview(null)} />
         </CenterModal>
       )}
@@ -181,12 +189,14 @@ export default function SystemUsers() {
 function UsersTab({ onEdit, onPreview }: { onEdit: (u: User) => void; onPreview: (u: User) => void }) {
   const [kw, setKw] = useState("");
   const [fRole, setFRole] = useState("全部");
+  const [fDept, setFDept] = useState("全部");
   const [fStatus, setFStatus] = useState("全部");
 
   const rows = USERS.filter((u) => {
     if (fRole !== "全部" && u.role !== fRole) return false;
+    if (fDept !== "全部" && u.dept !== fDept) return false;
     if (fStatus !== "全部" && u.status !== fStatus) return false;
-    if (kw && ![u.name, u.id, u.phone, u.email ?? ""].some((x) => x.includes(kw))) return false;
+    if (kw && ![u.name, u.id, u.phone, u.email ?? "", u.dept].some((x) => x.includes(kw))) return false;
     return true;
   });
 
@@ -212,6 +222,10 @@ function UsersTab({ onEdit, onPreview }: { onEdit: (u: User) => void; onPreview:
           <option>全部</option>
           {ROLES.map((r) => <option key={r.name}>{r.name}</option>)}
         </select>
+        <select className="rounded-[2px] border border-[#E5E6EB] bg-white px-2 py-1.5 text-xs" value={fDept} onChange={(e) => setFDept(e.target.value)}>
+          <option>全部</option>
+          {DEPARTMENTS.map((d) => <option key={d}>{d}</option>)}
+        </select>
         <select className="rounded-[2px] border border-[#E5E6EB] bg-white px-2 py-1.5 text-xs" value={fStatus} onChange={(e) => setFStatus(e.target.value)}>
           <option>全部</option><option>启用</option><option>停用</option>
         </select>
@@ -222,7 +236,7 @@ function UsersTab({ onEdit, onPreview }: { onEdit: (u: User) => void; onPreview:
         <table className="w-full text-xs">
           <thead>
             <tr className="border-b bg-[#F7F8FA] text-left text-[#4E5969]">
-              <th className="px-3 py-2">账号</th><th className="px-3 py-2">姓名</th><th className="px-3 py-2">角色</th>
+              <th className="px-3 py-2">账号</th><th className="px-3 py-2">姓名</th><th className="px-3 py-2">部门</th><th className="px-3 py-2">角色</th>
               <th className="px-3 py-2">联系方式</th><th className="px-3 py-2">最近登录</th><th className="px-3 py-2">状态</th><th className="px-3 py-2 text-right">操作</th>
             </tr>
           </thead>
@@ -231,6 +245,9 @@ function UsersTab({ onEdit, onPreview }: { onEdit: (u: User) => void; onPreview:
               <tr key={u.id} className="border-b last:border-0 hover:bg-[#F7F8FA]">
                 <td className="px-3 py-2.5 font-mono text-[#86909C]">{u.id}</td>
                 <td className="px-3 py-2.5 font-medium text-[#1D2129]">{u.name}</td>
+                <td className="px-3 py-2.5">
+                  <span className="rounded-[2px] bg-[#F2F3F5] px-1.5 py-0.5 text-[11px] text-[#4E5969]">{u.dept}</span>
+                </td>
                 <td className="px-3 py-2.5">
                   <span className="rounded-[2px] bg-[#F0F5FF] px-1.5 py-0.5 text-[11px] text-[#165DFF]">{u.role}</span>
                 </td>
@@ -248,13 +265,13 @@ function UsersTab({ onEdit, onPreview }: { onEdit: (u: User) => void; onPreview:
                 </td>
               </tr>
             ))}
-            {!rows.length && <tr><td colSpan={7} className="px-3 py-10 text-center text-[#86909C]">无匹配账号</td></tr>}
+            {!rows.length && <tr><td colSpan={8} className="px-3 py-10 text-center text-[#86909C]">无匹配账号</td></tr>}
           </tbody>
         </table>
       </div>
       <div className="rounded-[4px] border border-[#E5E6EB] bg-white px-4 py-2.5 text-[11px] leading-5 text-[#86909C]">
-        用户归属角色，角色决定可见菜单（权限矩阵页签维护）。停用账号即时失去入口；
-        演示环境的「角色」等同正式环境的登录账号，工作台右上可切换演示角色体验不同权限视图。
+        用户同时挂「部门」与「角色」：部门 = 组织归属，决定数据权限中「本部门数据」的范围；角色 = 菜单权限 + 数据范围模板（权限矩阵页签维护）。
+        一人多岗时给账号配多个角色（后续版本支持）；停用账号即时失去入口；演示环境工作台右上可切换演示角色体验不同权限视图。
       </div>
     </>
   );

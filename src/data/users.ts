@@ -1,6 +1,8 @@
-// 用户与角色（权限体系）：会话角色 / 角色权限（菜单粒度）/ 用户账号
+// 用户与角色（权限体系）：会话角色 / 角色权限（菜单粒度）/ 用户账号 / 部门
 // 口径：
 //   - 权限粒度 = 菜单 path（含子菜单），与 navConfig.ts 一一对应；导航过滤与路由守卫共用 allowed()
+//   - 「角色」与「部门」是两个概念：角色 = 菜单权限 + 数据范围模板；部门 = 组织归属，挂在用户档案上
+//   - 数据权限三档判定：仅本人 → 归属人 = 本人；本部门 → 归属人所在部门 = 本人所在部门（按用户档案 dept，不看角色）；全部 → 不限制
 //   - 会话角色全局唯一（演示：顶栏/工作台切换，刷新保留）；正式环境对应登录用户的角色
 //   - 角色、用户均持久化；权限矩阵调整即时生效（新发起的单据/下一次导航按最新权限）
 import { useSyncExternalStore } from "react";
@@ -10,7 +12,7 @@ import { notify } from "@/data/notices";
 import { NAV_GROUPS } from "@/components/navConfig";
 
 export interface Role {
-  name: string;            // 角色名（唯一标识：业务支撑部 / 技术部 / 财务 / 管理层 / 销售部 / 系统管理员）
+  name: string;            // 角色名（唯一标识：业务支撑部 / 技术部 / 财务 / 管理层 / 销售部 / 系统管理员）—— 角色 ≠ 部门，部门挂在用户档案上
   desc: string;            // 职责说明
   menus: string[];         // 可见菜单 path（含子菜单）= 功能权限
   dataScope: DataScope;    // 数据权限：可见数据范围（本人 / 本部门 / 全部）
@@ -19,13 +21,16 @@ export interface Role {
 export type DataScope = "全部数据" | "本部门数据" | "仅本人数据";
 export const DATA_SCOPE_DESC: Record<DataScope, string> = {
   全部数据: "可见全公司该模块的全部数据",
-  本部门数据: "仅可见本部门（同角色）成员名下的数据",
+  本部门数据: "仅可见与本人同部门（按用户档案中的所属部门判定，与角色无关）成员名下的数据",
   仅本人数据: "仅可见本人名下的数据（客户/商机等的归属人 = 本人）",
 };
+/** 部门（组织归属）：挂在用户档案上，与角色解耦；数据权限中的「本部门」按此判定 */
+export const DEPARTMENTS = ["业务支撑部", "技术部", "财务部", "销售部", "综合管理部"];
 export interface User {
   id: string;              // U-xxx
   name: string;
-  role: string;            // 角色名（= Role.name）
+  role: string;            // 角色名（= Role.name）—— 决定菜单权限与数据范围模板
+  dept: string;            // 所属部门（= DEPARTMENTS 之一）—— 决定「本部门数据」范围
   phone: string;
   email?: string;
   status: "启用" | "停用";
@@ -73,15 +78,19 @@ export const ROLES: Role[] = persistable("roles", () => [
 
 // ---------- 用户账号 ----------
 export const USERS: User[] = persistable("users", () => [
-  { id: "U-001", name: "许晟熙", role: "业务支撑部", phone: "138-0000-0101", email: "xusx@dmt.example", status: "启用", lastLoginAt: "2026-11-10 08:52" },
-  { id: "U-002", name: "张弛", role: "销售部", phone: "138-0000-0102", email: "zhangchi@dmt.example", status: "启用", lastLoginAt: "2026-11-09 18:20" },
-  { id: "U-003", name: "李骁", role: "销售部", phone: "138-0000-0103", email: "lixiao@dmt.example", status: "启用", lastLoginAt: "2026-11-08 09:41" },
-  { id: "U-004", name: "周远", role: "技术部", phone: "138-0000-0104", email: "zhouyuan@dmt.example", status: "启用", lastLoginAt: "2026-11-10 09:05" },
-  { id: "U-005", name: "陈静", role: "财务", phone: "138-0000-0105", email: "chenjing@dmt.example", status: "启用", lastLoginAt: "2026-11-10 08:47" },
-  { id: "U-006", name: "赵鹏", role: "管理层", phone: "138-0000-0106", email: "zhaopeng@dmt.example", status: "启用", lastLoginAt: "2026-11-07 14:12" },
-  { id: "U-007", name: "王芳", role: "系统管理员", phone: "138-0000-0107", email: "wangfang@dmt.example", status: "启用", lastLoginAt: "2026-11-09 16:33" },
-  { id: "U-008", name: "王敏", role: "技术部", phone: "138-0000-0108", email: "wangmin@dmt.example", status: "启用", lastLoginAt: "2026-11-06 11:26" },
+  { id: "U-001", name: "许晟熙", role: "业务支撑部", dept: "业务支撑部", phone: "138-0000-0101", email: "xusx@dmt.example", status: "启用", lastLoginAt: "2026-11-10 08:52" },
+  { id: "U-002", name: "张弛", role: "销售部", dept: "销售部", phone: "138-0000-0102", email: "zhangchi@dmt.example", status: "启用", lastLoginAt: "2026-11-09 18:20" },
+  { id: "U-003", name: "李骁", role: "销售部", dept: "销售部", phone: "138-0000-0103", email: "lixiao@dmt.example", status: "启用", lastLoginAt: "2026-11-08 09:41" },
+  { id: "U-004", name: "周远", role: "技术部", dept: "技术部", phone: "138-0000-0104", email: "zhouyuan@dmt.example", status: "启用", lastLoginAt: "2026-11-10 09:05" },
+  { id: "U-005", name: "陈静", role: "财务", dept: "财务部", phone: "138-0000-0105", email: "chenjing@dmt.example", status: "启用", lastLoginAt: "2026-11-10 08:47" },
+  { id: "U-006", name: "赵鹏", role: "管理层", dept: "综合管理部", phone: "138-0000-0106", email: "zhaopeng@dmt.example", status: "启用", lastLoginAt: "2026-11-07 14:12" },
+  { id: "U-007", name: "王芳", role: "系统管理员", dept: "综合管理部", phone: "138-0000-0107", email: "wangfang@dmt.example", status: "启用", lastLoginAt: "2026-11-09 16:33" },
+  { id: "U-008", name: "王敏", role: "技术部", dept: "技术部", phone: "138-0000-0108", email: "wangmin@dmt.example", status: "启用", lastLoginAt: "2026-11-06 11:26" },
 ]);
+
+// ---------- 旧快照回填：用户补所属部门（部门与角色解耦前的快照没有 dept，按角色推断） ----------
+const DEPT_BY_ROLE: Record<string, string> = { 业务支撑部: "业务支撑部", 技术部: "技术部", 财务: "财务部", 销售部: "销售部" };
+USERS.forEach((u) => { if (!u.dept) u.dept = DEPT_BY_ROLE[u.role] ?? "综合管理部"; });
 
 // ---------- 兼容旧快照：版本新增菜单的回填（老快照角色 menus 里没有后加的 path） ----------
 const backfill = (roleName: string, paths: string[]) => {
@@ -263,20 +272,22 @@ export const dataScopeOf = (roleName?: string): DataScope =>
   ROLES.find((r) => r.name === (roleName ?? sessionBox.role))?.dataScope ?? "全部数据";
 /**
  * 归属人是否在当前数据范围内。
- * 口径：全部数据 → 全可见；仅本人 → 归属人 = 当前演示身份；本部门 → 归属人是同部门（同角色）任一启用成员；
+ * 口径：全部数据 → 全可见；仅本人 → 归属人 = 当前演示身份；本部门 → 归属人所在部门 = 本人所在部门（按用户档案 dept 判定，与角色无关）；
  * 无归属人的记录仅「全部数据」可见（收敛默认，防越权）。
  */
+export const deptOf = (name: string): string | undefined => USERS.find((u) => u.name === name)?.dept;
 export function inDataScope(owner: string | undefined): boolean {
   const scope = dataScopeOf();
   if (scope === "全部数据") return true;
   if (!owner) return false;
   if (scope === "仅本人数据") return owner === currentUser()?.name;
-  return USERS.some((u) => u.role === sessionBox.role && u.status === "启用" && u.name === owner);
+  const cur = currentUser();
+  return !!cur && deptOf(owner) === cur.dept;
 }
 /** 数据范围横幅文案（列表页头提示用；全部数据返回 null 不显示） */
 export function scopeBanner(hidden: number): string | null {
   const scope = dataScopeOf();
   if (scope === "全部数据") return null;
-  const who = scope === "仅本人数据" ? `当前身份：${currentUser()?.name ?? "—"}` : "含本部门全部成员名下数据";
+  const who = scope === "仅本人数据" ? `当前身份：${currentUser()?.name ?? "—"}` : `当前部门：${currentUser()?.dept ?? "—"}`;
   return `数据范围：${scope} · ${who}${hidden > 0 ? ` · 已隐藏 ${hidden} 条范围外数据` : ""}`;
 }
