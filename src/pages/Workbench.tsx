@@ -12,9 +12,12 @@ import { RECEIVABLES } from "@/data/receivables";
 import { promiseBroken, promiseOverDays, dueFollowUps } from "@/data/finance";
 import { R1_ROWS } from "@/data/resources";
 import { getBatches, useSettle } from "@/data/settle";
-import { useSessionRole, setSessionRole } from "@/data/users";
+import { useSessionRole, setSessionRole, USERS } from "@/data/users";
+import { getNotices, unreadCount, useNotices } from "@/data/notices";
+import { bills } from "@/data/bills";
+import { BILL_EMAILS } from "@/data/billEmails";
 
-const ROLES = ["业务支撑部", "技术部", "财务", "管理层"] as const;
+const ROLES = ["业务支撑部", "技术部", "财务", "管理层", "系统管理员"] as const;
 type Role = (typeof ROLES)[number];
 
 const fmtWan = (n: number) => (n >= 10000 ? `${(n / 10000).toFixed(1)} 万` : n.toLocaleString("zh-CN"));
@@ -83,6 +86,20 @@ function buildTodos(role: Role): Todo[] {
         t.push({ title: `逾期 / 欠停应收合计 ${fmtWan(overdueSum)} 元`, sub: `${overdueInv.length} 笔 · ${overdueInv.map((r) => r.customer).join("、")}`, link: "/finance/overdue", cta: "查看" });
       return t;
     }
+    case "系统管理员": {
+      const t: Todo[] = [];
+      const un = unreadCount();
+      if (un) t.push({ title: `${un} 条未读通知`, sub: `最近：${getNotices()[0]?.title ?? "—"}（${getNotices()[0]?.at.slice(5) ?? ""}）`, link: "/notifications", cta: "去查看", hot: true });
+      approving.forEach((s) =>
+        t.push({ title: `核算单 ${s.id} · ${s.customer}`, sub: `审批中 · 当前节点：${s.curNode ?? "—"}`, link: `/approval?id=${s.id}`, cta: "去审批" }));
+      const pendBill = bills.filter((b) => b.status === "待入账").length;
+      if (pendBill) t.push({ title: `${pendBill} 张账单待入账`, sub: "含邮件导入的运营商账单，确认后归集成本中心", link: "/bills", cta: "去入账" });
+      const pendMail = BILL_EMAILS.filter((e) => e.status === "未导入").length;
+      if (pendMail) t.push({ title: `${pendMail} 封账单邮件未处理`, sub: "运营商账单邮件：解析 → 核对 → 差异调整 → 导入", link: "/bills", cta: "去处理" });
+      const stopped = USERS.filter((u) => u.status === "停用").length;
+      t.push({ title: `账号与权限巡检（${USERS.length} 个账号）`, sub: `${USERS.length - stopped} 启用 / ${stopped} 停用 · 权限矩阵调整即时生效`, link: "/system/users", cta: "去配置" });
+      return t;
+    }
   }
 }
 
@@ -98,6 +115,7 @@ export default function Workbench() {
   const role = useSessionRole() as Role; // 全局会话角色：与侧边栏导航过滤 / 路由守卫联动（在工作台切换，刷新保留）
   const setRole = (r: Role) => setSessionRole(r);
   useSettle(); // 跑完月结回来，月结相关卡片自动刷新
+  useNotices(); // 通知变更时，管理员 KPI（未读通知）自动刷新
 
   const now = new Date(); // 时刻取真实时钟（问候语）；日期一律用演示基准日
   const wd = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"][new Date(`${DEMO_TODAY}T00:00:00`).getDay()];
@@ -148,6 +166,12 @@ export default function Workbench() {
       { label: "审批中月成本", value: `${fmtWan(approvingCost)} 元/月`, delta: `${approving.length} 单在审`, good: true, to: "/approval" },
       { label: "逾期应收", value: `${fmtWan(overdueSum)} 元`, delta: `${overdueInv.length} 笔逾期 / 欠停`, good: false, to: "/finance/overdue" },
       { label: "出口池平均利用率", value: `${avgPool}%`, delta: `${R1_ROWS.length} 条出口`, good: true, to: "/resources/r1" },
+    ],
+    系统管理员: [
+      { label: "启用账号", value: `${USERS.filter((u) => u.status === "启用").length} 个`, delta: `共 ${USERS.length} 个账号`, good: true, to: "/system/users" },
+      { label: "未读通知", value: `${unreadCount()} 条`, delta: "消息通知中心", good: unreadCount() === 0, to: "/notifications" },
+      { label: "待入账账单", value: `${bills.filter((b) => b.status === "待入账").length} 张`, delta: "含邮件导入待确认", good: true, to: "/bills" },
+      { label: "审批中核算单", value: `${approving.length} 单`, delta: "审批中心", good: true, to: "/approval" },
     ],
   };
 
@@ -237,6 +261,7 @@ export default function Workbench() {
                 {role === "技术部" && <>{todos.length} 项待办：核算单技术条目、在途工单处理。工单从「开通工单」列表按 deadline 推进。</>}
                 {role === "财务" && <>{approving.length} 张核算单待审批，逾期应收 {fmtWan(overdueSum)} 元。审批在「审批中心」处理，月结在「月结」页跑批。</>}
                 {role === "管理层" && <>经营概览：逾期应收 {fmtWan(overdueSum)} 元，{SHEETS.filter((s) => s.margin < 45).length} 张核算单毛利低于阈值。</>}
+                {role === "系统管理员" && <>系统概览：{USERS.length} 个账号、{unreadCount()} 条未读通知、{approving.length} 单在审。用户与角色、审批流、策略参数在「系统管理」维护，权限调整即时生效。</>}
               </p>
             </div>
             {/* 毛玻璃数据块（纯展示，不做入口） */}
@@ -371,6 +396,29 @@ export default function Workbench() {
                   ))}
                 </div>
                 <p className="mt-4 text-[12px] leading-5 text-[#86909C]">七个节点：可用性检查 → 分配申请 → 分配审批 → 绑定扣减 → 实施 → 确认 → 激活计费</p>
+              </>)}
+              {role === "系统管理员" && (<>
+                <div className="mb-4 flex items-center justify-between">
+                  <h2 className="flex items-center gap-2.5 text-[17px] font-semibold tracking-tight text-[#1D2129]">
+                    <span className="h-4 w-1 rounded-full bg-gradient-to-b from-[#6366F1] to-[#A78BFA]" />系统运行概况
+                  </h2>
+                  <Link to="/system/users" className="text-[13px] text-[#165DFF] hover:underline">用户与角色 →</Link>
+                </div>
+                <div className="space-y-2.5 text-[13px]">
+                  {[
+                    ["启用账号", `${USERS.filter((u) => u.status === "启用").length} / ${USERS.length}`, "/system/users"],
+                    ["未读通知", `${unreadCount()} 条`, "/notifications"],
+                    ["待入账账单", `${bills.filter((b) => b.status === "待入账").length} 张`, "/bills"],
+                    ["未处理账单邮件", `${BILL_EMAILS.filter((e) => e.status === "未导入").length} 封`, "/bills"],
+                    ["审批中核算单", `${approving.length} 单`, "/approval"],
+                  ].map(([k, v, to]) => (
+                    <Link key={k} to={to} className="group flex items-center justify-between rounded-[4px] px-2 py-1.5 hover:bg-[#F7F8FA]">
+                      <span className="text-[#4E5969]">{k}</span>
+                      <span className="font-mono font-medium text-[#1D2129] group-hover:text-[#165DFF]">{v}</span>
+                    </Link>
+                  ))}
+                </div>
+                <p className="mt-4 text-[12px] leading-5 text-[#86909C]">权限矩阵调整即时生效；审批流在「审批流配置」，参数在「策略中心」维护</p>
               </>)}
               {(role === "财务" || role === "管理层") && (<>
                 <div className="mb-4 flex items-center justify-between">
