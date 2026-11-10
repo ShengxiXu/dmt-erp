@@ -5,7 +5,7 @@ import { useSearchParams, useNavigate, Link } from "react-router";
 import { CONTRACTS, ONLINE_STEPS, OFFLINE_STEPS, fmtMoney, checkDiscount, SPECIALS, daysToEnd, type Contract } from "@/data/contracts";
 import { GET_OPP, updateOpp } from "@/data/customers";
 import { ENTITY_BY_ID } from "@/data/entities";
-import { useBilling, getBills, getSubscriptions, periodOf, dueDateOf, fmtD } from "@/data/billing";
+import { useBilling, getBills, getSubscriptions, updateSubscription, periodOf, dueDateOf, fmtD } from "@/data/billing";
 import { useReceivables, getInvoices } from "@/data/receivables";
 import { useSettings } from "@/data/settings";
 import { DEMO_TODAY } from "@/data/settings";
@@ -87,6 +87,16 @@ export default function ContractDetail() {
       update({ status: "已生效", step: 4 });
       // 合同生效 → 关联商机自动「赢单」关闭（客户 → 商机 → 特批 → 合同 链路闭环）
       if (c.dealId) updateOpp(c.dealId, { stage: "赢单" });
+      // 续签衔接：续签合同生效时，源合同自动「已终止」+ 版本留痕，其订阅置「退订」停止出账（防新旧合同双算）
+      if (c.renewOf) {
+        const srcContract = CONTRACTS.find((x) => x.id === c.renewOf);
+        if (srcContract && srcContract.status === "已生效") {
+          srcContract.status = "已终止";
+          srcContract.terminateReason = `到期续签由 ${c.id} 承接（自动终止，停止出账）`;
+          srcContract.versions.push({ v: srcContract.versions.length + 1, note: `合同到期续签：由新合同 ${c.id} 承接，本合同自动终止并停止订阅出账`, at: DEMO_TODAY });
+          getSubscriptions().filter((s) => s.contractNo === srcContract.id).forEach((s) => updateSubscription(s.subNo, { status: "退订" }));
+        }
+      }
     } else if (c.step === 0) {
       update({ status: "签署中", step: 1 });
     } else {

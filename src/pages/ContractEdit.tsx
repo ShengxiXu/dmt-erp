@@ -107,7 +107,8 @@ export default function ContractEdit() {
     const id = `HT-2026-0${30 + CONTRACTS.length}`;
     const discount = Number(base.discount) || 0;
     CONTRACTS.unshift({
-      id, customer: base.customer, entityId: base.entityId, dealId: base.dealId, specialId: base.specialId || undefined,
+      id, customer: base.customer, entityId: base.entityId, dealId: base.dealId,
+      ...(renewSrc ? { renewOf: renewSrc } : {}), specialId: base.specialId || undefined,
       discount, terms: base.terms || undefined,
       seal: base.seal, pay: base.pay, start: base.start, end: base.end, amount,
       status: "审批中", step: 0,

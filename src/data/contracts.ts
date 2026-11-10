@@ -80,6 +80,7 @@ export interface Contract {
   id: string; customer: string;
   entityId?: string;        // 签约主体（分子公司；决定合同抬头、用印、销方税号、收款账户）
   dealId?: string;          // 关联商机（客户 → 商机 → 特批 → 合同；合同生效后商机自动「赢单」关闭）
+  renewOf?: string;         // 续签来源合同号（发起续签带入；新合同生效时源合同自动「已终止」并停其订阅出账，防双算）
   specialId?: string; discount: number; terms?: string;
   seal: SealChannel; pay: "月付" | "季度付" | "半年付" | "年付";
   start: string; end: string; amount: number;
