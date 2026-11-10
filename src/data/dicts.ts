@@ -1,6 +1,7 @@
 // 计价字典：跨资源共用的计价规则（价格规则下沉后，条目库只保留这类「不带具体资源」的规则）
 // 当前收录：工时费率（开通实施 / 安装调测 / 运维投入共用一条费率线）。
 // 具体资源的价格（月租 / 单价 / 采购价）挂在 R1~R4 资源档案与采购合同上，不进本字典。
+import { persistable } from "@/data/persist";
 import { useSyncExternalStore } from "react";
 
 export interface EngineerRate {
@@ -11,10 +12,10 @@ export interface EngineerRate {
   remark?: string;
 }
 
-export const ENGINEER_RATES: EngineerRate[] = [
+export const ENGINEER_RATES: EngineerRate[] = persistable("engineerRates", () => [
   { role: "网络工程师（实施 / 运维）", rate: 800, effect: "2026-01-01", status: "启用", remark: "开通实施与安装调测共用" },
   { role: "高级工程师（方案 / 割接）", rate: 1200, effect: "2026-01-01", status: "启用", remark: "重大割接、疑难方案评审" },
-];
+]);
 
 let version = 0;
 const listeners = new Set<() => void>();

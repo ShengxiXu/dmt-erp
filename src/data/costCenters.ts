@@ -2,6 +2,7 @@
 // 两步法：间接费用先按「归属成本中心」归集（月费用来自供应商账单 / 折旧摊销录入）
 //         月末按「分配动因」算分配率切分到各订单（月结运行，差异留中心滚动，不追溯订单）
 // 与直接成本的分工：直接成本 = BOM 物料上的条目，随单实时算；间接成本 = 本中心归集，月结按所选分法分配。
+import { persistable } from "@/data/persist";
 import { useSyncExternalStore } from "react";
 
 /** 月结记录：真实账单到达后按同一动因重算，差异留中心滚动（只增不改） */
@@ -56,7 +57,7 @@ export const DRIVER_SENTENCE = (c: Pick<CostCenter, "name" | "driverKey" | "form
 };
 
 // ---------- 预置成本中心（对齐现有间接费用条目：BGP 平台 / 维保 / 监控 / 云许可 / SLA 冗余） ----------
-let centers: CostCenter[] = [
+const centers: CostCenter[] = persistable("costCenters", () => [
   { id: "CC-01", name: "出口调度平台", itemKeys: ["t4"], driverKey: "bw", driver: "按带宽占比分",
     formula: "出口调度平台当月费用 × 本单带宽 ÷ 出口调度平台当月总售出带宽",
     settleRuns: [{ period: "2026-09", estCost: 12500, realCost: 13000, diff: 500, status: "差异留中心滚动", runAt: "2026-10-08" }] },
@@ -68,7 +69,7 @@ let centers: CostCenter[] = [
     formula: "云平台运营当月费用 × 本单占用节点数 ÷ 当月节点总数" },
   { id: "CC-05", name: "SLA 保障", itemKeys: ["t10"], driverKey: "cap", driver: "按容量占比分",
     formula: "SLA 保障当月费用 × 本单占用容量 ÷ 总容量（已单独采购的计 0）" },
-];
+]);
 
 // ---------- 轻量 store ----------
 let version = 0;
@@ -93,13 +94,16 @@ export const CC_NAME = (id?: string) => (id ? (CC_DEF(id)?.name ?? id) : "");
 
 /** 新增 / 更新成本中心 */
 export function saveCenter(c: CostCenter) {
-  centers = centers.some((x) => x.id === c.id) ? centers.map((x) => (x.id === c.id ? c : x)) : [...centers, c];
+  const i = centers.findIndex((x) => x.id === c.id);
+  if (i >= 0) Object.assign(centers[i], c);
+  else centers.push(c);
   bump();
 }
-let seq = centers.length + 1;
+// 编号计数器用 box 持久化（快照捕获的是引用，基本类型 reassignment 会丢）
+const seqBox = persistable("costCenters.seq", () => ({ v: centers.length + 1 }));
 /** 新建成本中心（编号自动 CC-xx） */
 export function addCenter(patch: Omit<CostCenter, "id">): string {
-  const id = `CC-${String(seq++).padStart(2, "0")}`;
+  const id = `CC-${String(seqBox.v++).padStart(2, "0")}`;
   saveCenter({ id, status: "启用", ...patch });
   return id;
 }

@@ -16,7 +16,8 @@ export interface Entity {
 }
 
 // ---------- 预置主体（演示数据） ----------
-export const ENTITIES: Entity[] = [
+import { persistable } from "@/data/persist";
+export const ENTITIES: Entity[] = persistable("entities", () => [
   {
     id: "ENT-HQ", shortName: "地面通信息（上海总部）", fullName: "上海地面通信息技术有限公司",
     nature: "法人公司", taxNo: "91310104MA1FR8Q42A",
@@ -50,7 +51,7 @@ export const ENTITIES: Entity[] = [
     ],
     status: "启用",
   },
-];
+]);
 
 export const ENTITY_BY_ID = (id?: string) => ENTITIES.find((e) => e.id === id) ?? ENTITIES[0];
 export const ENTITY_NAME = (id?: string) => ENTITY_BY_ID(id).shortName;

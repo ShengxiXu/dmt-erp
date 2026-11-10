@@ -2,6 +2,7 @@
 //   ① 签单（提交审批那一刻）：锁定「预估快照」——当时池月租合计 / 已售带宽合计 / 本单预估成本，作为报价与审批依据，事后不改；
 //   ② 月结：真实账期到了，按当月实际已售带宽重算每一单的结算成本；差异进当月，不追溯改已签核算单；
 //   ③ 未售出的闲置容量由全池客户按带宽占比共担（新单进来，老单分摊自然下降，这是共用模式的正常表现）。
+import { persistable } from "@/data/persist";
 import { useSyncExternalStore } from "react";
 import { SOURCES } from "./catalog";
 import { demoNow } from "./settings";
@@ -36,8 +37,8 @@ export interface PoolSettleRun {
 }
 
 // ---------- 轻量 store ----------
-let ests: PoolEst[] = [];
-const runs: PoolSettleRun[] = [];
+const ests: PoolEst[] = persistable("poolSettle.ests", () => []);
+const runs: PoolSettleRun[] = persistable("poolSettle.runs", () => []);
 let version = 0;
 const listeners = new Set<() => void>();
 const bump = () => { version += 1; listeners.forEach((fn) => fn()); };
@@ -53,7 +54,7 @@ export const getRuns = () => runs;
 /** 提交审批那一刻锁存预估快照（按出口池分组，一单一组一条） */
 export function snapshotEsts(list: Omit<PoolEst, "at">[]) {
   const at = demoNow();
-  ests = [...ests, ...list.map((e) => ({ ...e, at }))];
+  ests.push(...list.map((e) => ({ ...e, at })));
   bump();
 }
 

@@ -28,9 +28,13 @@ export default function Customer() {
   const save = () => {
     if (!editing?.name) return;
     if (editing.id) {
-      setList((ls) => ls.map((c) => (c.id === editing.id ? { ...c, ...editing } as Customer : c)));
+      // 原地写回数据源（persistable 快照引用稳定），同时刷新本地列表
+      const c = CUSTOMERS.find((x) => x.id === editing.id);
+      if (c) Object.assign(c, editing);
+      setList([...CUSTOMERS]);
     } else {
-      setList((ls) => [{ ...editing, id: `CU-0${String(ls.length + 1).padStart(2, "0")}`, createdAt: "2026-10-27", status: editing.status ?? "潜在" } as Customer, ...ls]);
+      CUSTOMERS.unshift({ ...editing, id: `CU-0${String(CUSTOMERS.length + 1).padStart(2, "0")}`, createdAt: "2026-11-10", status: editing.status ?? "潜在" } as Customer);
+      setList([...CUSTOMERS]);
     }
     setEditing(null);
   };

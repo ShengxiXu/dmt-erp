@@ -87,8 +87,8 @@ export function updateOpp(id: string, patch: Partial<Opportunity>) {
   bump();
 }
 
-// ---------- 客户档案预置 ----------
-export const CUSTOMERS: Customer[] = [
+// ---------- 客户档案预置（主数据持久化：新增/编辑刷新不丢） ----------
+export const CUSTOMERS: Customer[] = persistable("customers", () => [
   { id: "CU-001", name: "云启数据科技", creditCode: "91310115MA1K4XXX1A", level: "A", industry: "算力/数据中心", source: "市场活动", address: "上海市浦东新区张江高科技园区博云路 2 号", contact: "钱工", contactTitle: "运维总监", phone: "138-0166-xxxx", email: "qian@yunqi.example", sales: "张弛", status: "合作中", createdAt: "2025-11-02", remark: "算力头部客户，三年框架意向" },
   { id: "CU-002", name: "恒信证券", creditCode: "91310000MA1FLXXX2B", level: "A", industry: "金融", source: "转介绍", address: "上海市黄浦区南京东路 100 号", contact: "孙经理", contactTitle: "IT 部负责人", phone: "139-1770-xxxx", email: "sun@hengxin.example", sales: "张弛", status: "合作中", createdAt: "2025-12-18" },
   { id: "CU-003", name: "中海贸易", creditCode: "91310113MA1GCXXX3C", level: "B", industry: "贸易", source: "陌拜", address: "上海市宝山区逸仙路 3000 号", contact: "吴总", phone: "136-1188-xxxx", email: "wu@zhonghai.example", sales: "李骁", status: "合作中", createdAt: "2025-09-05" },
@@ -101,4 +101,4 @@ export const CUSTOMERS: Customer[] = [
   { id: "CU-010", name: "某跨境电商", creditCode: "91310115MA1PKXXX0B", level: "B", industry: "电商", source: "转介绍", address: "上海市青浦区华新镇纪鹤公路 3688 号", contact: "林工", contactTitle: "运维负责人", phone: "137-0170-xxxx", email: "ops@kuajing.example", sales: "李骁", status: "合作中", createdAt: "2025-08-20" },
   { id: "CU-011", name: "上海某科技公司", creditCode: "91310115MA1QLXXX1C", level: "A", industry: "科技", source: "招标", address: "上海市徐汇区漕河泾开发区 55 号", contact: "孟总", contactTitle: "技术总监", phone: "139-6620-xxxx", email: "meng@moukeji.example", sales: "张弛", status: "合作中", createdAt: "2026-08-30" },
   { id: "CU-012", name: "展鹏教育", creditCode: "91310116MA1RMXXX2D", level: "C", industry: "教育", source: "陌拜", address: "上海市普陀区中山北路 3000 号", contact: "范老师", contactTitle: "信息中心主任", phone: "135-4420-xxxx", email: "fan@zhanpeng.example", sales: "李骁", status: "合作中", createdAt: "2025-11-05" },
-];
+]);

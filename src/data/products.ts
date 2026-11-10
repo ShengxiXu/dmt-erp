@@ -3,6 +3,7 @@
 // 定价不在类型层维护：价格由订单行议价 + 套餐定价承载，类型只定义「卖什么、算什么」
 // 系统管理域可维护：/product 三级页面增删改，合同订单行与成本核算实时读取本配置
 // 规则：订单行「规格摘要」只能由本配置的结构化选项拼接，不允许自由输入
+import { persistable } from "@/data/persist";
 import { useSyncExternalStore } from "react";
 import { ITEMS } from "./catalog";
 
@@ -218,7 +219,7 @@ const LINE_MATS = ["mat_base", "mat_port", "mat_svc"].map(M);
 const SDWAN_MATS = ["mat_base", "mat_svc"].map(M);
 const IDC_MATS = ["mat_rack", "mat_svc"].map(M);
 
-let cats: ProductCat[] = [
+const cats: ProductCat[] = persistable("productCats", () => [
   {
     name: "ISP 互联网接入",
     remark: "共享出口：不同出口归属不同产品类型，AI 专线 / D-MAN 可共享 BGP 三网出口；一对一运营商线路仅存在于转售业务",
@@ -248,7 +249,7 @@ let cats: ProductCat[] = [
   { name: "云", types: [T("云主机", { costItems: ["t6", "t8", "t9"], materials: ["mat_cloud"].map(M), centers: ["CC-03", "CC-04"] }, CLOUD_FIELDS)] },
   { name: "安全服务", types: [T("WAF 等订阅服务", { costItems: ["op7", "t8"], materials: ["mat_3rdsvc"].map(M), centers: ["CC-03"] }, SEC_FIELDS)] },
   { name: "转售", remark: "三大运营商线路 / 裸光纤 / 设备，转买转卖直接结转", types: [T("运营商线路/裸光纤/设备转售", { costItems: ["rs1", "rs2"], materials: ["mat_resale"].map(M) }, RESALE_FIELDS)] },
-];
+]);
 
 // ---------- 轻量 store：页面间共享 + 变更通知 ----------
 let version = 0;
@@ -271,7 +272,7 @@ export function useCatalog(): number {
 
 // ---------- 物料库（独立主数据：物料的通用定义，产品 BOM 引用之） ----------
 // 预置行业通用物料；用户可自行增改。删除已被引用的物料不会让 BOM 行消失，但行会标「物料库已删除」。
-let matDefs: MaterialDef[] = [
+const matDefs: MaterialDef[] = persistable("materialDefs", () => [
   { key: "mat_exit", name: "出口线路", form: "服务化资源", group: "线路资源", status: "启用", remark: "向运营商采购的出口，可多家客户共享；BGP 调度平台、SLA 冗余池也算在这", attrs: ATTRS_EXIT },
   { key: "mat_base", name: "基础线路", form: "服务化资源", group: "线路资源", status: "启用", remark: "接入端线路：单客户专用，可跨产品共用不重复采购", attrs: ATTRS_BASE },
   { key: "mat_ip", name: "IP 地址段", form: "服务化资源", group: "IP 资源", status: "启用", remark: "随出口线路绑定的 IP 段", attrs: ATTRS_IP },
@@ -283,7 +284,7 @@ let matDefs: MaterialDef[] = [
   { key: "mat_svc", name: "安装调测服务", form: "人工服务", group: "交付服务", status: "启用", remark: "交付实施人工投入；布线 / 物流 / 差旅等交付杂项也归这里" },
   { key: "mat_3rdsvc", name: "第三方服务订阅", form: "服务化资源", group: "平台与外购服务", status: "启用", remark: "DDoS 清洗、WAF 等外购服务" },
   { key: "mat_resale", name: "转售采购资源", form: "服务化资源", remark: "转售业务：运营商线路 / 裸光纤 / 设备批发采购" },
-];
+]);
 
 export const getMaterials = () => matDefs;
 /** 按 libKey 取物料定义（BOM 行渲染用；引用已删除的物料返回 undefined） */
@@ -294,39 +295,41 @@ export const MAT_REFS = (libKey: string) =>
 
 /** 新增 / 更新物料（同 key 覆盖） */
 export function saveMaterial(def: MaterialDef) {
-  matDefs = matDefs.some((m) => m.key === def.key) ? matDefs.map((m) => (m.key === def.key ? def : m)) : [...matDefs, def];
+  const i = matDefs.findIndex((m) => m.key === def.key);
+  if (i >= 0) Object.assign(matDefs[i], def);
+  else matDefs.push(def);
   bump();
 }
 /** 删除物料（BOM 引用行保留但标「物料库已删除」，引用数 > 0 时需页面二次确认） */
 export function removeMaterial(key: string) {
-  matDefs = matDefs.filter((m) => m.key !== key);
+  const i = matDefs.findIndex((m) => m.key === key);
+  if (i >= 0) matDefs.splice(i, 1);
   bump();
 }
 
 // ---------- 类别维护 ----------
 export function addCat(name: string) {
   if (cats.some((c) => c.name === name)) return false;
-  cats = [...cats, { name, types: [] }];
+  cats.push({ name, types: [] });
   bump();
   return true;
 }
 export function removeCat(name: string) {
-  cats = cats.filter((c) => c.name !== name);
+  const i = cats.findIndex((c) => c.name === name);
+  if (i >= 0) cats.splice(i, 1);
   bump();
 }
 export function addType(catName: string, typeName: string) {
   const cat = cats.find((c) => c.name === catName);
   if (!cat || cat.types.some((t) => t.name === typeName)) return false;
-  cats = cats.map((c) =>
-    c.name === catName
-      ? { ...c, types: [{ name: typeName, status: "启用", costItems: [], asmVersion: 1, asmHistory: [{ v: 1, date: "2026-10-26", items: [], note: "初始装配" }], updatedAt: "2026-10-26", specFields: [] }] }
-      : c
-  );
+  cat.types.push({ name: typeName, status: "启用", costItems: [], asmVersion: 1, asmHistory: [{ v: 1, date: "2026-10-26", items: [], note: "初始装配" }], updatedAt: "2026-10-26", specFields: [] });
   bump();
   return true;
 }
 export function removeType(catName: string, typeName: string) {
-  cats = cats.map((c) => (c.name === catName ? { ...c, types: c.types.filter((t) => t.name !== typeName) } : c));
+  const cat = cats.find((c) => c.name === catName);
+  const i = cat?.types.findIndex((t) => t.name === typeName) ?? -1;
+  if (cat && i >= 0) cat.types.splice(i, 1);
   bump();
 }
 /** 复制产品类型（含规格字段 / 成本条目），名称加「副本」后缀 */
@@ -340,34 +343,26 @@ export function duplicateType(catName: string, typeName: string) {
     n += 1;
     newName = `${typeName}（副本${n}）`;
   }
-  cats = cats.map((c) =>
-    c.name === catName ? { ...c, types: [...c.types, { ...clone(src), name: newName, status: "停用", updatedAt: "2026-10-26" }] } : c
-  );
+  cat.types.push({ ...clone(src), name: newName, status: "停用", updatedAt: "2026-10-26" });
   bump();
   return true;
 }
 /** 更新某类别下某产品类型（name / status / sla / billingCycle / taxRate / leadTime / costItems / specFields）
  *  装配（costItems）变更自动升版本：旧版本快照入历史（只增不改），存量合同绑定签订时版本不受影响 */
 export function updateType(catName: string, typeName: string, patch: Partial<ProductType>) {
-  cats = cats.map((c) =>
-    c.name === catName
-      ? {
-          ...c,
-          types: c.types.map((t) => {
-            if (t.name !== typeName) return t;
-            const asmChanged = patch.costItems != null && patch.costItems.join() !== t.costItems.join();
-            if (!asmChanged) return { ...t, ...patch, updatedAt: "2026-10-26" };
-            const v = t.asmVersion + 1;
-            return {
-              ...t, ...patch,
-              asmVersion: v,
-              asmHistory: [...t.asmHistory, { v, date: "2026-10-26", items: [...patch.costItems!], note: `装配调整（v${t.asmVersion} → v${v}）` }],
-              updatedAt: "2026-10-26",
-            };
-          }),
-        }
-      : c
-  );
+  const t = cats.find((c) => c.name === catName)?.types.find((x) => x.name === typeName);
+  if (!t) return;
+  const asmChanged = patch.costItems != null && patch.costItems.join() !== t.costItems.join();
+  if (!asmChanged) {
+    Object.assign(t, patch, { updatedAt: "2026-10-26" });
+  } else {
+    const v = t.asmVersion + 1;
+    Object.assign(t, patch, {
+      asmVersion: v,
+      asmHistory: [...t.asmHistory, { v, date: "2026-10-26", items: [...patch.costItems!], note: `装配调整（v${t.asmVersion} → v${v}）` }],
+      updatedAt: "2026-10-26",
+    });
+  }
   bump();
 }
 /** 调整规格字段顺序（dir = -1 上移 / +1 下移） */

@@ -4,6 +4,7 @@
 //   → 核算单填报时按归属引用账单（来源单号 = 账单号）
 //   → 核算单挂在合同上，账单经「账单 → 耗用 → 核算单 → 合同」间接关联订单
 // 月结时：中心内账单金额合计 = 中心真实费用，与核算预估切分对比，差异留中心滚动。
+import { persistable } from "@/data/persist";
 import { useSyncExternalStore } from "react";
 import { getCostItems } from "./costItems";
 import { CC_NAME, getCenters } from "./costCenters";
@@ -26,14 +27,14 @@ export interface SupplierBill {
 }
 
 // ---------- 预置账单（号段与核算单演示数据的来源单号一致，可直接被引用） ----------
-export const bills: SupplierBill[] = [
+export const bills: SupplierBill[] = persistable("supplierBills", () => [
   { id: "HY-2026-1013", supplier: "上海电信", period: "2026-10", costItemKey: "op1a", amount: 500, poNo: "PO-2026-028", resRef: "B-001", status: "已入账", createdAt: "2026-10-08" },
   { id: "HY-2026-1014", supplier: "上海电信", period: "2026-10", costItemKey: "op1b", amount: 45000, contractNo: "CT-2026-018", resRef: "E-CT-1", status: "已入账", note: "BGP 电信出口（E-CT-1）月租，并入 BGP 三网出口池按已售带宽计收", createdAt: "2026-10-08" },
   { id: "HY-2026-1015", supplier: "中国电信长途传输", period: "2026-10", costItemKey: "op1a", amount: 6800, poNo: "PO-2026-029", resRef: "B-201", status: "已入账", createdAt: "2026-10-09" },
   { id: "HY-2026-1016", supplier: "APNIC 代管服务商", period: "2026-10", costItemKey: "op6", amount: 12480, resRef: "I-101", status: "已入账", note: "C 段地址年费摊月", createdAt: "2026-10-10" },
   { id: "HY-2026-1017", supplier: "漕河泾机房物业", period: "2026-10", costItemKey: "t2", amount: 6400, resRef: "I-101", status: "已入账", note: "漕河泾机房 10G 上联端口月租", createdAt: "2026-10-10" },
   { id: "HY-2026-1018", supplier: "漕河泾机房物业", period: "2026-10", costItemKey: "op5", amount: 12800, status: "待入账", note: "整柜电力月租，待核对", createdAt: "2026-10-27" },
-];
+]);
 
 // ---------- 轻量 store ----------
 let version = 0;
@@ -53,11 +54,12 @@ export function useBills(): number {
 }
 export const getBills = () => bills;
 
-let seq = 1019;
+// 单号计数器 box 持久化（快照捕获引用，基本类型 reassignment 会丢）
+const seqBox = persistable("bills.seq", () => ({ v: 1019 }));
 export function addBill(patch: Omit<SupplierBill, "id" | "status" | "createdAt">) {
   const b: SupplierBill = {
     ...patch,
-    id: `HY-2026-${seq++}`,
+    id: `HY-2026-${seqBox.v++}`,
     status: "待入账",
     createdAt: DEMO_TODAY,
   };
