@@ -309,29 +309,7 @@ export default function ContractDetail() {
           </div>
         </div>
 
-        {/* 订单行（合同生效即订单生效）— 紧邻合同主体信息 */}
-        <div className="rounded-[4px] border border-[#E5E6EB] bg-white">
-          <div className="flex items-center gap-3 border-b px-4 py-2.5">
-            <span className="text-sm font-semibold text-[#1D2129]">订单行</span>
-            <span className="text-[11px] text-[#86909C]">合同生效即订单生效，售价取合同约定价直接进入成本核算</span>
-            <span className="ml-auto text-[11px] text-[#86909C]">共 {c.lines.length} 行</span>
-          </div>
-          <table className="w-full text-xs">
-            <thead><tr className="border-b bg-[#F7F8FA] text-left text-[#4E5969]"><th className="px-3 py-1.5">类别 / 产品类型</th><th className="px-3 py-1.5">规格</th><th className="px-3 py-1.5 text-right">月租</th></tr></thead>
-            <tbody>
-              {c.lines.map((l, i) => (
-                <tr key={i} className="border-b last:border-0">
-                  <td className="px-3 py-2"><div className="font-medium text-[#1D2129]">{l.ptype}</div><div className="text-[10px] text-[#86909C]">{l.cat}</div></td>
-                  <td className="px-3 py-2 text-[#4E5969]">{l.spec}</td>
-                  <td className="px-3 py-2 text-right font-mono">{fmtMoney(l.price)}</td>
-                </tr>
-              ))}
-              <tr className="font-semibold"><td colSpan={2} className="px-3 py-2 text-right">合计</td><td className="px-3 py-2 text-right font-mono">{fmtMoney(c.amount)} 元/月</td></tr>
-            </tbody>
-          </table>
-        </div>
-
-        {/* 签署流程：仅渲染所选链路（线上契约锁 / 线下实物章），非签署阶段整块不出现 */}
+        {/* 签署流程：仅渲染所选链路（线上契约锁 / 线下实物章），非签署阶段整块不出现；位置置顶，进页即见当前走到哪一步 */}
         {signing && (
           <div className="rounded-[4px] border border-[#E5E6EB] bg-white p-4">
             <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -361,6 +339,28 @@ export default function ContractDetail() {
             )}
           </div>
         )}
+
+        {/* 订单行（合同生效即订单生效） */}
+        <div className="rounded-[4px] border border-[#E5E6EB] bg-white">
+          <div className="flex items-center gap-3 border-b px-4 py-2.5">
+            <span className="text-sm font-semibold text-[#1D2129]">订单行</span>
+            <span className="text-[11px] text-[#86909C]">合同生效即订单生效，售价取合同约定价直接进入成本核算</span>
+            <span className="ml-auto text-[11px] text-[#86909C]">共 {c.lines.length} 行</span>
+          </div>
+          <table className="w-full text-xs">
+            <thead><tr className="border-b bg-[#F7F8FA] text-left text-[#4E5969]"><th className="px-3 py-1.5">类别 / 产品类型</th><th className="px-3 py-1.5">规格</th><th className="px-3 py-1.5 text-right">月租</th></tr></thead>
+            <tbody>
+              {c.lines.map((l, i) => (
+                <tr key={i} className="border-b last:border-0">
+                  <td className="px-3 py-2"><div className="font-medium text-[#1D2129]">{l.ptype}</div><div className="text-[10px] text-[#86909C]">{l.cat}</div></td>
+                  <td className="px-3 py-2 text-[#4E5969]">{l.spec}</td>
+                  <td className="px-3 py-2 text-right font-mono">{fmtMoney(l.price)}</td>
+                </tr>
+              ))}
+              <tr className="font-semibold"><td colSpan={2} className="px-3 py-2 text-right">合计</td><td className="px-3 py-2 text-right font-mono">{fmtMoney(c.amount)} 元/月</td></tr>
+            </tbody>
+          </table>
+        </div>
 
         {/* 合同申请审批：提交后先走审批流，通过后才进入待出合同 */}
         {c.status === "审批中" && (
