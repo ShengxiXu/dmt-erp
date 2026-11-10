@@ -246,6 +246,37 @@ export default function ContractDetail() {
   return (
     <ArcoShell breadcrumb={`合同管理 / ${c.id}`}>
       <main className="space-y-4 p-6">
+        {/* 签署流程：仅渲染所选链路（线上契约锁 / 线下实物章），非签署阶段整块不出现；置于合同主体信息之上，进页即见走到哪一步 */}
+        {signing && (
+          <div className="rounded-[4px] border border-[#E5E6EB] bg-white p-4">
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              <span className="text-sm font-semibold text-[#1D2129]">签署流程</span>
+              <span className={`rounded-[2px] px-1.5 py-0.5 text-[10px] ${c.seal === "online" ? "bg-[#E8F3FF] text-[#165DFF]" : "bg-[#FFF3E8] text-[#FF7D00]"}`}>
+                {c.seal === "online" ? "线上 · 契约锁" : "线下 · 实物章"}
+              </span>
+              {c.status === "已生效"
+                ? <span className="ml-auto text-xs text-[#00B42A]">✓ 签署完成，双方签署版已归档</span>
+                : <span className="ml-auto text-xs text-[#4E5969]">当前步骤：<strong className="text-[#165DFF]">{steps[Math.min(c.step, 3)]}</strong>（{c.step + 1}/4）</span>}
+            </div>
+            <Lane title={c.seal === "online" ? "线上链路（契约锁）" : "线下链路（实物章）"} steps={steps} active step={signStep} color={c.seal === "online" ? "#165DFF" : "#FF7D00"} />
+            {c.status !== "已生效" && (
+              <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-[#F2F3F5] pt-3">
+                <Button size="sm" onClick={advance}>{c.step >= 3 ? "签署完成 → 合同已生效" : ACTION_LABEL[`${c.step}-${c.seal}`]}</Button>
+                {c.seal === "online" && c.step === 0 && (
+                  <button className="text-xs text-[#F53F3F] hover:underline" onClick={() => alert("模拟：契约锁接口失败 → 合同状态本地保留，进入接口异常队列，可手动标记已完成")}>模拟接口异常</button>
+                )}
+                {c.seal === "online" && c.step === 2 && (
+                  <button className="text-xs text-[#86909C] hover:underline" onClick={() => alert("已发送催签短信/邮件给客户（mock）")}>催签</button>
+                )}
+                {c.seal === "offline" && c.step === 3 && (
+                  <button className="text-xs text-[#F53F3F] hover:underline" onClick={() => alert("模拟：扫描件质检不合格 → 驳回重传，仍停留本步骤")}>模拟质检不合格</button>
+                )}
+                <span className="ml-auto text-[10px] text-[#86909C]">契约锁为 mock：按钮推进状态，接口联调留待正式开发</span>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* 头部信息带 */}
         <div className="rounded-[4px] border border-[#E5E6EB] bg-white px-5 py-4">
           <div className="flex flex-wrap items-center gap-3">
@@ -308,37 +339,6 @@ export default function ContractDetail() {
             </span>
           </div>
         </div>
-
-        {/* 签署流程：仅渲染所选链路（线上契约锁 / 线下实物章），非签署阶段整块不出现；位置置顶，进页即见当前走到哪一步 */}
-        {signing && (
-          <div className="rounded-[4px] border border-[#E5E6EB] bg-white p-4">
-            <div className="mb-3 flex flex-wrap items-center gap-2">
-              <span className="text-sm font-semibold text-[#1D2129]">签署流程</span>
-              <span className={`rounded-[2px] px-1.5 py-0.5 text-[10px] ${c.seal === "online" ? "bg-[#E8F3FF] text-[#165DFF]" : "bg-[#FFF3E8] text-[#FF7D00]"}`}>
-                {c.seal === "online" ? "线上 · 契约锁" : "线下 · 实物章"}
-              </span>
-              {c.status === "已生效"
-                ? <span className="ml-auto text-xs text-[#00B42A]">✓ 签署完成，双方签署版已归档</span>
-                : <span className="ml-auto text-xs text-[#4E5969]">当前步骤：<strong className="text-[#165DFF]">{steps[Math.min(c.step, 3)]}</strong>（{c.step + 1}/4）</span>}
-            </div>
-            <Lane title={c.seal === "online" ? "线上链路（契约锁）" : "线下链路（实物章）"} steps={steps} active step={signStep} color={c.seal === "online" ? "#165DFF" : "#FF7D00"} />
-            {c.status !== "已生效" && (
-              <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-[#F2F3F5] pt-3">
-                <Button size="sm" onClick={advance}>{c.step >= 3 ? "签署完成 → 合同已生效" : ACTION_LABEL[`${c.step}-${c.seal}`]}</Button>
-                {c.seal === "online" && c.step === 0 && (
-                  <button className="text-xs text-[#F53F3F] hover:underline" onClick={() => alert("模拟：契约锁接口失败 → 合同状态本地保留，进入接口异常队列，可手动标记已完成")}>模拟接口异常</button>
-                )}
-                {c.seal === "online" && c.step === 2 && (
-                  <button className="text-xs text-[#86909C] hover:underline" onClick={() => alert("已发送催签短信/邮件给客户（mock）")}>催签</button>
-                )}
-                {c.seal === "offline" && c.step === 3 && (
-                  <button className="text-xs text-[#F53F3F] hover:underline" onClick={() => alert("模拟：扫描件质检不合格 → 驳回重传，仍停留本步骤")}>模拟质检不合格</button>
-                )}
-                <span className="ml-auto text-[10px] text-[#86909C]">契约锁为 mock：按钮推进状态，接口联调留待正式开发</span>
-              </div>
-            )}
-          </div>
-        )}
 
         {/* 订单行（合同生效即订单生效） */}
         <div className="rounded-[4px] border border-[#E5E6EB] bg-white">
