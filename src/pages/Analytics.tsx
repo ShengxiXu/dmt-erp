@@ -4,12 +4,13 @@
 import { useMemo } from "react";
 import { Link } from "react-router";
 import ArcoShell from "@/components/ArcoShell";
-import { CONTRACTS, fmtMoney } from "@/data/contracts";
+import { CONTRACTS, fmtMoney, expiringContracts, daysToEnd } from "@/data/contracts";
 import { getOpps } from "@/data/customers";
 import { RECEIVABLES } from "@/data/receivables";
 import { agingBuckets, dsoDays, badDebtRisk, financeKPIs, FIN_TODAY } from "@/data/finance";
 import { R1_ROWS } from "@/data/resources";
 import { getBatches } from "@/data/settle";
+import { DEMO_TODAY } from "@/data/settings";
 
 const fmt = (n: number) => fmtMoney(Math.round(n));
 
@@ -77,7 +78,17 @@ export default function Analytics() {
     // ⑥ 已跑月结批次的毛利（若用户在月结页跑过）
     const batches = getBatches().slice(-3);
 
-    return { revenueTrend, pipeline, monthlyRevenue, monthlyExitCost, grossMargin, marginRate, pools, aging, agingTotal, kpi, dso, bdr, outstandingN, batches, activeContracts, opps };
+    // ⑦ 合同到期看板（未来 90 天，按剩余天数分桶；续签在途 = 已有续签单但未生效）
+    const expiring = expiringContracts(90);
+    const expBuckets = [
+      { label: "30 天内", hint: "需立即启动续签谈判", rows: expiring.filter((c) => daysToEnd(c) <= 30), color: "#F53F3F", bg: "#FFECE8" },
+      { label: "31–60 天", hint: "可启动续签谈判", rows: expiring.filter((c) => { const d = daysToEnd(c); return d > 30 && d <= 60; }), color: "#FF7D00", bg: "#FFF3E8" },
+      { label: "61–90 天", hint: "纳入续签计划", rows: expiring.filter((c) => { const d = daysToEnd(c); return d > 60 && d <= 90; }), color: "#165DFF", bg: "#E8F3FF" },
+    ];
+    const renewedIds = new Set(CONTRACTS.filter((c) => c.renewOf).map((c) => c.renewOf!));
+    const renewingOf = (id: string) => CONTRACTS.find((c) => c.renewOf === id && c.status !== "已终止");
+
+    return { revenueTrend, pipeline, monthlyRevenue, monthlyExitCost, grossMargin, marginRate, pools, aging, agingTotal, kpi, dso, bdr, outstandingN, batches, activeContracts, opps, expiring, expBuckets, renewedIds, renewingOf };
   }, []);
 
   const maxTrend = Math.max(...data.revenueTrend.map((r) => r.value), 1);
@@ -107,6 +118,64 @@ export default function Analytics() {
               <div className="mt-1 text-[10px] text-[#86909C]">{sub}</div>
             </div>
           ))}
+        </div>
+
+        {/* 合同到期看板（未来 90 天） */}
+        <div className="rounded-[4px] border border-[#E5E6EB] bg-white p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <span className="text-sm font-semibold text-[#1D2129]">合同到期看板（未来 90 天 · 基准日 {DEMO_TODAY}）</span>
+            <Link to="/contract" className="text-[11px] text-[#165DFF] hover:underline">合同管理 →</Link>
+          </div>
+          <div className="mb-3 grid grid-cols-1 gap-2 md:grid-cols-3">
+            {data.expBuckets.map((b) => (
+              <div key={b.label} className="flex items-center gap-3 rounded-[4px] px-3 py-2.5" style={{ background: b.bg }}>
+                <span className="font-mono text-lg font-semibold" style={{ color: b.color }}>{b.rows.length}</span>
+                <div className="text-[11px] leading-4">
+                  <div className="font-medium text-[#1D2129]">{b.label}到期</div>
+                  <div className="text-[#86909C]">月租 {fmt(b.rows.reduce((s, c) => s + c.amount, 0))} 元 · {b.hint}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+          {data.expiring.length ? (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b bg-[#F7F8FA] text-left text-[#4E5969]">
+                    <th className="px-3 py-1.5">合同号</th><th className="px-3 py-1.5">客户</th><th className="px-3 py-1.5">到期日</th>
+                    <th className="px-3 py-1.5 text-right">剩余</th><th className="px-3 py-1.5 text-right">月租（元/月）</th><th className="px-3 py-1.5">续签状态</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.expiring.map((c) => {
+                    const d = daysToEnd(c);
+                    const renew = data.renewingOf(c.id);
+                    return (
+                      <tr key={c.id} className="border-b last:border-0 hover:bg-[#F7FAFF]">
+                        <td className="px-3 py-2 font-mono"><Link to={`/contract/detail?id=${c.id}`} className="text-[#165DFF] hover:underline">{c.id}</Link></td>
+                        <td className="px-3 py-2 font-medium text-[#1D2129]">{c.customer}</td>
+                        <td className="px-3 py-2 text-[#4E5969]">{c.end}</td>
+                        <td className={`px-3 py-2 text-right font-mono font-semibold ${d <= 30 ? "text-[#F53F3F]" : d <= 60 ? "text-[#FF7D00]" : "text-[#165DFF]"}`}>{d} 天</td>
+                        <td className="px-3 py-2 text-right font-mono">{fmt(c.amount)}</td>
+                        <td className="px-3 py-2">
+                          {renew
+                            ? <span className="rounded-[2px] bg-[#E8F3FF] px-1.5 py-0.5 text-[10px] text-[#165DFF]">续签在途：{renew.id}（{renew.status}）</span>
+                            : data.renewedIds.has(c.id)
+                              ? <span className="rounded-[2px] bg-[#F2F3F5] px-1.5 py-0.5 text-[10px] text-[#86909C]">已由新合同承接</span>
+                              : <span className="rounded-[2px] bg-[#FFECE8] px-1.5 py-0.5 text-[10px] text-[#F53F3F]">待发起续签</span>}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="rounded-[2px] bg-[#F7F8FA] px-3 py-4 text-center text-[11px] text-[#86909C]">未来 90 天内无到期合同，续签压力可控。</div>
+          )}
+          <div className="mt-2 border-t border-dashed border-[#F2F3F5] pt-2 text-[11px] text-[#86909C]">
+            到期前 90 天可发起续签（合同详情页「发起续签」）；续签单生效时源合同自动终止并停止出账，防双算。
+          </div>
         </div>
 
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">

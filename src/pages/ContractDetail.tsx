@@ -1,6 +1,6 @@
 // 合同详情（/contract/detail?id=HT-xxxx）
 // 签署状态机 mock：线上契约锁 / 线下实物章 双链路四步，异常出口（待修订/已终止），版本历史
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useSearchParams, useNavigate, Link } from "react-router";
 import { CONTRACTS, ONLINE_STEPS, OFFLINE_STEPS, fmtMoney, checkDiscount, SPECIALS, daysToEnd, type Contract } from "@/data/contracts";
 import { GET_OPP, updateOpp } from "@/data/customers";
@@ -52,6 +52,12 @@ export default function ContractDetail() {
   const [uploadOpen, setUploadOpen] = useState(false);
   const [uploaded, setUploaded] = useState(false);
   const [apprComment, setApprComment] = useState("");
+  const [openInv, setOpenInv] = useState<Set<number>>(new Set());   // 应收账单：展开查看明细 / 催收详情
+  const toggleInv = (i: number) => setOpenInv((prev) => {
+    const n = new Set(prev);
+    if (n.has(i)) n.delete(i); else n.add(i);
+    return n;
+  });
   useBilling();
   useReceivables();
   useSettings();
@@ -466,25 +472,43 @@ export default function ContractDetail() {
             <table className="w-full text-xs">
               <thead>
                 <tr className="border-b bg-[#F7F8FA] text-left text-[#4E5969]">
-                  <th className="px-3 py-1.5">账期</th><th className="px-3 py-1.5">账单号</th><th className="px-3 py-1.5">明细</th>
+                  <th className="px-3 py-1.5">账期</th><th className="px-3 py-1.5">账单号</th>
                   <th className="px-3 py-1.5 text-right">应收金额</th><th className="px-3 py-1.5 text-right">已收</th>
-                  <th className="px-3 py-1.5 text-right">未收余额</th><th className="px-3 py-1.5">应收日</th><th className="px-3 py-1.5">状态</th><th className="px-3 py-1.5">催收阶段</th>
+                  <th className="px-3 py-1.5 text-right">未收余额</th><th className="px-3 py-1.5">应收日</th>
+                  <th className="px-3 py-1.5">状态 / 催收</th><th className="w-8 px-2 py-1.5" />
                 </tr>
               </thead>
               <tbody>
-                {invRows.map((r, i) => (
-                  <tr key={r.invNo || `exp-${i}`} className={`border-b last:border-0 hover:bg-[#F7F8FA] ${r.expected ? "text-[#86909C]" : ""}`}>
-                    <td className="whitespace-nowrap px-3 py-2 text-[#4E5969]">{r.period}</td>
-                    <td className="px-3 py-2 font-mono font-semibold text-[#165DFF]">{r.invNo || "—"}</td>
-                    <td className="max-w-[280px] truncate px-3 py-2 text-[#4E5969]" title={r.detail}>{r.detail}</td>
-                    <td className="px-3 py-2 text-right font-mono">{fmtMoney(r.amount)}</td>
-                    <td className="px-3 py-2 text-right font-mono text-[#00B42A]">{r.received ? fmtMoney(r.received) : "—"}</td>
-                    <td className="px-3 py-2 text-right font-mono text-[#FF7D00]">{!r.expected && r.amount - r.received > 0 ? fmtMoney(r.amount - r.received) : "—"}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-[#86909C]">{r.dueDate}</td>
-                    <td className="px-3 py-2"><span className={`rounded-[2px] px-1.5 py-0.5 text-[10px] ${INV_CLS[r.status] ?? "bg-[#F2F3F5] text-[#4E5969]"}`}>{r.status}</span></td>
-                    <td className="px-3 py-2">{(() => { const col = contractCollect.find((x) => x.inv.invNo === r.invNo); return col ? <span className={`rounded-[2px] px-1.5 py-0.5 text-[10px] ${COLLECT_CLS[col.stage]}`}>{col.stage} · {col.days} 天{col.broken ? " · 破约" : ""}</span> : <span className="text-[10px] text-[#C9CDD4]">—</span>; })()}</td>
-                  </tr>
-                ))}
+                {invRows.map((r, i) => {
+                  const open = openInv.has(i);
+                  const col = contractCollect.find((x) => x.inv.invNo === r.invNo);
+                  return (
+                    <Fragment key={r.invNo || `exp-${i}`}>
+                      <tr className={`cursor-pointer border-b last:border-0 hover:bg-[#F7F8FA] ${r.expected ? "text-[#86909C]" : ""}`} onClick={() => toggleInv(i)}>
+                        <td className="whitespace-nowrap px-3 py-2 text-[#4E5969]">{r.period}</td>
+                        <td className="px-3 py-2 font-mono font-semibold text-[#165DFF]">{r.invNo || "—"}</td>
+                        <td className="px-3 py-2 text-right font-mono">{fmtMoney(r.amount)}</td>
+                        <td className="px-3 py-2 text-right font-mono text-[#00B42A]">{r.received ? fmtMoney(r.received) : "—"}</td>
+                        <td className="px-3 py-2 text-right font-mono text-[#FF7D00]">{!r.expected && r.amount - r.received > 0 ? fmtMoney(r.amount - r.received) : "—"}</td>
+                        <td className="whitespace-nowrap px-3 py-2 text-[#86909C]">{r.dueDate}</td>
+                        <td className="px-3 py-2">
+                          <span className={`rounded-[2px] px-1.5 py-0.5 text-[10px] ${INV_CLS[r.status] ?? "bg-[#F2F3F5] text-[#4E5969]"}`}>{r.status}</span>
+                          {col && <span className={`ml-1.5 rounded-[2px] px-1.5 py-0.5 text-[10px] ${COLLECT_CLS[col.stage]}`}>{col.stage} · {col.days} 天{col.broken ? " · 破约" : ""}</span>}
+                        </td>
+                        <td className="px-2 py-2 text-center text-[#86909C]">{open ? "▾" : "▸"}</td>
+                      </tr>
+                      {open && (
+                        <tr className="border-b bg-[#F7F8FA] last:border-0">
+                          <td colSpan={8} className="px-3 py-2 text-[11px] leading-5 text-[#4E5969]">
+                            <span className="text-[#86909C]">明细：</span>{r.detail || "—"}
+                            {col && <><span className="mx-2 text-[#C9CDD4]">|</span><span className="text-[#86909C]">催收：</span>{col.stage}（逾期 {col.days} 天{col.broken ? "，已破约" : ""}）</>}
+                            {r.expected && <><span className="mx-2 text-[#C9CDD4]">|</span><span className="text-[#86909C]">预计账单：账期出账后自动生成账单号</span></>}
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
               </tbody>
             </table>
           ) : (
