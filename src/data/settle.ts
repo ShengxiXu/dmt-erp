@@ -10,6 +10,7 @@ import { RECEIVABLES } from "@/data/receivables";
 import { SHEETS } from "@/data/sheets";
 import { getCenters } from "@/data/costCenters";
 import { cfgNum, demoNow } from "@/data/settings";
+import { persistable } from "@/data/persist";
 
 export interface ExitSplit {
   exitId: string; exitName: string; monthlyCost: number; totalBW: number;
@@ -49,7 +50,7 @@ export interface SettleBatch {
 }
 
 // ---------- 预置：一个已跑完的 2026-09 批次（口径演示） ----------
-export const SETTLE_BATCHES: SettleBatch[] = [];
+export const SETTLE_BATCHES: SettleBatch[] = persistable("settleBatches", () => []);
 
 // ---------- 轻量 store ----------
 let version = 0;

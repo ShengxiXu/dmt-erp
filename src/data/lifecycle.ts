@@ -6,6 +6,7 @@ import { useSyncExternalStore } from "react";
 import { SUBSCRIPTIONS, updateSubscription, addManualBill } from "@/data/billing";
 import { CONTRACTS } from "@/data/contracts";
 import { stockIn } from "@/data/resources";
+import { persistable } from "@/data/persist";
 import { cfgNum, cfgRate, demoNow } from "@/data/settings";
 import { bomMonthlyCost, ptypeOfLine, poolMarginal, ipOfLine } from "@/data/bomEstimate";
 
@@ -123,7 +124,7 @@ export interface RecoverOrder {
 }
 
 // ---------- 预置数据 ----------
-export const CHANGE_ORDERS: ChangeOrder[] = [
+export const CHANGE_ORDERS: ChangeOrder[] = persistable("changeOrders", () => [
   { chNo: "CH-2026-006", subNo: "SUB-2026-0305", customer: "中海贸易", contractNo: "HT-2026-023",
     type: "带宽升级", from: "单线 200M", to: "单线 500M", monthlyFeeAfter: 68000, effective: "2026-12",
     costEst: { items: [{ name: "出口带宽切分 200M → 500M", deltaMonthly: 12000 }], deltaMonthly: 12000, onceOff: 0,
@@ -139,8 +140,8 @@ export const CHANGE_ORDERS: ChangeOrder[] = [
     costEst: { items: [{ name: "套餐结构变化（月租差 +2,300 元/月）", deltaMonthly: 1426 }], deltaMonthly: 1426, onceOff: 0,
       basis: "口径：产品组成自动推导（出口池边际计价 + 基础线路档案 + IP 档案单价）；月结以实际账单为准" },
     reason: "客户业务从单向精品网扩展到多网互通，整体切换套餐", status: "已生效", createdAt: "2026-10-25 11:20", reviewer: "业务支撑-许晟熙" },
-];
-export const TERMINATE_ORDERS: TerminateOrder[] = [
+]);
+export const TERMINATE_ORDERS: TerminateOrder[] = persistable("terminateOrders", () => [
   { tmNo: "TM-2026-002", subNo: "SUB-2026-0117", customer: "展鹏教育", contractNo: "HT-2026-0302",
     reason: "合同到期", effectivePeriod: "2026-11", status: "退订生效", createdAt: "2026-10-20 10:15",
     reviewer: "业务支撑-许晟熙", recoverNo: "RC-2026-002",
@@ -148,12 +149,12 @@ export const TERMINATE_ORDERS: TerminateOrder[] = [
   { tmNo: "TM-2026-003", subNo: "SUB-2026-0355", customer: "正大物流", contractNo: "HT-2026-015",
     reason: "客户申请", effectivePeriod: "2026-12", status: "审批中", createdAt: "2026-11-01 16:40",
     penalty: 16800, penaltyBasis: "参考试算（非定价依据）：剩余未履行 10 期 × 月租 5,600 元 × 30%；最终金额由审批确定，以账单形式收取" },
-];
-export const RECOVER_ORDERS: RecoverOrder[] = [
+]);
+export const RECOVER_ORDERS: RecoverOrder[] = persistable("recoverOrders", () => [
   { rcNo: "RC-2026-002", tmNo: "TM-2026-002", subNo: "SUB-2026-0117", customer: "展鹏教育",
     items: [{ name: "华为 AR6121 CPE ×1", action: "库存回库" }, { name: "绑定 IP 4 个（58.41 段）", action: "地址释放" }, { name: "出口带宽 50M 切分", action: "配置清除" }],
     status: "待执行", createdAt: "2026-10-28 10:20" },
-];
+]);
 
 // ---------- 轻量 store ----------
 let version = 0;
@@ -169,7 +170,7 @@ export const getChanges = () => CHANGE_ORDERS;
 export const getTerminates = () => TERMINATE_ORDERS;
 export const getRecovers = () => RECOVER_ORDERS;
 
-let chSeq = 7, tmSeq = 4, rcSeq = 3;
+const lcSeqBox = persistable("lifecycle.seq", () => ({ ch: 7, tm: 4, rc: 3 }));
 const now = demoNow;
 
 // P05-1/2：变更申请（仅「在网」订阅可申请；欠停需先复机）
@@ -179,7 +180,7 @@ export function submitChange(data: Omit<ChangeOrder, "chNo" | "status" | "create
   if (sub.status === "退订") return "该订阅已退订，不能发起变更";
   if (sub.status === "欠停") return "订阅处于欠停状态，须先复机（收款核销自动触发）再变更";
   if (!(data.monthlyFeeAfter > 0)) return "请填写生效后月租";
-  CHANGE_ORDERS.unshift({ ...data, costEst: estimateChange(sub, data.type, data.to, data.monthlyFeeAfter), chNo: `CH-2026-${String(chSeq++).padStart(3, "0")}`, status: "审批中", createdAt: now() });
+  CHANGE_ORDERS.unshift({ ...data, costEst: estimateChange(sub, data.type, data.to, data.monthlyFeeAfter), chNo: `CH-2026-${String(lcSeqBox.ch++).padStart(3, "0")}`, status: "审批中", createdAt: now() });
   bump();
   return null;
 }
@@ -208,7 +209,7 @@ export function submitTerminate(data: Omit<TerminateOrder, "tmNo" | "status" | "
   if (sub.status === "退订") return "该订阅已退订";
   if (data.reason === "其他" && !data.reasonText?.trim()) return "退订原因=其他时必须填写说明";
   if (!(data.penalty >= 0)) return "违约金申请金额不能为负";
-  TERMINATE_ORDERS.unshift({ ...data, tmNo: `TM-2026-${String(tmSeq++).padStart(3, "0")}`, status: "审批中", createdAt: now() });
+  TERMINATE_ORDERS.unshift({ ...data, tmNo: `TM-2026-${String(lcSeqBox.tm++).padStart(3, "0")}`, status: "审批中", createdAt: now() });
   bump();
   return null;
 }
@@ -228,7 +229,7 @@ export function approveTerminate(tmNo: string, finalPenalty?: number): string | 
   }
   const sub = SUBSCRIPTIONS.find((s) => s.subNo === o.subNo);
   const rc: RecoverOrder = {
-    rcNo: `RC-2026-${String(rcSeq++).padStart(3, "0")}`, tmNo: o.tmNo, subNo: o.subNo, customer: o.customer,
+    rcNo: `RC-2026-${String(lcSeqBox.rc++).padStart(3, "0")}`, tmNo: o.tmNo, subNo: o.subNo, customer: o.customer,
     items: [
       { name: `CPE 设备（${sub?.line ?? "本订阅"}）×1`, action: "库存回库" },
       { name: `绑定 IP 地址（${sub?.line ?? "本订阅"}）`, action: "地址释放" },

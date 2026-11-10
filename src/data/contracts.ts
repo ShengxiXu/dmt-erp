@@ -1,6 +1,7 @@
 // 特批申请 + 合同管理（蓝图 B3 批次）
 // 依据《特批与合同管理模块设计-v1.0》：合同+订单合二为一，合同生效即订单生效
 import { DEMO_TODAY } from "@/data/settings";
+import { persistable } from "@/data/persist";
 
 export const SPECIAL_LEVELS = ["业务支撑部（业务条款）", "财务负责人（折扣与账期）", "管理层（例外与风险）"];
 
@@ -21,7 +22,7 @@ export interface Special {
 const L = (level: number, name: string, result?: "通过" | "驳回", comment?: string, time?: string): FlowStep =>
   ({ level, role: SPECIAL_LEVELS[level - 1], name, result, comment, time });
 
-export const SPECIALS: Special[] = [
+export const SPECIALS: Special[] = persistable("specials", () => [
   {
     id: "SA-2026-011", customer: "云启数据科技", dealId: "CJ-2026-001", discount: 12,
     terms: "AI 专线 99.99% SLA + 突发带宽弹性扩容条款", reason: "客户为算力头部客户，竞品压价，需 12% 折扣锁定三年合作",
@@ -54,7 +55,7 @@ export const SPECIALS: Special[] = [
     applicant: "张弛（销售）", createdAt: "2026-10-25", status: "审批中", current: 1,
     flows: [L(1, "周敏（业务支撑部）"), L(2, "陈立（财务负责人）"), L(3, "赵启明（管理层）")],
   },
-];
+]);
 
 // ---------- 合同（含订单行，合二为一） ----------
 export type SealChannel = "online" | "offline";
@@ -92,7 +93,7 @@ export interface Contract {
   terminateReason?: string;
 }
 
-export const CONTRACTS: Contract[] = [
+export const CONTRACTS: Contract[] = persistable("contracts", () => [
   {
     id: "HT-2026-021", entityId: "ENT-HQ", customer: "云启数据科技", specialId: "SA-2026-011", discount: 12,
     terms: "AI 专线 99.99% SLA + 突发带宽弹性扩容条款",
@@ -224,7 +225,7 @@ export const CONTRACTS: Contract[] = [
     ],
     versions: [{ v: 1, note: "初始版本（标准合同）", at: "2025-11-18" }],
   },
-];
+]);
 
 // 折扣校验规则（上传合同附件时执行）：非标折扣必须关联已通过的特批单且折扣率一致
 export const checkDiscount = (discount: number, specialId?: string): string | null => {

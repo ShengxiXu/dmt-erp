@@ -8,6 +8,7 @@
 import { useSyncExternalStore } from "react";
 import { ITEMS, type CatalogItem } from "./catalog";
 import { demoNow } from "./settings";
+import { persistable } from "./persist";
 
 export type ItemStatus = "草稿" | "生效" | "停用";
 export type ItemCategory = "资源驱动" | "手工录入";
@@ -57,7 +58,7 @@ const PRESET_APPLIES: Record<string, string> = {
 };
 
 // 预置条目全部默认为「生效」；间接费用不带自己的算式（金额由成本中心的分法统一算，条目只管归集到哪）
-export const costItems: CostItem[] = ITEMS.map((it) => {
+export const costItems: CostItem[] = persistable("costItems", () => ITEMS.map((it) => {
   const indirect = INDIRECT_ITEMS.has(it.key);
   const source = it.methods.find((m) => m.kind === "search")?.source;
   return {
@@ -70,7 +71,7 @@ export const costItems: CostItem[] = ITEMS.map((it) => {
     costCenter: CENTER_MAP[it.key],
     status: "生效",
   };
-});
+}));
 
 // ---------- 轻量 store ----------
 let version = 0;
@@ -121,9 +122,9 @@ export const classCovered = (matKey: string): boolean =>
 /** 成本无出处检查：给定资源类集合中，未被任何启用直接条目覆盖的类（费用实际走间接分摊） */
 export const uncoveredClasses = (matKeys: string[]): string[] => [...new Set(matKeys)].filter((k) => !classCovered(k));
 
-let seq = 1;
+const itemSeqBox = persistable("costItems.seq", () => ({ n: 1 }));
 export function addItem(patch: Partial<CostItem> & { name: string; dept: CostItem["dept"] }) {
-  const key = `c${String(seq++).padStart(2, "0")}-${Date.now().toString().slice(-4)}`;
+  const key = `c${String(itemSeqBox.n++).padStart(2, "0")}-${Date.now().toString().slice(-4)}`;
   const { name, dept, ...rest } = patch;
   costItems.push({
     key, name, dept,

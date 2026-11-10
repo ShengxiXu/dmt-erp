@@ -4,6 +4,7 @@
 // 闭环规则：复机仅由「足额核销」自动触发，不接受人工手工复机（防绕过欠费管控）；登记错误走红冲审批（AP-04），原单留痕不可删。
 import { useSyncExternalStore } from "react";
 import { cfgNum, getCfg, DEMO_TODAY, demoNow } from "@/data/settings";
+import { persistable } from "@/data/persist";
 
 // ---------- 客户账单（应收） ----------
 export type InvStatus = "已发出" | "部分收款" | "已收讫" | "逾期" | "欠停" | "坏账";
@@ -65,14 +66,14 @@ export interface CollectRecord {
   promiseDate?: string;      // 本次约定的承诺付款日（写回账单行）
   nextFollowAt?: string;     // 下次跟进日期（到期进通知铃铛 / 工作台待办）
 }
-export const COLLECT_RECORDS: CollectRecord[] = [
+export const COLLECT_RECORDS: CollectRecord[] = persistable("collectRecords", () => [
   { crNo: "CR-2026-012", invNo: "INV-2026-0901", customer: "恒信证券", at: "2026-10-30 15:20", by: "许晟熙", role: "业务支撑", channel: "电话",
     content: "客户财务确认 11 月初付款，承诺 11-08 前到账；如未到账将上报其管理层。", promiseDate: "2026-11-08", nextFollowAt: "2026-11-06" },
   { crNo: "CR-2026-009", invNo: "INV-2026-0866", customer: "跃游网络", at: "2026-10-24 10:05", by: "张弛", role: "归属销售", channel: "电话",
     content: "客户说上周已请款，但 10-30 仍未到账；客户承诺 10-28 付款已破约，升级催收。", promiseDate: "2026-10-28" },
   { crNo: "CR-2026-004", invNo: "INV-2026-0777", customer: "某跨境电商", at: "2026-10-15 09:40", by: "许晟熙", role: "业务支撑", channel: "催款函",
     content: "发送催款函（顺丰留底），要求 10 个工作日内付款，否则按合同停网并计滞纳金。", nextFollowAt: "2026-10-29" },
-];
+]);
 // ---------- 坏账申请（P04-9） ----------
 export interface BadDebtApp {
   bdNo: string; customer: string; invNos: string[]; total: number;
@@ -84,7 +85,7 @@ export interface BadDebtApp {
 
 // ---------- 预置数据 ----------
 export const BIZ_CATS = ["ISP", "IDC", "云", "L2L", "工程", "设备", "等保", "楼宇", "其他"];
-export const RECEIVABLES: Receivable[] = [
+export const RECEIVABLES: Receivable[] = persistable("receivables", () => [
   { invNo: "INV-2026-0881", customer: "中海贸易", contract: "HT-2026-023", amount: 12800, received: 12800, dueDate: "2026-10-15", status: "已收讫",
     items: [{ name: "单线 200M · 10 月周期费", amount: 12800 }],
     invoice: { apNo: "KA-2026-0305", periodText: "2026-09-25 ~ 2026-10-24", items: ["单线 200M · 账期周期费"],
@@ -108,19 +109,19 @@ export const RECEIVABLES: Receivable[] = [
     invoice: { apNo: "KA-2026-0288", periodText: "2026-08-10 ~ 2026-09-09", items: ["国内精品网 80M · 账期周期费"],
       bizCat: "ISP", invType: "普通发票（电子）", format: "PDF", contact: "孙经理",
       status: "已开票", invoiceNo: "243120000001234567", invoicedAt: "2026-09-12", createdAt: "2026-09-08 14:20" } },
-];
-export const PAYMENTS: Payment[] = [
+]);
+export const PAYMENTS: Payment[] = persistable("payments", () => [
   { payNo: "PAY-2026-0201", invNo: "INV-2026-0881", customer: "中海贸易", amount: 12800, paidAt: "2026-10-14 10:22", method: "银行转账", referenceNo: "BK202610140088", payerAccount: "中海贸易有限公司", status: "已登记" },
   { payNo: "PAY-2026-0212", invNo: "INV-2026-0912", customer: "凯瑞传媒", amount: 5000, paidAt: "2026-10-22 15:40", method: "银行转账", referenceNo: "BK202610220129", payerAccount: "凯瑞传媒股份有限公司", status: "已登记" },
   { payNo: "PAY-2026-0199", invNo: "INV-2026-0833", customer: "恒信证券", amount: 15200, paidAt: "2026-09-08 16:30", method: "银行转账", referenceNo: "BK202609080066", payerAccount: "恒信证券股份有限公司", status: "已登记" },
-];
-export const TICKETS: SuspendTicket[] = [
+]);
+export const TICKETS: SuspendTicket[] = persistable("tickets", () => [
   { ticketNo: "ST-2026-101", type: "停机", customer: "跃游网络", sub: "SUB-2026-0312（D-MAN 通道）", invNo: "INV-2026-0866", debtSummary: "逾期 6,800 元 · 逾期 44 天", reason: "欠费停机（策略触发：逾期 > 30 天）", status: "待执行" },
   { ticketNo: "ST-2026-097", type: "停机", customer: "某跨境电商", sub: "SUB-2026-0188（国际精品网 120M）", invNo: "INV-2026-0777", debtSummary: "逾期 9,600 元 · 逾期 54 天", reason: "欠费停机（策略触发：逾期 > 30 天）", action: "断网", executedAt: "2026-10-24 11:05", result: "成功", status: "已完工" },
-];
-export const BADDEBT_APPS: BadDebtApp[] = [
+]);
+export const BADDEBT_APPS: BadDebtApp[] = persistable("badDebtApps", () => [
   { bdNo: "BD-2026-003", customer: "某跨境电商", invNos: ["INV-2026-0777"], total: 9600, collectRecord: "9/12、9/26、10/10 三次电话催收无果，10/15 发催收函无回应；客户官网已无法访问。", reason: "客户失联", handling: "核销坏账", status: "草稿", createdAt: "2026-10-28 09:30" },
-];
+]);
 
 // ---------- 轻量 store ----------
 let version = 0;
@@ -146,12 +147,13 @@ export const overdueDays = (inv: Receivable, today = DEMO_TODAY) =>
 // P03-6 应收登记：客户账单「审核通过 → 发出」时由计费模块（billing.ts）调用，写入本台账（已发出）。
 // 这是应收账单的唯一流入入口；收款/核销/欠费只改状态与金额，不维护账单主数据。
 // invoice 传入时同步生成开票标记（待开票）——开票申请不再有独立单据，见文件头 InvMarkStatus 注释。
-let invAppSeq = 313;
+const rcSeqBox = persistable("receivables.seq", () => ({ invApp: 313, pay: 213, ticket: 102, bd: 4, cr: 13 }));
+const now = demoNow;
 export function registerReceivable(data: { invNo: string; customer: string; contract: string; amount: number; dueDate: string; items: { name: string; amount: number }[]; invoice?: { periodText: string; items: string[] } }) {
   if (INV_BY_NO(data.invNo)) return;
   const { invoice, ...rest } = data;
   RECEIVABLES.unshift({ ...rest, received: 0, status: "已发出",
-    invoice: invoice ? { apNo: `KA-2026-${invAppSeq++}`, periodText: invoice.periodText, items: invoice.items,
+    invoice: invoice ? { apNo: `KA-2026-${rcSeqBox.invApp++}`, periodText: invoice.periodText, items: invoice.items,
       bizCat: "ISP", invType: "增值税专用发票（电子）", format: "PDF", status: "待开票", createdAt: now() } : undefined });
   bump();
 }
@@ -215,9 +217,6 @@ export function getOverduePolicy() {
   ];
 }
 
-let paySeq = 213, ticketSeq = 102, bdSeq = 4;
-const now = demoNow;
-
 // P04-1/2：收款登记 → 提交即自动核销（累计比对；足额触发复机）
 export function addPayment(data: Omit<Payment, "payNo" | "status">): string | null {
   const inv = INV_BY_NO(data.invNo);
@@ -225,7 +224,7 @@ export function addPayment(data: Omit<Payment, "payNo" | "status">): string | nu
   if (!(data.amount > 0)) return "收款金额必须大于 0";
   if (data.amount > invBalance(inv)) return `收款金额 ${data.amount} 超过未收余额 ${invBalance(inv)}，已拒绝`;
   if (data.method === "银行转账" && !data.referenceNo?.trim()) return "银行转账必须填写流水号";
-  const pay: Payment = { ...data, payNo: `PAY-2026-${paySeq++}`, status: "已登记" };
+  const pay: Payment = { ...data, payNo: `PAY-2026-${rcSeqBox.pay++}`, status: "已登记" };
   PAYMENTS.unshift(pay);
   // 核销：累计已收 = Σ payment（未冲正）
   inv.received += data.amount;
@@ -235,7 +234,7 @@ export function addPayment(data: Omit<Payment, "payNo" | "status">): string | nu
     // 欠停账单收讫 → 自动生成复机工单（P04-8：仅由收讫触发）
     const oldTicket = [...TICKETS].reverse().find((t) => t.type === "停机" && t.invNo === inv.invNo && t.status === "已完工");
     TICKETS.unshift({
-      ticketNo: `RT-2026-${ticketSeq++}`, type: "复机", customer: inv.customer,
+      ticketNo: `RT-2026-${rcSeqBox.ticket++}`, type: "复机", customer: inv.customer,
       sub: oldTicket?.sub ?? "（关联订阅）", invNo: inv.invNo, debtSummary: "账单已收讫",
       reason: "收讫复机（足额核销自动触发）", status: "待执行", linkedTicket: oldTicket?.ticketNo,
     });
@@ -259,7 +258,7 @@ export function createSuspendTicket(invNo: string): string | null {
   if (!inv || (inv.status !== "逾期" && inv.status !== "欠停")) return "仅逾期账单可生成停机工单";
   if (TICKETS.some((t) => t.type === "停机" && t.invNo === invNo && t.status === "待执行")) return "该账单已有待执行停机工单";
   TICKETS.unshift({
-    ticketNo: `ST-2026-${ticketSeq++}`, type: "停机", customer: inv.customer,
+    ticketNo: `ST-2026-${rcSeqBox.ticket++}`, type: "停机", customer: inv.customer,
     sub: `（${inv.invNo} 关联订阅）`, invNo, debtSummary: `逾期 ${invBalance(inv).toLocaleString("zh-CN")} 元 · 逾期 ${overdueDays(inv)} 天`,
     reason: `欠费停机（人工触发 / 策略执行：逾期 > ${cfgNum("overdue.suspendDays")} 天）`, status: "待执行",
   });
@@ -294,12 +293,11 @@ export function runOverdueScan(today = DEMO_TODAY): number {
 }
 
 // P04-5：催收跟进登记（留痕）——写入跟进记录；如约定承诺付款日则同步写回账单行；下次跟进日进入通知/待办派生
-let crSeq = 13;
 export function addCollectRecord(data: Omit<CollectRecord, "crNo">): string | null {
   const inv = INV_BY_NO(data.invNo);
   if (!inv) return "账单不存在";
   if (data.content.trim().length < 5) return "跟进内容不少于 5 字";
-  COLLECT_RECORDS.unshift({ ...data, crNo: `CR-2026-${String(crSeq++).padStart(3, "0")}`, content: data.content.trim() });
+  COLLECT_RECORDS.unshift({ ...data, crNo: `CR-2026-${String(rcSeqBox.cr++).padStart(3, "0")}`, content: data.content.trim() });
   if (data.promiseDate?.trim()) inv.promiseDate = data.promiseDate.trim();
   bump();
   return null;
@@ -310,7 +308,7 @@ export function submitBadDebt(data: Omit<BadDebtApp, "bdNo" | "status" | "create
   if (!data.invNos.length) return "请选择逾期账单";
   if (data.collectRecord.trim().length < 10) return "催收记录不少于 10 字";
   if (data.reason === "其他" && !data.reasonText?.trim()) return "坏账原因=其他时必须填写说明";
-  BADDEBT_APPS.unshift({ ...data, bdNo: `BD-2026-${String(bdSeq++).padStart(3, "0")}`, status: "审批中", createdAt: now() });
+  BADDEBT_APPS.unshift({ ...data, bdNo: `BD-2026-${String(rcSeqBox.bd++).padStart(3, "0")}`, status: "审批中", createdAt: now() });
   bump();
   return null;
 }

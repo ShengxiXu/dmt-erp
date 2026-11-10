@@ -3,6 +3,7 @@
 // 关联面：R1 出口 / R2 基础线路选合同带出商务参数；采购单（P08）挂合同带出采购单价；
 //        供应商账单按口径关联（周期性 → 合同，一次性 → 采购单）；设备入库溯源到采购单。
 import { useSyncExternalStore } from "react";
+import { persistable } from "@/data/persist";
 
 export type PurchaseBilling = "周期性月租" | "按单计价";
 
@@ -28,7 +29,7 @@ export interface PurchaseContract {
 }
 
 // ---------- 预置合同（原 R1/R2 硬编码候选统一上收至此；PO 侧补设备 / 长途框架合同） ----------
-export const PURCHASE_CONTRACTS: PurchaseContract[] = [
+export const PURCHASE_CONTRACTS: PurchaseContract[] = persistable("purchaseContracts", () => [
   // 出口带宽（周期性月租，R1）
   { id: "CT-2026-018", buyerId: "ENT-HQ", name: "电信 BGP 出口采购合同（1G）", supplier: "上海电信", subject: "出口带宽", billing: "周期性月租", capacityM: 1000, monthlyCost: 45000, effect: "2025-01-01" },
   { id: "CU-2026-033", buyerId: "ENT-HQ", name: "联通 169 BGP 出口采购合同（1G）", supplier: "上海联通", subject: "出口带宽", billing: "周期性月租", capacityM: 1000, monthlyCost: 40000, effect: "2025-01-01" },
@@ -45,7 +46,7 @@ export const PURCHASE_CONTRACTS: PurchaseContract[] = [
   { id: "CT-2026-031", buyerId: "ENT-HQ", name: "华为渠道设备框架采购合同（CPE / 备件）", supplier: "华为渠道-上海XX", subject: "设备框架", billing: "按单计价", unitPrice: 4300, effect: "2026-01-01", remark: "AR6121 CPE 框架价 4,300 元/台，按单下达", attachments: ["CT-2026-031-框架合同扫描件.pdf"] },
   { id: "CT-2026-044", buyerId: "ENT-HQ", name: "华三渠道设备框架采购合同（CPE / 备件）", supplier: "华三渠道-上海YY", subject: "设备框架", billing: "按单计价", unitPrice: 3600, effect: "2026-02-01", remark: "MSR3600 CPE 框架价 3,600 元/台，按单下达" },
   { id: "CT-2026-020", buyerId: "ENT-HQ", name: "电信长途波道框架采购合同（按单开波道）", supplier: "电信上海分公司", subject: "OTN 波道", billing: "按单计价", unitPrice: 2800, effect: "2026-06-01", remark: "上海—深圳等长途波道按单计价" },
-];
+]);
 
 // ---------- 轻量 store ----------
 let version = 0;

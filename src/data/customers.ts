@@ -1,5 +1,6 @@
 // 客户档案（主数据）：特批申请 / 合同流程只选择客户，不手动录入
 import { useSyncExternalStore } from "react";
+import { persistable } from "@/data/persist";
 
 export interface Customer {
   id: string; name: string;
@@ -42,14 +43,15 @@ export interface Opportunity {
 }
 
 // ---------- 轻量 store：商机跨页面共享（商机管理 / 客户档案 / 特批申请 / 合同） ----------
-let opps: Opportunity[] = [
+// 商机台账本地持久化（persistable）：新增/改状态刷新不丢；原地修改保证快照引用稳定
+const opps: Opportunity[] = persistable("opps", () => [
   { id: "CJ-2026-001", customerId: "CU-001", name: "AI 算力一期 · AI 专线扩容", products: [{ cat: "ISP 互联网接入", ptype: "AI 专线" }], expectAmount: 2304000, expectMonths: 24, expectedCloseAt: "2026-10-20", stage: "赢单", source: "老客户续扩", sales: "张弛", createdAt: "2026-09-02", remark: "合同 HT-2026-021 签署中，生效后自动关闭" },
   { id: "CJ-2026-002", customerId: "CU-001", name: "二期算力扩容 · BGP 三网互通", products: [{ cat: "ISP 互联网接入", ptype: "BGP 三网互通" }, { cat: "ISP 互联网接入", ptype: "AI 专线" }], expectAmount: 2112000, expectMonths: 24, expectedCloseAt: "2026-11-15", stage: "已报价", source: "老客户续扩", sales: "张弛", createdAt: "2026-10-10" },
   { id: "CJ-2026-003", customerId: "CU-002", name: "行情加速专线项目", products: [{ cat: "ISP 互联网接入", ptype: "国内精品网" }], expectAmount: 252000, expectMonths: 12, expectedCloseAt: "2026-11-30", stage: "已报价", source: "转介绍", sales: "张弛", createdAt: "2026-10-15" },
   { id: "CJ-2026-004", customerId: "CU-006", name: "总部带宽升级项目", products: [{ cat: "ISP 互联网接入", ptype: "BGP 三网互通" }], expectAmount: 360000, expectMonths: 12, expectedCloseAt: "2026-11-01", stage: "赢单", source: "老客户续扩", sales: "李骁", createdAt: "2026-10-08", remark: "特批 SA-2026-013 被驳回，重新谈判中" },
   { id: "CJ-2026-005", customerId: "CU-007", name: "临港算力 10G AI 专线", products: [{ cat: "ISP 互联网接入", ptype: "AI 专线" }, { cat: "IDC", ptype: "机柜托管" }], expectAmount: 5400000, expectMonths: 36, expectedCloseAt: "2026-12-20", stage: "已报价", source: "市场活动", sales: "张弛", createdAt: "2026-10-25" },
   { id: "CJ-2026-006", customerId: "CU-005", name: "核心系统长账期专线项目", products: [{ cat: "数据专线", ptype: "OTN" }], expectAmount: 936000, expectMonths: 36, expectedCloseAt: "2026-12-31", stage: "跟进中", source: "招标", sales: "张弛", createdAt: "2026-10-20" },
-];
+]);
 
 let version = 0;
 const listeners = new Set<() => void>();
@@ -75,12 +77,13 @@ export function useOpps(): number {
 
 export function addOpp(patch: Omit<Opportunity, "id" | "createdAt">) {
   const id = `CJ-2026-0${String(opps.length + 1).padStart(2, "0")}`;
-  opps = [{ ...patch, id, createdAt: "2026-10-27" }, ...opps];
+  opps.unshift({ ...patch, id, createdAt: "2026-10-27" });
   bump();
   return id;
 }
 export function updateOpp(id: string, patch: Partial<Opportunity>) {
-  opps = opps.map((d) => (d.id === id ? { ...d, ...patch } : d));
+  const d = opps.find((x) => x.id === id);
+  if (d) Object.assign(d, patch);
   bump();
 }
 

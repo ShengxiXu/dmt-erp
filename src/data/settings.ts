@@ -2,6 +2,7 @@
 // 保存即生效（内存 store + 订阅）；所有消费方禁止硬编码这些值，一律 cfgNum/cfgStr 读取。
 // 边界：不做按客户/合同覆盖，不做灰度与审批流（正式环境建议加），修改留痕可追。
 import { useSyncExternalStore } from "react";
+import { persistable } from "@/data/persist";
 
 /** 演示数据时间基准（全系统唯一出处）：演示世界里的「今天」。
  *  数据层禁止用真实当天日期做任何逾期/账龄/时效判断；新增业务时间戳一律取此值。 */
@@ -76,13 +77,14 @@ const DEFAULTS: Record<string, string> = {
   "penalty.refRate": "30",
   "settle.closeDay": "3", "settle.diffYellow": "10", "settle.diffRed": "20",
 };
-const values: Record<string, string> = { ...DEFAULTS };
+// 策略值本地持久化：业务人员调整策略后刷新不丢
+const values: Record<string, string> = persistable("cfgValues", () => ({ ...DEFAULTS }));
 
 // ---------- 变更留痕 ----------
 export interface CfgLog { at: string; operator: string; key: string; label: string; from: string; to: string }
-export const CFG_LOGS: CfgLog[] = [
+export const CFG_LOGS: CfgLog[] = persistable("cfgLogs", () => [
   { at: "2026-10-20 09:15", operator: "系统初始化", key: "overdue.lateFeeRate", label: "滞纳金比例", from: "0.03", to: "0.05" },
-];
+]);
 
 // ---------- 轻量 store ----------
 let version = 0;

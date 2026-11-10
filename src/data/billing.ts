@@ -9,6 +9,7 @@
 import { useSyncExternalStore } from "react";
 import { registerReceivable } from "@/data/receivables";
 import { cfgNum, getCfg, DEMO_TODAY, demoNow } from "@/data/settings";
+import { persistable } from "@/data/persist";
 
 // ---------- 订阅台账（P02-8 激活；从合同生成，客户账单的取数基础） ----------
 export type SubStatus = "在网" | "欠停" | "退订";
@@ -64,7 +65,7 @@ export const dueDateOf = (start: Date, end: Date) => {
 };
 
 // ---------- 预置数据（订阅与已发应收的历史账单口径一致） ----------
-export const SUBSCRIPTIONS: Subscription[] = [
+export const SUBSCRIPTIONS: Subscription[] = persistable("subscriptions", () => [
   { subNo: "SUB-2026-0305", customer: "中海贸易", contractNo: "HT-2026-023", line: "单线 200M", monthlyFee: 12800, activatedAt: "2025-11-01", status: "在网" },
   { subNo: "SUB-2026-0312", customer: "跃游网络", contractNo: "HT-2026-024", line: "D-MAN 城域通道", monthlyFee: 6800, activatedAt: "2025-10-20", status: "欠停" },
   { subNo: "SUB-2026-0280", customer: "凯瑞传媒", contractNo: "HT-2026-020", line: "国内精品网 100M", monthlyFee: 8500, activatedAt: "2026-02-15", status: "在网" },
@@ -74,8 +75,8 @@ export const SUBSCRIPTIONS: Subscription[] = [
   { subNo: "SUB-2026-0330", customer: "博彦软件", contractNo: "HT-2026-0309", line: "CN2 GIA 100M", monthlyFee: 9900, activatedAt: "2026-06-20", status: "在网" },
   { subNo: "SUB-2026-0355", customer: "正大物流", contractNo: "HT-2026-015", line: "单线 100M", monthlyFee: 5600, activatedAt: "2026-10-08", status: "在网" },
   { subNo: "SUB-2026-0117", customer: "展鹏教育", contractNo: "HT-2026-0302", line: "国内精品网 50M", monthlyFee: 6800, activatedAt: "2025-12-01", status: "退订" },
-];
-export const CUST_INVOICES: CustInvoice[] = [
+]);
+export const CUST_INVOICES: CustInvoice[] = persistable("custInvoices", () => [
   { invNo: "INV-2026-1001", customer: "博彦软件", contractNo: "HT-2026-0309", subNo: "SUB-2026-0330",
     period: "2026-09-20 ~ 2026-10-19", periodStart: "2026-09-20", periodEnd: "2026-10-19", dueDate: "2026-10-26",
     items: [{ name: "CN2 GIA 100M · 2026-09-20 ~ 2026-10-19 周期费", amount: 9900, feeType: "周期费" }], amount: 9900, status: "已发出",
@@ -84,7 +85,7 @@ export const CUST_INVOICES: CustInvoice[] = [
     period: "2026-10-20 ~ 2026-11-19", periodStart: "2026-10-20", periodEnd: "2026-11-19", dueDate: "2026-11-26",
     items: [{ name: "D-MAN 城域通道 · 2026-10-20 ~ 2026-11-19 周期费", amount: 6800, feeType: "周期费" }], amount: 6800, status: "审核中",
     generatedAt: "2026-11-05 02:00", reviewReason: "欠停期间计费（A5：欠停照常计），人工确认后发出" },
-];
+]);
 
 // ---------- 轻量 store ----------
 let version = 0;
@@ -105,7 +106,7 @@ export function updateSubscription(subNo: string, patch: Partial<Pick<Subscripti
   if (s) { Object.assign(s, patch); bump(); }
 }
 
-let invSeq = 1002;
+const invSeqBox = persistable("billing.seq", () => ({ inv: 1002 }));
 const now = demoNow;
 
 // ---------- 出账审核（P03-4 定版：自动发出 + 例外人工审核） ----------
@@ -151,7 +152,7 @@ function dispatch(b: CustInvoice, sub: Subscription | undefined, manual: boolean
 
 /** P06 退订违约金等非订阅类一次性费用：以手工账单进入流程——手工单必审（例外规则①），通过后发出 */
 export function addManualBill(data: { customer: string; contractNo: string; period: string; items: BillItem[] }): string {
-  const invNo = `INV-2026-${invSeq++}`;
+  const invNo = `INV-2026-${invSeqBox.inv++}`;
   const ps = `${data.period}-01`, pe = fmtD(addDays(addMonthsClamped(parseD(ps), 1), -1));
   const b: CustInvoice = { invNo, customer: data.customer, contractNo: data.contractNo, period: data.period, periodStart: ps, periodEnd: pe, dueDate: dueDateOf(parseD(ps), parseD(pe)), items: data.items, amount: data.items.reduce((s, i) => s + i.amount, 0), status: "已生成", generatedAt: now() };
   CUST_INVOICES.unshift(b);
@@ -182,7 +183,7 @@ export function runBillingScan(today = DEMO_TODAY): { created: number; skipped: 
     const billed = CUST_INVOICES.some((b) => b.subNo === sub.subNo && b.periodStart === fmtD(start) && b.status !== "已驳回");
     if (billed) { skipped++; return; }
     const b: CustInvoice = {
-      invNo: `INV-2026-${invSeq++}`, customer: sub.customer, contractNo: sub.contractNo, subNo: sub.subNo,
+      invNo: `INV-2026-${invSeqBox.inv++}`, customer: sub.customer, contractNo: sub.contractNo, subNo: sub.subNo,
       period: periodText(sub, dueIdx), periodStart: fmtD(start), periodEnd: fmtD(end), dueDate: dueDateOf(start, end),
       items: [{ name: `${sub.line} · ${periodText(sub, dueIdx)} 周期费`, amount: sub.monthlyFee, feeType: "周期费" }],
       amount: sub.monthlyFee, status: "已生成", generatedAt: now(),

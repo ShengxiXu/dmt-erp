@@ -3,6 +3,7 @@
 // 第二层：审批链（每个审批点可配多条链，按分支条件取链；链内有序节点：审批人来源 / 会签或签 / 审批时限 / 驳回策略）
 // 引擎口径：单据提交 → 按「启用的审批点 × 触发条件 × 适用范围」匹配 → 命中生成 approval 走 P10-2 通用审批单；未命中 → 直接生效。配置变更记版本 + audit_log。
 import { useSyncExternalStore } from "react";
+import { persistable } from "@/data/persist";
 
 // ---------- 挂接单据候选集（系统内置的全部可提交单据及提交动作） ----------
 export const DOC_TYPES = [
@@ -47,15 +48,15 @@ export interface ApprovalChain {
   updatedAt: string;
 }
 
-export const APPROVAL_POINTS: ApprovalPoint[] = [
+export const APPROVAL_POINTS: ApprovalPoint[] = persistable("approvalPoints", () => [
   { id: "AP-01", name: "成本核算审批", docType: "成本核算单 · 提交", enabled: true, condition: { kind: "无条件", text: "" }, scope: "全局", multiHit: "按优先级取第一条", isDefault: true, updatedAt: "2026-10-20 14:00", updatedBy: "系统出厂" },
   { id: "AP-02", name: "采购审批", docType: "采购单 · 提交", enabled: true, condition: { kind: "无条件", text: "" }, scope: "全局", multiHit: "按优先级取第一条", isDefault: true, updatedAt: "2026-10-20 14:00", updatedBy: "系统出厂" },
   { id: "AP-03", name: "资源分配审批", docType: "资源分配申请 · 提交", enabled: true, condition: { kind: "无条件", text: "" }, scope: "全局", multiHit: "按优先级取第一条", isDefault: true, updatedAt: "2026-10-20 14:00", updatedBy: "系统出厂" },
   { id: "AP-04", name: "退款/红冲审批", docType: "收款红冲 · 提交", enabled: true, condition: { kind: "无条件", text: "" }, scope: "全局", multiHit: "全部串行（命中几个走几个）", isDefault: true, updatedAt: "2026-10-20 14:00", updatedBy: "系统出厂" },
   { id: "AP-05", name: "付款审批", docType: "付款申请单 · 提交", enabled: true, condition: { kind: "无条件", text: "" }, scope: "全局", multiHit: "按优先级取第一条", isDefault: true, updatedAt: "2026-10-20 14:00", updatedBy: "系统出厂" },
-];
+]);
 
-export const APPROVAL_CHAINS: ApprovalChain[] = [
+export const APPROVAL_CHAINS: ApprovalChain[] = persistable("approvalChains", () => [
   { id: "AC-01", pointId: "AP-01", branch: "", nodes: [
     { approverSource: "角色", approver: "财务主管", mode: "会签", timeoutHours: 24 },
   ], rejectPolicy: "退回发起人修改后重报", enabled: true, isDefault: true, updatedAt: "2026-10-20 14:00" },
@@ -77,7 +78,7 @@ export const APPROVAL_CHAINS: ApprovalChain[] = [
     { approverSource: "角色", approver: "财务主管", mode: "会签", timeoutHours: 24 },
     { approverSource: "角色", approver: "管理层", mode: "会签", timeoutHours: 48 },
   ], rejectPolicy: "逐级退回", enabled: true, isDefault: true, updatedAt: "2026-10-20 14:00" },
-];
+]);
 
 // ---------- 轻量 store（配置变更记版本 + 二次确认在页面层做） ----------
 let version = 0;

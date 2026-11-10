@@ -5,6 +5,7 @@ import { useSyncExternalStore } from "react";
 import { R4_ROWS, R1_ROWS, R3_ROWS, stockIn } from "@/data/resources";
 import { PURCHASE_CONTRACTS, saveContract } from "@/data/purchase";
 import { demoNow } from "@/data/settings";
+import { persistable } from "@/data/persist";
 
 // ---------- P08-1 采购需求单 ----------
 export type ReqSource = "手工提报" | "资源不足联动" | "业务规划";
@@ -62,14 +63,14 @@ export interface PurchaseOrder {
 }
 
 // ---------- 预置数据 ----------
-export const PURCHASE_REQS: PurchaseReq[] = [
+export const PURCHASE_REQS: PurchaseReq[] = persistable("purchaseReqs", () => [
   { reqNo: "PR-2026-1102", source: "资源不足联动", type: "设备", spec: "华为 AR6121 CPE", qty: 2, unit: "台", room: "上海漕河泾", expectDate: "2026-11-08", status: "待处理", linkedWo: "WO-2026-052", note: "工单 WO-2026-052 可用性检查：CPE 在库不足（需 2 台），改按单采购生成", createdAt: "2026-11-03 09:20", createdBy: "系统（工单挂起联动）" },
   { reqNo: "PR-2026-0099", source: "手工提报", type: "设备", spec: "10G 光模块（华为兼容）", qty: 20, unit: "个", room: "上海漕河泾", expectDate: "2026-11-15", status: "待处理", note: "备货：光模块安全库存补货", createdAt: "2026-10-28 14:05", createdBy: "钱工（运维）" },
   { reqNo: "PR-2026-0098", source: "业务规划", type: "带宽", spec: "联通 169 BGP 出口池扩容", qty: 500, unit: "M", room: "上海漕河泾", expectDate: "2026-11-30", status: "待处理", note: "Q4 BGP 销售预估增长，提前扩容", createdAt: "2026-10-25 10:40", createdBy: "业务支撑部-陈晨" },
   { reqNo: "PR-2026-0095", source: "手工提报", type: "设备", spec: "华为 AR6121 CPE", qty: 10, unit: "台", room: "上海漕河泾", expectDate: "2026-11-05", status: "已转采购单", poNo: "PO-2026-031", createdAt: "2026-10-18 11:12", createdBy: "孙工（运维）" },
-];
+]);
 
-export const PURCHASE_ORDERS: PurchaseOrder[] = [
+export const PURCHASE_ORDERS: PurchaseOrder[] = persistable("purchaseOrders", () => [
   {
     poNo: "PO-2026-052", supplier: "华为渠道-上海XX", reqNos: [], createdAt: "2026-11-02 16:30",
     lines: [{ lineType: "设备", spec: "华为 AR6121 CPE", unitPrice: 4300, quantity: 2, receivedQty: 0, acceptedQty: 0 }],
@@ -95,7 +96,7 @@ export const PURCHASE_ORDERS: PurchaseOrder[] = [
     batches: [{ batchNo: 1, at: "2026-10-30 15:10", operator: "仓管-王敏", items: [{ lineIdx: 0, arrived: 1, result: "合格" }] }],
     inboundDone: false,
   },
-];
+]);
 
 // ---------- 轻量 store ----------
 let version = 0;
@@ -114,15 +115,15 @@ export const PO_BY_NO = (no: string) => PURCHASE_ORDERS.find((p) => p.poNo === n
 export const poTotal = (po: PurchaseOrder) => po.lines.reduce((s, l) => s + l.unitPrice * l.quantity, 0);
 export const poTotalWithTax = (po: PurchaseOrder) => Math.round(poTotal(po) * (1 + po.taxRate));
 
-let poSeq = 53, reqSeq = 1103;
+const poSeqBox = persistable("purchase.seq", () => ({ po: 53, req: 1103 }));
 // SN 全局唯一登记（真实环境为设备档案序列号索引；原型以登记簿模拟查重）
-const REGISTERED_SNS = ["SN-AR6121-0001", "SN-AR6121-0002", "SN-AR6121-0003"];
+const REGISTERED_SNS: string[] = persistable("registeredSns", () => ["SN-AR6121-0001", "SN-AR6121-0002", "SN-AR6121-0003"]);
 export const fmtMoney = (n: number) => n.toLocaleString("zh-CN");
 
 // P08-1：新增采购需求（手工提报 / 业务规划）
 export function addReq(data: Omit<PurchaseReq, "reqNo" | "status" | "createdAt" | "createdBy"> & { createdBy?: string }) {
   const req: PurchaseReq = {
-    ...data, reqNo: `PR-2026-${reqSeq++}`, status: "待处理",
+    ...data, reqNo: `PR-2026-${poSeqBox.req++}`, status: "待处理",
     createdAt: demoNow(), createdBy: data.createdBy ?? "孙工（运维）",
   };
   PURCHASE_REQS.unshift(req);
@@ -155,7 +156,7 @@ export function reqToContractChange(reqNo: string, lineId: string, addM: number,
 export function createPoFromReqs(reqNos: string[], supplier: string, contractId?: string): string | null {
   const reqs = PURCHASE_REQS.filter((r) => reqNos.includes(r.reqNo) && r.status === "待处理" && r.type !== "带宽"); // 带宽类不走采购单（→ 合同变更）
   if (!reqs.length) return null;
-  const poNo = `PO-2026-${poSeq++}`;
+  const poNo = `PO-2026-${poSeqBox.po++}`;
   // 框架合同带价：按单计价类合同单价自动填入设备明细行（仍可修改，留痕）
   const contract = contractId ? PURCHASE_CONTRACTS.find((c) => c.id === contractId) : undefined;
   const lines: POLine[] = reqs.map((r) => ({

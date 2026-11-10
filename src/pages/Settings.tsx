@@ -6,6 +6,7 @@ import ArcoShell from "@/components/ArcoShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CFG_GROUPS, CFG_LOGS, getCfg, saveCfg, useSettings, type CfgDef } from "@/data/settings";
+import { hasPersistedData, resetDemoData, saveNow } from "@/data/persist";
 
 // ---------- 单个配置项行（独立本地态，逐项保存） ----------
 function CfgRow({ def }: { def: CfgDef }) {
@@ -74,6 +75,26 @@ export default function Settings() {
             {g.items.map((def) => <CfgRow key={def.key} def={def} />)}
           </div>
         ))}
+
+        <div className="rounded-[4px] border border-[#E5E6EB] bg-white p-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <div>
+              <div className="text-[13px] font-semibold text-[#1D2129]">演示数据</div>
+              <div className="mt-0.5 text-[11px] leading-4 text-[#86909C]">
+                {hasPersistedData()
+                  ? "本浏览器已保存演示数据快照：业务操作（新建 / 审批 / 出账 / 收款等）自动本地保存，刷新或重开浏览器不丢失，流程可跨天继续流转。"
+                  : "当前为出厂演示数据。业务操作会自动保存到本浏览器，刷新不丢失。"}
+              </div>
+            </div>
+            <div className="ml-auto flex gap-2">
+              <Button size="sm" variant="outline" className="h-7 text-xs" onClick={saveNow}>立即保存快照</Button>
+              <Button size="sm" variant="outline" className="h-7 text-xs text-[#F53F3F]"
+                onClick={() => window.confirm("确认重置？将清除本浏览器保存的全部业务数据，恢复到出厂演示数据。") && resetDemoData()}>
+                重置演示数据
+              </Button>
+            </div>
+          </div>
+        </div>
 
         <div className="rounded-[4px] border border-[#E5E6EB] bg-white p-4">
           <div className="mb-2 text-[13px] font-semibold text-[#1D2129]">变更留痕</div>

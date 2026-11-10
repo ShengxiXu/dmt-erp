@@ -1,4 +1,6 @@
 // P02 服务开通与资源分配 —— 工单台账
+import { persistable } from "@/data/persist";
+
 export type WoStep = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 export const STEP_NAMES = ["资源可用性检查", "资源分配申请", "资源分配审批", "资源绑定与扣减", "开通实施", "开通确认", "激活计费"];
 
@@ -13,12 +15,12 @@ export interface WorkOrder {
   updated: string;
 }
 
-export const WORK_ORDERS: WorkOrder[] = [
+export const WORK_ORDERS: WorkOrder[] = persistable("workOrders", () => [
   { id: "WO-2026-052", sheetId: "CE-2026-1008", customer: "上海某科技公司", contract: "HT-2026-0341 · 24 个月", line: "L1 · BGP 三网互通 50M（L2 专线并行开通）", bwM: 50, cat: "BGP 三网互通", step: 0, assignee: "孙工（运维）", deadline: "2026-10-28", updated: "2026-10-22 10:55" },
   { id: "WO-2026-051", sheetId: "CE-2026-1005", customer: "中海贸易", contract: "HT-2026-023 · 12 个月", line: "电信单线 200M（转售）", bwM: 200, cat: "运营商线路/裸光纤/设备转售", step: 1, assignee: "钱工（运维）", deadline: "2026-10-30", updated: "2026-10-21 09:40" },
   { id: "WO-2026-049", sheetId: "CE-2026-1002", customer: "凯瑞传媒", contract: "HT-2026-020 · 12 个月", line: "精品网通道 100M", bwM: 100, cat: "国内精品网", step: 4, assignee: "孙工（运维）", deadline: "2026-10-25", updated: "2026-10-22 08:10" },
   { id: "WO-2026-047", sheetId: "CE-2026-0998", customer: "博彦软件", contract: "HT-2026-0309 · 24 个月", line: "电信 CN2 切分 100M（转售）", bwM: 100, cat: "运营商线路/裸光纤/设备转售", step: 6, assignee: "孙工（运维）", deadline: "2026-10-20", updated: "2026-10-20 14:30" },
-];
+]);
 
 // ---------- P02-3 资源分配申请：类别化技术参数区（2026-10-22 设计） ----------
 // 通用资源区（出口线路/IP/基础线路/CPE，所有类别一致）+ 类别专属技术参数区（下表）

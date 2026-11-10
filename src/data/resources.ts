@@ -5,6 +5,7 @@
 import { useSyncExternalStore } from "react";
 import { MAT_DEF } from "./products";
 import { DEMO_TODAY } from "./settings";
+import { persistable } from "./persist";
 import type { FieldDef, FieldMethod } from "./products";
 export type { FieldDef, FieldMethod };
 
@@ -86,7 +87,7 @@ export const R1: ArchiveDef = {
 };
 
 // 预置出口线路：BGP 三网 = 电信/联通/移动三条（可多条）；AI 专线与 BGP 共用同批出口；D-MAN 共用电信出口
-export const R1_ROWS: R1Row[] = [
+export const R1_ROWS: R1Row[] = persistable("r1Rows", () => [
   {
     id: "E-CT-1", name: "电信-BGP出口-上海漕河泾-1G", product: "BGP 三网互通", sharedWith: "AI 专线、D-MAN",
     carrier: "电信", region: "上海市徐汇区漕河泾机房", contractNo: "CT-2026-018",
@@ -164,7 +165,7 @@ export const R1_ROWS: R1Row[] = [
       ],
     },
   },
-];
+]);
 
 // ---------- R2 基础线路 ----------
 export interface R2Row {
@@ -178,12 +179,12 @@ export const R2: ArchiveDef = {
   poolHint: "支撑条目：基础线路租用费；单客户专用，可跨产品类型共用（共用行计 0、成本计于首行）；整条月租计价、不绑定 IP",
   fields: [],  // 字段由资源目录归属类的属性模板驱动（ARCHIVE_FIELDS），此处仅兜底
 };
-export const R2_ROWS: R2Row[] = [
+export const R2_ROWS: R2Row[] = persistable("r2Rows", () => [
   { id: "B-001", name: "电信-CN2GIA-客户侧↔漕河泾机房-100M", carrier: "电信", bwM: 100, billing: "周期性（月）", price: 1000, contractNo: "CT-2026-063", shareable: "是", effect: "2026-01-01", status: "生效", dynamic: { usedBy: "本单 ISP 行已关联（核算中）" } },
   { id: "B-002", name: "联通-169-客户侧↔漕河泾机房-200M", carrier: "联通", bwM: 200, billing: "周期性（月）", price: 1600, contractNo: "CU-2026-042", shareable: "是", effect: "2025-12-01", status: "生效" },
   { id: "B-201", name: "电信-上海↔北京-OTN波道10G（含两端）", carrier: "电信", bwM: 10000, billing: "周期性（月）", price: 6000, contractNo: "OT-2026-009", shareable: "是", effect: "2026-03-01", status: "生效", dynamic: { usedBy: "数据专线行关联（核算中）" } },
   { id: "B-202", name: "电信-上海↔广州-OTN波道10G（含两端）", carrier: "电信", bwM: 10000, billing: "周期性（月）", price: 5200, contractNo: "OT-2026-015", shareable: "是", effect: "2026-05-01", status: "生效" },
-];
+]);
 
 // ---------- R3 IP 地址段 ----------
 // 行业口径：IP 地址段（segment / prefix）。关联关系：先选归属产品类型 → 以它为条件查出该产品可用的出口线路
@@ -205,7 +206,7 @@ export const R3: ArchiveDef = {
   poolHint: "成本口径：随单直接成本；先选归属产品类型、再按该类型查询可关联的出口线路，一段可挂 1~2 条线做冗余、已关联只增不删",
   fields: [],  // 字段由资源目录归属类的属性模板驱动（ARCHIVE_FIELDS），此处仅兜底
 };
-export const R3_ROWS: R3Row[] = [
+export const R3_ROWS: R3Row[] = persistable("r3Rows", () => [
   { id: "IP-58.40.0", name: "漕河泾-精品网出口-01", segment: "58.40.0.0/24（C 段）", total: 256, reserved: 2, unitPrice: 39, boundLines: ["I-101"], product: "国内精品网", ipCat: "客户分配/互联网出口", remark: "主力精品网段，切分以 /32 分配给订单", source: "自有", status: "生效",
     dynamic: { allocated: 214, orders: [{ customer: "恒信证券", n: 64 }, { customer: "博彦软件", n: 100 }, { customer: "某科技公司（核算中）", n: 4 }, { customer: "其余 10 单合计", n: 46 }] } },
   { id: "IP-58.41.0", name: "漕河泾-BGP电信出口-01", segment: "58.41.0.0/24（C 段）", total: 256, reserved: 2, unitPrice: 39, boundLines: ["E-CT-1"], product: "BGP 三网互通", ipCat: "客户分配/BGP 互联", source: "自有", status: "生效",
@@ -218,7 +219,7 @@ export const R3_ROWS: R3Row[] = [
     dynamic: { allocated: 150, orders: [{ customer: "云启数据", n: 100 }, { customer: "某科技公司（核算中）", n: 50 }] } },
   { id: "IP-58.45.0", name: "漕河泾-保留段-01", segment: "58.45.0.0/24（C 段）", total: 256, reserved: 2, unitPrice: 39, boundLines: [], product: "", ipCat: "内部使用/保留段", remark: "备用段，暂不对外分配；启用前需业务支撑部确认", source: "自有", status: "生效",
     dynamic: { allocated: 0, orders: [{ customer: "备用段（暂未分配）", n: 0 }] } },
-];
+]);
 
 // ---------- R4 设备库存 ----------
 export interface R4Row {
@@ -230,11 +231,11 @@ export const R4: ArchiveDef = {
   poolHint: "库存直绑（P02）带出库存成本价；与 P06 退订回收联动；含网卡/HBA 卡（2026-10-21 扩类）",
   fields: [],  // 字段由资源目录归属类的属性模板驱动（ARCHIVE_FIELDS），此处仅兜底
 };
-export const R4_ROWS: R4Row[] = [
+export const R4_ROWS: R4Row[] = persistable("r4Rows", () => [
   { id: "EQ-AR6121", name: "华为 AR6121 CPE", category: "CPE", costPrice: 4500, supplier: "华为渠道-上海XX", location: "上海市徐汇区漕河泾仓库", status: "在库", dynamic: { stock: 5, locked: 4 } },
   { id: "EQ-MSR3600", name: "华三 MSR3600 CPE", category: "CPE", costPrice: 3800, supplier: "华三渠道-上海YY", location: "上海市徐汇区漕河泾仓库", status: "在库", dynamic: { stock: 2, locked: 0 } },
   { id: "EQ-SFP10G", name: "10G 光模块（华为兼容）", category: "光模块", costPrice: 400, supplier: "光通信渠道-ZZ", location: "上海市徐汇区漕河泾仓库", status: "在库", dynamic: { stock: 30, locked: 4 } },
-];
+]);
 
 // ---------- 库存三层：入库单 → 结存（数量层）→ 出库单；设备按采购价直接结转（在途由采购单 P08 管理） ----------
 export interface InvInDoc {
@@ -243,18 +244,17 @@ export interface InvInDoc {
 export interface InvOutDoc {
   id: string; deviceId: string; qty: number; costPrice: number; refType: "销售订单" | "核算锁定" | "其他"; refId: string; at: string; operator: string;
 }
-export const INV_IN_DOCS: InvInDoc[] = [
+export const INV_IN_DOCS: InvInDoc[] = persistable("invInDocs", () => [
   { id: "IN-2026-001", deviceId: "EQ-AR6121", qty: 3, price: 4500, poNo: "PO-2026-018", at: "2026-08-12", operator: "仓管-王敏" },
   { id: "IN-2026-004", deviceId: "EQ-AR6121", qty: 2, price: 4600, poNo: "PO-2026-031", at: "2026-10-20", operator: "仓管-王敏" },
   { id: "IN-2026-002", deviceId: "EQ-MSR3600", qty: 2, price: 3800, poNo: "PO-2026-022", at: "2026-09-02", operator: "仓管-王敏" },
   { id: "IN-2026-003", deviceId: "EQ-SFP10G", qty: 30, price: 400, poNo: "PO-2026-025", at: "2026-09-15", operator: "仓管-王敏" },
-];
-export const INV_OUT_DOCS: InvOutDoc[] = [
+]);
+export const INV_OUT_DOCS: InvOutDoc[] = persistable("invOutDocs", () => [
   { id: "OUT-2026-011", deviceId: "EQ-SFP10G", qty: 2, costPrice: 400, refType: "销售订单", refId: "CE-2026-1008（L1+L2 实施领料）", at: "2026-10-22", operator: "仓管-王敏" },
-];
+]);
 
-let invSeq = 12;
-let inSeq = 5;
+const invSeqBox = persistable("inventory.seq", () => ({ out: 12, in: 5 }));
 const invListeners = new Set<() => void>();
 let invVersion = 0;
 const bumpInv = () => {
@@ -278,7 +278,7 @@ export function stockIn(deviceId: string, qty: number, price: number, poNo: stri
   if (!d || qty <= 0 || price < 0) return null;
   d.dynamic.stock += qty;
   const doc: InvInDoc = {
-    id: `IN-2026-${String(inSeq++).padStart(3, "0")}`,
+    id: `IN-2026-${String(invSeqBox.in++).padStart(3, "0")}`,
     deviceId, qty, price, poNo, at: DEMO_TODAY, operator,
   };
   INV_IN_DOCS.push(doc);
@@ -292,7 +292,7 @@ export function stockOut(deviceId: string, qty: number, refType: InvOutDoc["refT
   if (!d || qty <= 0) return null;
   if (d.dynamic.stock - qty < 0) return null;
   const doc: InvOutDoc = {
-    id: `OUT-2026-${String(invSeq++).padStart(3, "0")}`,
+    id: `OUT-2026-${String(invSeqBox.out++).padStart(3, "0")}`,
     deviceId, qty, costPrice: d.costPrice, refType, refId,
     at: DEMO_TODAY, operator,
   };
