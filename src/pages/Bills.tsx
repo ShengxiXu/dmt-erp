@@ -383,7 +383,7 @@ function EmailInbox() {
         <div className="flex items-center gap-3">
           <span className="text-sm font-semibold">财务邮箱 · 运营商账单</span>
           <span className="text-[11px] text-[#86909C]">
-            {pending ? `${pending} 封待处理` : "全部处理完毕"} · 真实环境：IMAP 定时收信 → 按发件人域识别运营商 → 附件模板化解析（原型用预置邮件模拟）
+            {pending ? `${pending} 封待处理` : "全部处理完毕"} · 点击邮件行展开附件明细与生成账单 · 真实环境：IMAP 定时收信 → 按发件人域识别运营商 → 附件模板化解析（原型用预置邮件模拟）
           </span>
         </div>
       </div>
@@ -402,7 +402,7 @@ function EmailInbox() {
             const total = em.rows.reduce((s, r) => s + r.amount, 0);
             const problems = em.rows.map((r) => ({ r, p: rowProblem(r) })).filter((x) => x.p);
             return [
-              <tr key={em.id} className="border-b last:border-0 hover:bg-[#F7F8FA]">
+              <tr key={em.id} className="cursor-pointer border-b last:border-0 hover:bg-[#F7F8FA]" onClick={() => setExpanded(open ? null : em.id)}>
                 <td className="px-3 py-2.5">
                   <button onClick={() => setExpanded(open ? null : em.id)} className="text-[#86909C] hover:text-[#165DFF]">{open ? "▾" : "▸"}</button>
                 </td>
@@ -426,8 +426,8 @@ function EmailInbox() {
                 <td className="px-3 py-2.5 text-right">
                   {em.status === "未导入" && (
                     <>
-                      <button onClick={() => setImporting(em)} className="mr-1 rounded-[2px] bg-[#165DFF] px-2 py-0.5 text-[11px] text-white hover:bg-[#4080FF]">导入</button>
-                      <button onClick={() => { if (confirm("忽略该邮件？（非账单类邮件）")) ignoreEmail(em.id); }} className="rounded-[2px] border border-[#E5E6EB] px-2 py-0.5 text-[11px] text-[#86909C] hover:text-[#4E5969]">忽略</button>
+                      <button onClick={(e) => { e.stopPropagation(); setImporting(em); }} className="mr-1 rounded-[2px] bg-[#165DFF] px-2 py-0.5 text-[11px] text-white hover:bg-[#4080FF]">导入</button>
+                      <button onClick={(e) => { e.stopPropagation(); if (confirm("忽略该邮件？（非账单类邮件）")) ignoreEmail(em.id); }} className="rounded-[2px] border border-[#E5E6EB] px-2 py-0.5 text-[11px] text-[#86909C] hover:text-[#4E5969]">忽略</button>
                     </>
                   )}
                 </td>
