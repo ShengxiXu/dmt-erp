@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Link } from "react-router";
 import { DEMO_TODAY } from "@/data/settings";
 import {
@@ -12,6 +12,7 @@ import { RECEIVABLES } from "@/data/receivables";
 import { promiseBroken, promiseOverDays, dueFollowUps } from "@/data/finance";
 import { R1_ROWS } from "@/data/resources";
 import { getBatches, useSettle } from "@/data/settle";
+import { useSessionRole, setSessionRole } from "@/data/users";
 
 const ROLES = ["业务支撑部", "技术部", "财务", "管理层"] as const;
 type Role = (typeof ROLES)[number];
@@ -94,7 +95,8 @@ const KPI_TONES = [
 ];
 
 export default function Workbench() {
-  const [role, setRole] = useState<Role>("业务支撑部");
+  const role = useSessionRole() as Role; // 全局会话角色：与侧边栏导航过滤 / 路由守卫联动（在工作台切换，刷新保留）
+  const setRole = (r: Role) => setSessionRole(r);
   useSettle(); // 跑完月结回来，月结相关卡片自动刷新
 
   const now = new Date(); // 时刻取真实时钟（问候语）；日期一律用演示基准日

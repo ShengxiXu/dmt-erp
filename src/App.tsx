@@ -37,6 +37,9 @@ import Billing from './pages/Billing'
 import Lifecycle from './pages/Lifecycle'
 import Settle from './pages/Settle'
 import FinanceCenter from './pages/FinanceCenter'
+import Notifications from './pages/Notifications'
+import SystemUsers from './pages/SystemUsers'
+import Claims from './pages/Claims'
 
 export default function App() {
   return (
@@ -72,6 +75,7 @@ export default function App() {
       <Route path="/purchase/orders" element={<PurchaseOrders />} />
       <Route path="/purchase/orders/:poNo" element={<PurchaseOrderDetail />} />
       <Route path="/system/approval" element={<ApprovalConfig />} />
+      <Route path="/system/users" element={<SystemUsers />} />
       <Route path="/system/entities" element={<Entities />} />
       <Route path="/system/settings" element={<SettingsPage />} />
       <Route path="/finance" element={<FinanceCenter />} />
@@ -80,7 +84,9 @@ export default function App() {
       <Route path="/finance/overdue" element={<Overdue />} />
       <Route path="/billing" element={<Billing />} />
       <Route path="/lifecycle" element={<Lifecycle />} />
+      <Route path="/finance/claims" element={<Claims />} />
       <Route path="/finance/settle" element={<Settle />} />
+      <Route path="/notifications" element={<Notifications />} />
       </Route>
     </Routes>
   )

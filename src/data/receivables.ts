@@ -2,6 +2,7 @@
 // 收款登记（P04-1）→ 核销（P04-2，提交自动比对）→ 欠费扫描/策略（P04-3/4，策略在 A5 配置）→
 // 提醒（P04-5）→ 滞纳金（P04-6，入下期账单）→ 停机执行（P04-7）→ 复机执行（P04-8，仅收讫触发）→ 坏账处理（P04-9，走 P10 审批）
 // 闭环规则：复机仅由「足额核销」自动触发，不接受人工手工复机（防绕过欠费管控）；登记错误走红冲审批（AP-04），原单留痕不可删。
+import { notify } from "@/data/notices";
 import { useSyncExternalStore } from "react";
 import { cfgNum, getCfg, DEMO_TODAY, demoNow } from "@/data/settings";
 import { persistable } from "@/data/persist";
@@ -155,6 +156,7 @@ export function registerReceivable(data: { invNo: string; customer: string; cont
   RECEIVABLES.unshift({ ...rest, received: 0, status: "已发出",
     invoice: invoice ? { apNo: `KA-2026-${rcSeqBox.invApp++}`, periodText: invoice.periodText, items: invoice.items,
       bizCat: "ISP", invType: "增值税专用发票（电子）", format: "PDF", status: "待开票", createdAt: now() } : undefined });
+  if (invoice) notify({ level: "blue", group: "财务", title: "应收账单生成", text: `${data.customer} ${data.invNo}（¥${data.amount.toLocaleString("zh-CN")}）已出账，待开票`, to: "/finance?tab=invoice" });
   bump();
 }
 
@@ -187,6 +189,7 @@ export function fillInvoiceInfo(apNo: string, invoiceNo: string, invoicedAt: str
   if (!invoiceNo.trim()) return "必须填写发票号码";
   if (!invoicedAt.trim()) return "必须填写开票日期";
   loc.info.invoiceNo = invoiceNo.trim(); loc.info.invoicedAt = invoicedAt; loc.info.status = "已开票";
+  notify({ level: "green", group: "财务", title: "开票完成", text: `${loc.inv.customer} ${loc.inv.invNo} 发票号 ${loc.info.invoiceNo} 已回填（${invoicedAt}）`, to: "/finance?tab=invoice" });
   bump();
   return null;
 }
@@ -197,6 +200,7 @@ export function redFlushInvoiceInfo(apNo: string): string | null {
   if (!loc || loc.info.status !== "已开票") return "仅已开票申请可标记红冲";
   if (loc.inv.received > 0) return "该账单已发生收款，不允许红冲发票；请先走收款红冲审批（AP-04）冲平收款";
   loc.info.status = "已红冲";
+  notify({ level: "red", group: "财务", title: "发票红冲", text: `${loc.inv.customer} ${loc.inv.invNo}（${loc.info.invoiceNo}）已标记红冲，请同步处理金蝶侧`, to: "/finance?tab=invoice" });
   bump();
   return null;
 }
@@ -238,7 +242,9 @@ export function addPayment(data: Omit<Payment, "payNo" | "status">): string | nu
       sub: oldTicket?.sub ?? "（关联订阅）", invNo: inv.invNo, debtSummary: "账单已收讫",
       reason: "收讫复机（足额核销自动触发）", status: "待执行", linkedTicket: oldTicket?.ticketNo,
     });
+    notify({ level: "orange", group: "财务", title: "复机工单自动生成", text: `${inv.customer} ${inv.invNo} 已足额收讫，复机工单待执行（仅收讫触发）`, to: "/finance?tab=collect" });
   }
+  notify({ level: "green", group: "财务", title: "回款到账", text: `${inv.customer} 回款 ¥${data.amount.toLocaleString("zh-CN")}（${data.method}${data.referenceNo ? ` · 流水 ${data.referenceNo}` : ""} · ${inv.invNo}）`, to: "/finance?tab=pay" });
   bump();
   return null;
 }
@@ -249,6 +255,7 @@ export function redFlushPayment(payNo: string) {
   p.status = "已红冲";
   const inv = INV_BY_NO(p.invNo);
   if (inv) { inv.received = Math.max(0, inv.received - p.amount); inv.status = inv.received >= inv.amount ? "已收讫" : inv.received > 0 ? "部分收款" : "逾期"; }
+  notify({ level: "red", group: "财务", title: "收款红冲", text: `${p.customer} ${p.payNo}（¥${p.amount.toLocaleString("zh-CN")}）已红冲，账单余额已回冲`, to: "/finance?tab=pay" });
   bump();
 }
 
@@ -262,6 +269,7 @@ export function createSuspendTicket(invNo: string): string | null {
     sub: `（${inv.invNo} 关联订阅）`, invNo, debtSummary: `逾期 ${invBalance(inv).toLocaleString("zh-CN")} 元 · 逾期 ${overdueDays(inv)} 天`,
     reason: `欠费停机（人工触发 / 策略执行：逾期 > ${cfgNum("overdue.suspendDays")} 天）`, status: "待执行",
   });
+  notify({ level: "red", group: "财务", title: "停机工单生成", text: `${inv.customer} ${invNo} 停机工单已创建（逾期 ${overdueDays(inv)} 天），待技术执行`, to: "/finance?tab=collect" });
   bump();
   return null;
 }
@@ -276,6 +284,7 @@ export function executeTicket(ticketNo: string, data: { action: string; result: 
   const inv = INV_BY_NO(t.invNo);
   if (t.type === "停机" && inv && inv.status !== "已收讫") inv.status = "欠停";
   if (t.type === "复机" && inv) inv.status = "已收讫";
+  notify({ level: data.result === "成功" ? "green" : "red", group: "财务", title: `${t.type}工单已完工`, text: `${t.customer} ${t.ticketNo} 执行${data.result}${data.note ? `：${data.note}` : ""}`, to: "/finance?tab=collect" });
   bump();
   return null;
 }
@@ -288,6 +297,7 @@ export function runOverdueScan(today = DEMO_TODAY): number {
       inv.status = "逾期"; n++;
     }
   });
+  if (n > 0) notify({ level: "orange", group: "财务", title: "逾期扫描完成", text: `${today} 扫描：${n} 笔账单迁入「逾期」，按策略进入宽限提醒 / 催收 / 停机判定`, to: "/finance?tab=collect" });
   bump();
   return n;
 }
@@ -308,7 +318,9 @@ export function submitBadDebt(data: Omit<BadDebtApp, "bdNo" | "status" | "create
   if (!data.invNos.length) return "请选择逾期账单";
   if (data.collectRecord.trim().length < 10) return "催收记录不少于 10 字";
   if (data.reason === "其他" && !data.reasonText?.trim()) return "坏账原因=其他时必须填写说明";
-  BADDEBT_APPS.unshift({ ...data, bdNo: `BD-2026-${String(rcSeqBox.bd++).padStart(3, "0")}`, status: "审批中", createdAt: now() });
+  const bdNo = `BD-2026-${String(rcSeqBox.bd++).padStart(3, "0")}`;
+  BADDEBT_APPS.unshift({ ...data, bdNo, status: "审批中", createdAt: now() });
+  notify({ level: "red", group: "财务", title: "坏账申请已提交", text: `${bdNo}（${data.customer} · ${data.invNos.length} 笔）进入审批（默认链：财务主管 + 管理层）`, to: "/finance?tab=collect" });
   bump();
   return null;
 }
@@ -316,6 +328,7 @@ export function decideBadDebt(bdNo: string, pass: boolean): string | null {
   const app = BADDEBT_APPS.find((x) => x.bdNo === bdNo);
   if (!app || app.status !== "审批中") return "申请不存在或不在审批中";
   app.status = pass ? "已通过" : "已驳回";
+  notify({ level: pass ? "red" : "blue", group: "财务", title: `坏账申请${pass ? "已通过" : "被驳回"}`, text: `${bdNo}（${app.customer}）${pass ? "账单已转坏账，停止催收" : "继续催收流程"}`, to: "/finance?tab=collect" });
   if (pass) {
     app.invNos.forEach((no) => {
       const inv = INV_BY_NO(no);

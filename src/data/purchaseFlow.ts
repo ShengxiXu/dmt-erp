@@ -5,6 +5,7 @@ import { useSyncExternalStore } from "react";
 import { R4_ROWS, R1_ROWS, R3_ROWS, stockIn } from "@/data/resources";
 import { PURCHASE_CONTRACTS, saveContract } from "@/data/purchase";
 import { demoNow } from "@/data/settings";
+import { notify } from "@/data/notices";
 import { persistable } from "@/data/persist";
 
 // ---------- P08-1 采购需求单 ----------
@@ -190,7 +191,9 @@ export function submitPo(poNo: string) {
   const po = PO_BY_NO(poNo);
   if (!po || po.status !== "草稿") return;
   if (po.lines.some((l) => !(l.unitPrice > 0))) return;
-  po.status = "待审批"; bump();
+  po.status = "待审批";
+  notify({ level: "blue", group: "采购", title: "采购单待审批", text: `${po.poNo}（${po.supplier} · ¥${poTotalWithTax(po).toLocaleString("zh-CN")}）已提交，待采购审批`, to: `/purchase/orders/${po.poNo}` });
+  bump();
 }
 export function submitPoDirect(poNo: string) {
   const po = PO_BY_NO(poNo);
@@ -199,10 +202,21 @@ export function submitPoDirect(poNo: string) {
   po.status = "已下单"; bump();
 }
 // P08-3：批准 → 已下单；驳回 → 退回草稿（版本 +1，留痕）
-export function approvePo(poNo: string) { const po = PO_BY_NO(poNo); if (po && po.status === "待审批") { po.status = "已下单"; bump(); } }
+export function approvePo(poNo: string) {
+  const po = PO_BY_NO(poNo);
+  if (po && po.status === "待审批") {
+    po.status = "已下单";
+    notify({ level: "green", group: "采购", title: "采购单已下单", text: `${po.poNo}（${po.supplier}）审批通过，已通知供应商`, to: `/purchase/orders/${po.poNo}` });
+    bump();
+  }
+}
 export function rejectPo(poNo: string, reason: string) {
   const po = PO_BY_NO(poNo);
-  if (po && po.status === "待审批") { po.status = "草稿"; po.version += 1; po.rejectReason = reason; bump(); }
+  if (po && po.status === "待审批") {
+    po.status = "草稿"; po.version += 1; po.rejectReason = reason;
+    notify({ level: "red", group: "采购", title: "采购单被驳回", text: `${po.poNo}（${po.supplier}）退回草稿（v${po.version}）：${reason}`, to: `/purchase/orders/${po.poNo}` });
+    bump();
+  }
 }
 // P08-4：下单后录入采购合同价（作为 P09 自动核对的基准；查重）
 export function saveContractPrice(poNo: string, data: { contractNo: string; signedAt: string; effectAt: string; lines: { spec: string; price: number }[] }) {

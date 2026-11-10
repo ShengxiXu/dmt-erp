@@ -96,13 +96,16 @@ export const POINT_BY_ID = (id: string) => APPROVAL_POINTS.find((p) => p.id === 
 export const CHAINS_OF = (pointId: string) => APPROVAL_CHAINS.filter((c) => c.pointId === pointId);
 export const ENABLED_POINTS = () => APPROVAL_POINTS.filter((p) => p.enabled);
 
+import { notify } from "@/data/notices";
 import { demoNow } from "@/data/settings";
 
 const now = demoNow;
 export function savePoint(patch: ApprovalPoint) {
+  const isNew = !POINT_BY_ID(patch.id);
   const i = APPROVAL_POINTS.findIndex((p) => p.id === patch.id);
   if (i >= 0) APPROVAL_POINTS[i] = { ...patch, updatedAt: now(), updatedBy: "管理员-王芳" };
   else APPROVAL_POINTS.push({ ...patch, id: `AP-${String(APPROVAL_POINTS.length + 1).padStart(2, "0")}`, isDefault: false, updatedAt: now(), updatedBy: "管理员-王芳" });
+  notify({ level: "blue", group: "系统", title: `审批嵌入点${isNew ? "新增" : "变更"}`, text: `「${patch.name}」配置已更新（${patch.enabled ? "启用" : "停用"}），影响嵌入该点的所有流程`, to: "/system/approval" });
   bump();
 }
 export function togglePoint(id: string) {
@@ -110,9 +113,11 @@ export function togglePoint(id: string) {
   if (p) { p.enabled = !p.enabled; p.updatedAt = now(); p.updatedBy = "管理员-王芳"; bump(); }
 }
 export function saveChain(patch: ApprovalChain) {
+  const isNew = !APPROVAL_CHAINS.some((c) => c.id === patch.id);
   const i = APPROVAL_CHAINS.findIndex((c) => c.id === patch.id);
   if (i >= 0) APPROVAL_CHAINS[i] = { ...patch, updatedAt: now() };
   else APPROVAL_CHAINS.push({ ...patch, id: `AC-${String(APPROVAL_CHAINS.length + 1).padStart(2, "0")}`, isDefault: false, updatedAt: now() });
+  notify({ level: "blue", group: "系统", title: `审批流${isNew ? "新增" : "变更"}`, text: `「${POINT_BY_ID(patch.pointId)?.name ?? patch.pointId}」${isNew ? "已创建" : "节点/顺序已调整"}${patch.branch ? `（分支：${patch.branch}）` : ""}（${patch.enabled ? "启用" : "停用"}），新发起的单据按最新配置流转`, to: "/system/approval" });
   bump();
 }
 export function toggleChain(id: string) {

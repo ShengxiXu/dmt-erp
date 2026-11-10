@@ -1,95 +1,13 @@
 import { createContext, useContext, useState, type ReactNode } from "react";
-import { Link, Outlet, useLocation } from "react-router";
+import { Link, Outlet, useLocation, useNavigate } from "react-router";
+import { ShieldAlert } from "lucide-react";
 import { DEMO_TODAY } from "@/data/settings";
-import {
-  LayoutGrid, FileText, Calculator, CheckSquare, Wrench, FolderOpen, ReceiptText, Receipt,
-  Users, Lightbulb, Package, ListChecks, Boxes, Coins, Layers, Warehouse, CircleAlert,
-  FileSignature, ShoppingCart, ClipboardList, Landmark, RefreshCcw, CalendarCheck,
-  Settings2, Building2, ChevronRight, ChevronDown, TrendingUp, Wallet,
-} from "lucide-react";
+import { ChevronRight, ChevronDown } from "lucide-react";
 import { SHEETS } from "@/data/sheets";
 import GlobalSearch from "@/components/GlobalSearch";
 import NoticeBell from "@/components/NoticeBell";
-
-/** 导航配置（分组） */
-const NAV_GROUPS = [
-  {
-    group: "概览",
-    items: [
-      { to: "/workbench", label: "工作台", icon: LayoutGrid },
-      { to: "/analytics", label: "经营分析", icon: TrendingUp },
-    ],
-  },
-  {
-    group: "销售与合同",
-    items: [
-      { to: "/customer", label: "客户档案", icon: Users },
-      { to: "/opportunity", label: "商机管理", icon: Lightbulb },
-      { to: "/special", label: "特批申请", icon: FolderOpen },
-      { to: "/contract", label: "合同管理", icon: FileSignature },
-    ],
-  },
-  {
-    group: "产品与资源",
-    items: [
-      { to: "/product", label: "产品定义", icon: Package },
-      { to: "/product/bom", label: "资源清单", icon: ListChecks },
-      { to: "/materials", label: "资源目录", icon: Boxes },
-      { to: "/cost-items", label: "成本条目库", icon: Layers },
-      { to: "/cost-centers", label: "成本中心", icon: Coins },
-      {
-        to: "/resources/r1", label: "资源中心", icon: Warehouse,
-        children: [
-          { to: "/resources/r1", label: "R1 出口资源池" },
-          { to: "/resources/r2", label: "R2 基础线路" },
-          { to: "/resources/r3", label: "R3 IP 地址" },
-          { to: "/resources/r4", label: "R4 设备库存" },
-          { to: "/resources/chain-map", label: "成本怎么算" },
-        ],
-      },
-    ],
-  },
-  {
-    group: "采购与库存",
-    items: [
-      { to: "/purchase/reqs", label: "采购需求", icon: ClipboardList },
-      { to: "/purchase/orders", label: "采购单", icon: ShoppingCart },
-      { to: "/purchase/contracts", label: "采购合同", icon: FileText },
-      { to: "/bills", label: "供应商账单", icon: ReceiptText },
-    ],
-  },
-  {
-    group: "交付与核算",
-    items: [
-      { to: "/", label: "核算单录入", icon: Calculator },
-      { to: "/approval", label: "审批中心", icon: CheckSquare },
-      { to: "/delivery", label: "开通工单", icon: Wrench },
-      { to: "/cost", label: "成本台账", icon: FileText },
-    ],
-  },
-  {
-    group: "财务",
-    items: [
-      { to: "/finance", label: "财务中心", icon: Wallet,
-        children: [
-          { to: "/finance/invoices", label: "开票管理（旧）", icon: Receipt },
-          { to: "/finance/payments", label: "收款管理（旧）", icon: Landmark },
-          { to: "/finance/overdue", label: "欠费与坏账（旧）", icon: CircleAlert },
-        ] },
-      { to: "/billing", label: "计费与出账", icon: ReceiptText },
-      { to: "/finance/settle", label: "月结", icon: CalendarCheck },
-      { to: "/lifecycle", label: "变更与退订", icon: RefreshCcw },
-    ],
-  },
-  {
-    group: "系统管理",
-    items: [
-      { to: "/system/entities", label: "主体与印章", icon: Building2 },
-      { to: "/system/settings", label: "策略中心", icon: Settings2 },
-      { to: "/system/approval", label: "审批流配置", icon: CheckSquare },
-    ],
-  },
-];
+import { NAV_GROUPS } from "@/components/navConfig";
+import { currentRole, pathAllowed, useSessionRole } from "@/data/users";
 
 /** 面包屑上下文：ShellLayout 持有状态并下发 setter，页面在渲染期写入，顶栏同帧刷新 */
 const BreadcrumbCtx = createContext<string>("工作台");
@@ -109,14 +27,25 @@ export default function ArcoShell({ breadcrumb, userRole: _userRole, children }:
 /**
  * 持久布局：侧边栏 + 顶栏只挂载一次，路由切换只换右侧内容，
  * 导航不再整页重建（分组展开状态、滚动位置都保留）。
+ * 权限：菜单按当前角色过滤；直达无权限的 URL 由路由守卫拦截。
  */
 export function ShellLayout() {
   const { pathname } = useLocation();
+  const navigate = useNavigate();
   const [crumb, setCrumb] = useState("工作台");
+  useSessionRole(); // 角色切换即时重渲染导航与守卫
+  const role = currentRole();
   const pendingCount = SHEETS.filter((s) => s.status === "审批中").length;
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const wd = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"][new Date(`${DEMO_TODAY}T00:00:00`).getDay()];
   const dateStr = `${DEMO_TODAY} ${wd}`;
+
+  // 菜单可见性：自身命中授权，或有任一子菜单命中（父级展示、子级再过滤）
+  const canSee = (to: string, children?: { to: string }[]) =>
+    pathAllowed(role.menus, to) || (children?.some((c) => pathAllowed(role.menus, c.to)) ?? false);
+
+  // 路由守卫：通知中心与工作台全员可用；其余按角色菜单鉴权
+  const guardOk = pathname === "/workbench" || pathname === "/notifications" || pathAllowed(role.menus, pathname);
 
   return (
     <div className="flex min-h-screen bg-[#F7F8FA] text-[#1D2129]"
@@ -131,12 +60,16 @@ export function ShellLayout() {
         </div>
 
         <nav className="flex-1 overflow-y-auto px-2 py-3">
-          {NAV_GROUPS.map((g) => (
+          {NAV_GROUPS.map((g) => {
+            const items = g.items.filter((n) => canSee(n.to, n.children));
+            if (!items.length) return null;
+            return (
             <div key={g.group} className="mb-2">
               <div className="px-3 pb-1 pt-2 text-[12px] text-[#86909C]">{g.group}</div>
-              {g.items.map((n) => {
+              {items.map((n) => {
                 const hasChildren = !!n.children?.length;
-                const childActive = n.children?.some((c) => pathname === c.to || pathname.startsWith(c.to));
+                const visibleChildren = (n.children ?? []).filter((c) => pathAllowed(role.menus, c.to));
+                const childActive = visibleChildren.some((c) => pathname === c.to || pathname.startsWith(c.to));
                 const active = n.to === "/" ? pathname === "/" : (pathname === n.to || !!childActive);
                 const badge = n.label === "审批中心" ? pendingCount : 0;
                 const open = openGroups[n.to] ?? !!childActive;
@@ -146,7 +79,8 @@ export function ShellLayout() {
                       active ? "bg-[#F2F3F5] font-medium text-[#165DFF]" : "text-[#4E5969] hover:bg-[#F7F8FA]"
                     }`}>
                       <Link to={n.to} className="flex h-full flex-1 items-center gap-2.5 px-3 text-[14px]">
-                        <n.icon size={16} strokeWidth={1.8} />
+                        {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                        {(() => { const Icon = n.icon as any; return <Icon size={16} strokeWidth={1.8} />; })()}
                         {n.label}
                         {badge > 0 && (
                           <span className="ml-auto flex h-[18px] min-w-[18px] items-center justify-center rounded-[9px] bg-[#F53F3F] px-1 text-[11px] text-white">{badge}</span>
@@ -158,7 +92,7 @@ export function ShellLayout() {
                         </button>
                       )}
                     </div>
-                    {hasChildren && open && n.children!.map((c) => (
+                    {hasChildren && open && visibleChildren.map((c) => (
                       <Link key={c.to} to={c.to}
                         className={`mb-0.5 flex h-9 items-center gap-2 rounded-[2px] py-1 pl-9 pr-3 text-[13px] transition-colors ${
                           pathname === c.to ? "font-medium text-[#165DFF]" : "text-[#4E5969] hover:bg-[#F7F8FA]"
@@ -171,7 +105,8 @@ export function ShellLayout() {
                 );
               })}
             </div>
-          ))}
+            );
+          })}
         </nav>
 
         <div className="border-t border-[#F2F3F5] p-3">
@@ -179,7 +114,10 @@ export function ShellLayout() {
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#6366F1] to-[#8B5CF6] text-[13px] font-medium text-white shadow-md">许</span>
             <div className="text-[12px] leading-tight">
               <div className="font-medium text-[#1D2129]">许晟熙</div>
-              <div className="mt-0.5 text-[#86909C]">业务支撑部</div>
+              <div className="mt-0.5 flex items-center gap-1 text-[#86909C]">
+                <span>{role.name}</span>
+                <button onClick={() => navigate("/workbench")} title="到工作台切换演示角色" className="rounded-[2px] border border-[#E5E6EB] px-1 text-[10px] text-[#165DFF] hover:bg-[#F0F5FF]">切换</button>
+              </div>
             </div>
           </div>
         </div>
@@ -195,13 +133,31 @@ export function ShellLayout() {
           <div className="ml-auto flex items-center gap-4">
             <GlobalSearch />
             <NoticeBell />
+            <span className="hidden rounded-[2px] bg-[#F0F5FF] px-1.5 py-0.5 text-[11px] text-[#165DFF] lg:block">{role.name}</span>
             <span className="hidden text-[13px] tabular-nums text-[#86909C] lg:block">{dateStr}</span>
             <span className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-[#6366F1] to-[#8B5CF6] text-[13px] font-medium text-white shadow-md ring-2 ring-white">许</span>
           </div>
         </header>
         <BreadcrumbCtx.Provider value={crumb}>
           <SetBreadcrumbCtx.Provider value={setCrumb}>
-            <Outlet />
+            {guardOk ? (
+              <Outlet />
+            ) : (
+              <main className="flex min-h-[70vh] items-center justify-center p-6">
+                <div className="w-[420px] rounded-[8px] border border-[#E5E6EB] bg-white p-8 text-center shadow-sm">
+                  <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[#FFECE8] text-[#F53F3F]"><ShieldAlert size={22} /></span>
+                  <div className="mt-3 text-[15px] font-semibold text-[#1D2129]">当前角色无权访问该页面</div>
+                  <div className="mt-1.5 text-[12px] leading-5 text-[#86909C]">
+                    你正以「{role.name}」身份查看系统，该角色未开通「{crumb}」的菜单权限。
+                    如需访问，请联系系统管理员（用户与角色 → 权限矩阵）开通，或切换演示角色。
+                  </div>
+                  <div className="mt-4 flex justify-center gap-2">
+                    <button onClick={() => navigate("/workbench")} className="rounded-[2px] bg-[#165DFF] px-3 py-1.5 text-[12px] text-white hover:bg-[#4080FF]">返回工作台</button>
+                    <button onClick={() => navigate("/system/users")} className="rounded-[2px] border border-[#E5E6EB] px-3 py-1.5 text-[12px] text-[#4E5969] hover:border-[#165DFF] hover:text-[#165DFF]">查看权限矩阵</button>
+                  </div>
+                </div>
+              </main>
+            )}
           </SetBreadcrumbCtx.Provider>
         </BreadcrumbCtx.Provider>
       </div>
