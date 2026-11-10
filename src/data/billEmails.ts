@@ -110,7 +110,7 @@ export const rowProblem = (row: EmailBillRow): "无基准" | "资源未匹配" |
 // 账单号段与 bills.ts 独立（EM 导入的账单也进 HY 台账，号段共用 bills.seq 会破坏其闭包，故这里自维护）
 const seqBox = persistable("billEmails.seq", () => ({ bill: 1019 }));
 
-/** 导入：无差异行直接生成账单；差异行按 decisions 处理（按实入账 / 暂挂对账） */
+/** 导入：无差异行「导入即入账」；差异行按实入账（tag=差异 留痕）；暂挂行生成争议账单（待入账+tag=争议，待对账） */
 export function importEmail(emailId: string, decisions: Record<number, "按实入账" | "暂挂">, holdReasons: Record<number, string>): string | null {
   const em = BILL_EMAILS.find((e) => e.id === emailId);
   if (!em) return "邮件不存在";
@@ -120,31 +120,46 @@ export function importEmail(emailId: string, decisions: Record<number, "按实�
   for (const { r } of needDecision) {
     if (!decisions[r.lineNo]) return `第 ${r.lineNo} 行（${r.itemName}）存在差异/无基准，请选择处理方式`;
   }
-  let created = 0, held = 0;
+  let created = 0, direct = 0, diffCnt = 0, held = 0;
   for (const { r, p } of problems) {
     const ck = checkRow(r);
     const decision = decisions[r.lineNo];
     if (decision === "暂挂") {
-      r.result = { hold: true, holdReason: holdReasons[r.lineNo]?.trim() || "待与运营商对账" };
+      // 暂挂也入台账：状态待入账 + tag=争议，对完账后在账单详情转正或作废
+      const id = `HY-2026-${seqBox.bill++}`;
+      const reason = holdReasons[r.lineNo]?.trim() || "待与运营商对账";
+      bills.unshift({
+        id, supplier: em.supplier, period: em.period, costItemKey: r.costItemKey, amount: r.amount,
+        resRef: r.resRef, contractNo: r.contractNo, status: "待入账", createdAt: demoNow(),
+        source: "邮件导入", emailId: em.id, tag: "争议",
+        diff: { expected: ck.expected ?? 0, diff: ck.diff, reason, handle: "暂挂对账" },
+        note: `暂挂对账：${reason}`,
+      });
+      r.result = { billId: id, hold: true, holdReason: reason };
       held++;
+      created++;
       continue;
     }
     const id = `HY-2026-${seqBox.bill++}`;
     bills.unshift({
       id, supplier: em.supplier, period: em.period, costItemKey: r.costItemKey, amount: r.amount,
-      resRef: r.resRef, contractNo: r.contractNo, status: "待入账", createdAt: demoNow(),
+      resRef: r.resRef, contractNo: r.contractNo, status: "已入账", createdAt: demoNow(),
       source: "邮件导入", emailId: em.id,
-      ...(p ? { diff: { expected: ck.expected ?? 0, diff: ck.diff, reason: holdReasons[r.lineNo]?.trim(), handle: "按实入账" as const } } : {}),
+      ...(p ? { tag: "差异" as const, diff: { expected: ck.expected ?? 0, diff: ck.diff, reason: holdReasons[r.lineNo]?.trim(), handle: "按实入账" as const } } : {}),
       note: p ? `邮件导入：与合同基准差异 ${ck.diff > 0 ? "+" : ""}${ck.diff.toLocaleString("zh-CN")} 元，按实入账` : `邮件导入自 ${em.from}`,
     });
     r.result = { billId: id };
     created++;
+    if (p) diffCnt++; else direct++;
   }
   em.status = "已导入";
+  const parts = [`${direct} 张直接入账`];
+  if (diffCnt) parts.push(`${diffCnt} 张差异按实入账`);
+  if (held) parts.push(`${held} 张争议暂挂待对账`);
   notify({
     level: held > 0 ? "orange" : "green", group: "采购",
     title: `运营商账单已导入（${em.supplier} ${em.period}）`,
-    text: `邮件「${em.subject}」解析 ${em.rows.length} 行：生成账单 ${created} 张${held ? `，暂挂 ${held} 行待对账` : ""}`,
+    text: `邮件「${em.subject}」解析 ${em.rows.length} 行：生成账单 ${created} 张（${parts.join("、")}）`,
     to: "/bills", roles: ["财务", "业务支撑部"],
   });
   bump();

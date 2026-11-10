@@ -93,7 +93,7 @@ function buildTodos(role: Role): Todo[] {
       approving.forEach((s) =>
         t.push({ title: `核算单 ${s.id} · ${s.customer}`, sub: `审批中 · 当前节点：${s.curNode ?? "—"}`, link: `/approval?id=${s.id}`, cta: "去审批" }));
       const pendBill = bills.filter((b) => b.status === "待入账").length;
-      if (pendBill) t.push({ title: `${pendBill} 张账单待入账`, sub: "含邮件导入的运营商账单，确认后归集成本中心", link: "/bills", cta: "去入账" });
+      if (pendBill) t.push({ title: `${pendBill} 张账单待入账`, sub: "手工录入待确认 + 争议暂挂对账，确认后归集成本中心", link: "/bills", cta: "去入账" });
       const pendMail = BILL_EMAILS.filter((e) => e.status === "未导入").length;
       if (pendMail) t.push({ title: `${pendMail} 封账单邮件未处理`, sub: "运营商账单邮件：解析 → 核对 → 差异调整 → 导入", link: "/bills", cta: "去处理" });
       const stopped = USERS.filter((u) => u.status === "停用").length;
@@ -170,7 +170,7 @@ export default function Workbench() {
     系统管理员: [
       { label: "启用账号", value: `${USERS.filter((u) => u.status === "启用").length} 个`, delta: `共 ${USERS.length} 个账号`, good: true, to: "/system/users" },
       { label: "未读通知", value: `${unreadCount()} 条`, delta: "消息通知中心", good: unreadCount() === 0, to: "/notifications" },
-      { label: "待入账账单", value: `${bills.filter((b) => b.status === "待入账").length} 张`, delta: "含邮件导入待确认", good: true, to: "/bills" },
+      { label: "待入账账单", value: `${bills.filter((b) => b.status === "待入账").length} 张`, delta: "手工待确认 + 争议暂挂", good: true, to: "/bills" },
       { label: "审批中核算单", value: `${approving.length} 单`, delta: "审批中心", good: true, to: "/approval" },
     ],
   };

@@ -10,7 +10,8 @@ import { getCostItems } from "./costItems";
 import { CC_NAME, getCenters } from "./costCenters";
 import { DEMO_TODAY } from "./settings";
 
-export type BillStatus = "待入账" | "已入账" | "已月结";
+export type BillStatus = "待入账" | "已入账" | "已月结" | "已作废";
+// 标签（不是状态）：差异 = 与合同基准不符但已按实入账（留痕）；争议 = 暂挂对账，未入账、月结自动跳过
 
 export interface SupplierBill {
   id: string;              // 账单号（入账后 = 核算单「账本耗用单」的来源单号）
@@ -26,6 +27,7 @@ export interface SupplierBill {
   createdAt: string;
   source?: "手工录入" | "邮件导入";  // 来源（邮件导入的账单可回溯到原始邮件）
   emailId?: string;                 // 来源邮件 id（EM-2026-xxxx）
+  tag?: "差异" | "争议";             // 核对标签（差异=按实入账留痕；争议=暂挂对账，未入账）
   diff?: {                          // 邮件导入核对差异留痕（无差异不带此字段）
     expected: number;               // 系统基准（采购合同价）
     diff: number;                   // 账单 − 基准
@@ -102,6 +104,6 @@ export const latestBillPeriod = (): string => [...bills.map((b) => b.period)].so
 /** 中心在某账期的归集水位：已入账（含已月结）账单金额合计 + 张数 */
 export function centerPeriodTotal(centerId: string, period: string): { total: number; count: number } {
   const keys = new Set(getCenters().find((c) => c.id === centerId)?.itemKeys ?? []);
-  const hit = bills.filter((b) => b.period === period && b.status !== "待入账" && keys.has(b.costItemKey));
+  const hit = bills.filter((b) => b.period === period && (b.status === "已入账" || b.status === "已月结") && keys.has(b.costItemKey));
   return { total: hit.reduce((s, b) => s + b.amount, 0), count: hit.length };
 }

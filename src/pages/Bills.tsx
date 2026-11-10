@@ -43,8 +43,13 @@ const STATUS_COLOR: Record<BillStatus, string> = {
   待入账: "bg-[#FFF3E8] text-[#FF7D00]",
   已入账: "bg-[#E8F3FF] text-[#165DFF]",
   已月结: "bg-[#E8F8F2] text-[#00B42A]",
+  已作废: "bg-[#F2F3F5] text-[#86909C]",
 };
-const FILTERS: ("全部" | BillStatus)[] = ["全部", "待入账", "已入账", "已月结"];
+const TAG_COLOR: Record<NonNullable<SupplierBill["tag"]>, string> = {
+  差异: "bg-[#FFF3E8] text-[#FF7D00]",
+  争议: "bg-[#FFECE8] text-[#F53F3F]",
+};
+const FILTERS: ("全部" | BillStatus | "差异" | "争议")[] = ["全部", "待入账", "已入账", "已月结", "差异", "争议"];
 
 /** 账单被哪些核算单引用（账本耗用单的来源单号 = 账单号） */
 function billRefs(b: SupplierBill) {
@@ -65,14 +70,17 @@ export default function Bills() {
   const [detail, setDetail] = useState<string | null>(null);
 
   const rows = useMemo(() => bills.filter((b) => {
-    if (f !== "全部" && b.status !== f) return false;
+    if (f !== "全部") {
+      if (f === "差异" || f === "争议") { if (b.tag !== f) return false; }
+      else if (b.status !== f) return false;
+    }
     if (!kw) return true;
     const item = getCostItems().find((i) => i.key === b.costItemKey);
     return b.id.includes(kw) || b.supplier.includes(kw) || b.period.includes(kw) || (item?.name ?? "").includes(kw) || (b.poNo ?? "").includes(kw) || (b.contractNo ?? "").includes(kw);
   }), [f, kw]);
   const stats = useMemo(() => ({
     wait: bills.filter((b) => b.status === "待入账").length,
-    inAmt: bills.filter((b) => b.status !== "待入账").reduce((s, b) => s + b.amount, 0),
+    inAmt: bills.filter((b) => b.status === "已入账" || b.status === "已月结").reduce((s, b) => s + b.amount, 0),
     settle: bills.filter((b) => b.status === "已月结").length,
   }), []);
 
@@ -151,7 +159,7 @@ export default function Bills() {
                     <td className="px-3 py-2.5 text-[#4E5969]">{item?.name ?? b.costItemKey}{b.poNo && <div className="text-[10px] text-[#86909C]">采购单 {b.poNo}</div>}{b.contractNo && <div className="text-[10px] text-[#86909C]">合同 {b.contractNo}</div>}</td>
                     <td className="px-3 py-2.5"><span className="rounded-[2px] bg-[#F2F3F5] px-1.5 py-0.5 text-[10px] text-[#4E5969]">{billCenter(b.costItemKey)}</span></td>
                     <td className="px-3 py-2.5 text-right font-mono">{fmt(b.amount)}</td>
-                    <td className="px-3 py-2.5"><Badge className={`${STATUS_COLOR[b.status]} hover:bg-inherit`}>{b.status}</Badge></td>
+                    <td className="px-3 py-2.5"><Badge className={`${STATUS_COLOR[b.status]} hover:bg-inherit`}>{b.status}</Badge>{b.tag && <Badge className={`ml-1 ${TAG_COLOR[b.tag]} hover:bg-inherit`}>{b.tag}</Badge>}</td>
                     <td className="px-3 py-2.5 text-[#4E5969]">{refs.length ? `${refs.length} 条核算行` : "—"}</td>
                     <td className="px-3 py-2.5 text-[#C9CDD4]">详情 →</td>
                   </tr>
@@ -311,7 +319,26 @@ function DetailModal({ bill, onClose }: { bill: SupplierBill; onClose: () => voi
           ))}
         </div>
 
-        {bill.status === "待入账" && (
+        {bill.status === "待入账" && bill.tag === "争议" && (
+          <div className="flex items-center justify-end gap-2 border-t border-[#F2F3F5] pt-3">
+            <span className="mr-auto max-w-[55%] text-[10px] leading-4 text-[#86909C]">
+              争议账单暂不计入费用。与运营商对账后：金额无误则「转正入账」；运营商红冲/账单作废则「作废」。
+            </span>
+            <Button variant="outline" onClick={onClose}>关闭</Button>
+            <Button variant="outline" onClick={() => {
+              if (!confirm(`确认作废账单 ${bill.id}？\n\n作废后账单退出台账，不计入任何费用（适用于运营商红冲/账单作废的场景）。`)) return;
+              setBillStatus(bill.id, "已作废");
+              onClose();
+            }}>作废（运营商红冲）</Button>
+            <Button onClick={() => {
+              const cc = billCenter(bill.costItemKey);
+              if (!confirm(`对账完成，转正入账？\n\n账单 ${bill.id}（¥ ${fmt(bill.amount)}）将归集至：${cc}\n计入该中心 ${bill.period} 真实费用。`)) return;
+              setBillStatus(bill.id, "已入账");
+              onClose();
+            }}>对账完成，转正入账</Button>
+          </div>
+        )}
+        {bill.status === "待入账" && bill.tag !== "争议" && (
           <div className="flex items-center justify-end gap-2 border-t border-[#F2F3F5] pt-3">
             <span className="mr-auto text-[10px] text-[#86909C]">
               入账后归集：<span className="font-medium text-[#165DFF]">{billCenter(bill.costItemKey)}</span>，计入该中心 {bill.period} 真实费用（月结对比预估切分）
@@ -448,8 +475,8 @@ function EmailRowDetail({ row, imported }: { row: EmailBillRow; imported: boolea
       <td className="py-1.5">
         {imported ? (
           row.result?.hold
-            ? <span className="rounded-[2px] bg-[#FFF3E8] px-1.5 py-0.5 text-[10px] text-[#FF7D00]">暂挂：{row.result.holdReason}</span>
-            : <span className="rounded-[2px] bg-[#E8F8F2] px-1.5 py-0.5 text-[10px] text-[#00B42A]">已生成 {row.result?.billId}</span>
+            ? <span className="rounded-[2px] bg-[#FFECE8] px-1.5 py-0.5 text-[10px] text-[#F53F3F]">已生成争议账单 {row.result.billId}（{row.result.holdReason}）</span>
+            : <span className="rounded-[2px] bg-[#E8F8F2] px-1.5 py-0.5 text-[10px] text-[#00B42A]">已生成 {row.result?.billId}{row.result?.billId && bills.find((b) => b.id === row.result!.billId)?.status === "已入账" ? "（已入账）" : ""}</span>
         ) : p ? (
           <span className={`rounded-[2px] px-1.5 py-0.5 text-[10px] ${PROBLEM_CLS[p]}`}>{p}</span>
         ) : (
@@ -482,7 +509,7 @@ function ImportEmailModal({ email, onClose, onDone }: { email: BillEmail; onClos
           <>
             <div className="rounded-[2px] border border-[#FFECE8] bg-[#FFF7F5] px-3 py-2 text-[11px] leading-5 text-[#4E5969]">
               <span className="font-medium text-[#F53F3F]">{problems.length} 行与系统基准不一致或无基准</span>，请逐行选择处理方式：
-              <b>按实入账</b>（以运营商金额生成账单，差异与原因留痕）或 <b>暂挂对账</b>（不生成账单，登记原因后与运营商核对）。
+              <b>按实入账</b>（以运营商金额入账，差异与原因留痕）或 <b>暂挂对账</b>（生成争议账单入台账，登记原因后与运营商核对，对完账在账单详情转正或作废）。
             </div>
             <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
               {problems.map(({ r, p }) => {
@@ -501,7 +528,7 @@ function ImportEmailModal({ email, onClose, onDone }: { email: BillEmail; onClos
                       {(["按实入账", "暂挂"] as const).map((d) => (
                         <label key={d} className={`flex cursor-pointer items-center gap-1.5 rounded-[2px] border px-2.5 py-1 ${decisions[r.lineNo] === d ? "border-[#165DFF] bg-[#F0F5FF] text-[#165DFF]" : "border-[#E5E6EB] text-[#4E5969] hover:border-[#BEDAFF]"}`}>
                           <input type="radio" name={`d-${r.lineNo}`} className="accent-[#165DFF]" checked={decisions[r.lineNo] === d} onChange={() => setDecisions((s) => ({ ...s, [r.lineNo]: d }))} />
-                          {d === "按实入账" ? "按实入账（差异留痕）" : "暂挂对账（不生成账单）"}
+                          {d === "按实入账" ? "按实入账（差异留痕）" : "暂挂对账（生成争议账单）"}
                         </label>
                       ))}
                       <Input className="flex-1" placeholder={decisions[r.lineNo] === "暂挂" ? "暂挂原因（建议必填）：如阶梯折扣未生效，待与运营商确认" : "差异原因（选填）：如 DC 侧电力附加费"}
@@ -514,12 +541,12 @@ function ImportEmailModal({ email, onClose, onDone }: { email: BillEmail; onClos
           </>
         ) : (
           <div className="rounded-[2px] border border-[#E8F8F2] bg-[#F2FBF7] px-3 py-2 text-[11px] text-[#00B42A]">
-            全部 {email.rows.length} 行与采购合同基准一致、资源编号全部对上档案，可直接导入生成账单（状态：待入账）。
+            全部 {email.rows.length} 行与采购合同基准一致、资源编号全部对上档案，导入即入账（无需再人工确认）。
           </div>
         )}
         {err && <div className="rounded-[2px] bg-[#FFECE8] px-3 py-2 text-[11px] text-[#F53F3F]">{err}</div>}
         <div className="flex items-center justify-between border-t border-[#F2F3F5] pt-3">
-          <span className="text-[10px] text-[#86909C]">导入后账单进入「账单台账」，来源标记邮件导入，差异可在账单详情回溯</span>
+          <span className="text-[10px] text-[#86909C]">一致行导入即入账；差异行按实入账留痕；暂挂行生成争议账单，对完账后在账单详情转正或作废</span>
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={onClose}>取消</Button>
             <Button size="sm" disabled={problems.some(({ r }) => !decisions[r.lineNo])} onClick={submit}>确认导入</Button>
