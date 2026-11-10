@@ -309,11 +309,58 @@ export default function ContractDetail() {
           </div>
         </div>
 
-        {/* 签署双链路 */}
-        <div className="grid gap-3 lg:grid-cols-2">
-          <Lane title="线上链路（契约锁）" steps={ONLINE_STEPS} active={c.seal === "online"} step={c.seal === "online" ? signStep : -1} color="#165DFF" />
-          <Lane title="线下链路（实物章）" steps={OFFLINE_STEPS} active={c.seal === "offline"} step={c.seal === "offline" ? signStep : -1} color="#FF7D00" />
+        {/* 订单行（合同生效即订单生效）— 紧邻合同主体信息 */}
+        <div className="rounded-[4px] border border-[#E5E6EB] bg-white">
+          <div className="flex items-center gap-3 border-b px-4 py-2.5">
+            <span className="text-sm font-semibold text-[#1D2129]">订单行</span>
+            <span className="text-[11px] text-[#86909C]">合同生效即订单生效，售价取合同约定价直接进入成本核算</span>
+            <span className="ml-auto text-[11px] text-[#86909C]">共 {c.lines.length} 行</span>
+          </div>
+          <table className="w-full text-xs">
+            <thead><tr className="border-b bg-[#F7F8FA] text-left text-[#4E5969]"><th className="px-3 py-1.5">类别 / 产品类型</th><th className="px-3 py-1.5">规格</th><th className="px-3 py-1.5 text-right">月租</th></tr></thead>
+            <tbody>
+              {c.lines.map((l, i) => (
+                <tr key={i} className="border-b last:border-0">
+                  <td className="px-3 py-2"><div className="font-medium text-[#1D2129]">{l.ptype}</div><div className="text-[10px] text-[#86909C]">{l.cat}</div></td>
+                  <td className="px-3 py-2 text-[#4E5969]">{l.spec}</td>
+                  <td className="px-3 py-2 text-right font-mono">{fmtMoney(l.price)}</td>
+                </tr>
+              ))}
+              <tr className="font-semibold"><td colSpan={2} className="px-3 py-2 text-right">合计</td><td className="px-3 py-2 text-right font-mono">{fmtMoney(c.amount)} 元/月</td></tr>
+            </tbody>
+          </table>
         </div>
+
+        {/* 签署流程：仅渲染所选链路（线上契约锁 / 线下实物章），非签署阶段整块不出现 */}
+        {signing && (
+          <div className="rounded-[4px] border border-[#E5E6EB] bg-white p-4">
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              <span className="text-sm font-semibold text-[#1D2129]">签署流程</span>
+              <span className={`rounded-[2px] px-1.5 py-0.5 text-[10px] ${c.seal === "online" ? "bg-[#E8F3FF] text-[#165DFF]" : "bg-[#FFF3E8] text-[#FF7D00]"}`}>
+                {c.seal === "online" ? "线上 · 契约锁" : "线下 · 实物章"}
+              </span>
+              {c.status === "已生效"
+                ? <span className="ml-auto text-xs text-[#00B42A]">✓ 签署完成，双方签署版已归档</span>
+                : <span className="ml-auto text-xs text-[#4E5969]">当前步骤：<strong className="text-[#165DFF]">{steps[Math.min(c.step, 3)]}</strong>（{c.step + 1}/4）</span>}
+            </div>
+            <Lane title={c.seal === "online" ? "线上链路（契约锁）" : "线下链路（实物章）"} steps={steps} active step={signStep} color={c.seal === "online" ? "#165DFF" : "#FF7D00"} />
+            {c.status !== "已生效" && (
+              <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-[#F2F3F5] pt-3">
+                <Button size="sm" onClick={advance}>{c.step >= 3 ? "签署完成 → 合同已生效" : ACTION_LABEL[`${c.step}-${c.seal}`]}</Button>
+                {c.seal === "online" && c.step === 0 && (
+                  <button className="text-xs text-[#F53F3F] hover:underline" onClick={() => alert("模拟：契约锁接口失败 → 合同状态本地保留，进入接口异常队列，可手动标记已完成")}>模拟接口异常</button>
+                )}
+                {c.seal === "online" && c.step === 2 && (
+                  <button className="text-xs text-[#86909C] hover:underline" onClick={() => alert("已发送催签短信/邮件给客户（mock）")}>催签</button>
+                )}
+                {c.seal === "offline" && c.step === 3 && (
+                  <button className="text-xs text-[#F53F3F] hover:underline" onClick={() => alert("模拟：扫描件质检不合格 → 驳回重传，仍停留本步骤")}>模拟质检不合格</button>
+                )}
+                <span className="ml-auto text-[10px] text-[#86909C]">契约锁为 mock：按钮推进状态，接口联调留待正式开发</span>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* 合同申请审批：提交后先走审批流，通过后才进入待出合同 */}
         {c.status === "审批中" && (
@@ -361,24 +408,6 @@ export default function ContractDetail() {
           </div>
         )}
 
-        {/* 当前步骤动作 */}
-        {(c.status === "待用章" || c.status === "签署中") && (
-          <div className="flex flex-wrap items-center gap-3 rounded-[4px] border border-[#BEDAFF] bg-[#F7FAFF] px-4 py-3">
-            <span className="text-xs text-[#4E5969]">当前步骤：<span className="font-semibold text-[#165DFF]">{steps[Math.min(c.step, 3)]}</span>（{c.step + 1}/4）</span>
-            <Button size="sm" onClick={advance}>{c.step >= 3 ? "签署完成 → 合同已生效" : ACTION_LABEL[`${c.step}-${c.seal}`]}</Button>
-            {c.seal === "online" && c.step === 0 && (
-              <button className="text-xs text-[#F53F3F] hover:underline" onClick={() => alert("模拟：契约锁接口失败 → 合同状态本地保留，进入接口异常队列，可手动标记已完成")}>模拟接口异常</button>
-            )}
-            {c.seal === "online" && c.step === 2 && (
-              <button className="text-xs text-[#86909C] hover:underline" onClick={() => alert("已发送催签短信/邮件给客户（mock）")}>催签</button>
-            )}
-            {c.seal === "offline" && c.step === 3 && (
-              <button className="text-xs text-[#F53F3F] hover:underline" onClick={() => alert("模拟：扫描件质检不合格 → 驳回重传，仍停留本步骤")}>模拟质检不合格</button>
-            )}
-            <span className="ml-auto text-[10px] text-[#86909C]">契约锁为 mock：按钮推进状态，接口联调留待正式开发</span>
-          </div>
-        )}
-
         {/* 待修订指引 */}
         {c.status === "待修订" && (
           <div className="rounded-[4px] border border-[#FFCF8B] bg-[#FFF7E8] px-4 py-3 text-xs leading-5 text-[#B25E00]">
@@ -398,38 +427,20 @@ export default function ContractDetail() {
           </div>
         )}
 
-        {/* 订单行 + 版本历史 */}
-        <div className="grid gap-3 lg:grid-cols-2">
-          <div className="rounded-[4px] border border-[#E5E6EB] bg-white">
-            <div className="border-b px-4 py-2.5 text-sm font-semibold text-[#1D2129]">订单行（合同生效即订单生效）</div>
-            <table className="w-full text-xs">
-              <thead><tr className="border-b bg-[#F7F8FA] text-left text-[#4E5969]"><th className="px-3 py-1.5">类别 / 产品类型</th><th className="px-3 py-1.5">规格</th><th className="px-3 py-1.5 text-right">月租</th></tr></thead>
-              <tbody>
-                {c.lines.map((l, i) => (
-                  <tr key={i} className="border-b last:border-0">
-                    <td className="px-3 py-2"><div className="font-medium text-[#1D2129]">{l.ptype}</div><div className="text-[10px] text-[#86909C]">{l.cat}</div></td>
-                    <td className="px-3 py-2 text-[#4E5969]">{l.spec}</td>
-                    <td className="px-3 py-2 text-right font-mono">{fmtMoney(l.price)}</td>
-                  </tr>
-                ))}
-                <tr className="font-semibold"><td colSpan={2} className="px-3 py-2 text-right">合计</td><td className="px-3 py-2 text-right font-mono">{fmtMoney(c.amount)} 元/月</td></tr>
-              </tbody>
-            </table>
+        {/* 版本历史 */}
+        <div className="rounded-[4px] border border-[#E5E6EB] bg-white p-4">
+          <div className="mb-2 text-sm font-semibold text-[#1D2129]">版本历史</div>
+          <div className="space-y-2">
+            {[...c.versions].reverse().map((v) => (
+              <div key={v.v} className="flex items-start gap-2 text-xs">
+                <span className="rounded-[2px] bg-[#F2F3F5] px-1.5 py-0.5 font-mono text-[10px] text-[#4E5969]">v{v.v}</span>
+                <div><div className="text-[#1D2129]">{v.note}</div><div className="text-[10px] text-[#86909C]">{v.at}</div></div>
+              </div>
+            ))}
           </div>
-          <div className="rounded-[4px] border border-[#E5E6EB] bg-white p-4">
-            <div className="mb-2 text-sm font-semibold text-[#1D2129]">版本历史</div>
-            <div className="space-y-2">
-              {[...c.versions].reverse().map((v) => (
-                <div key={v.v} className="flex items-start gap-2 text-xs">
-                  <span className="rounded-[2px] bg-[#F2F3F5] px-1.5 py-0.5 font-mono text-[10px] text-[#4E5969]">v{v.v}</span>
-                  <div><div className="text-[#1D2129]">{v.note}</div><div className="text-[10px] text-[#86909C]">{v.at}</div></div>
-                </div>
-              ))}
-            </div>
-            <div className="mt-3 border-t border-[#F2F3F5] pt-2 text-[10px] leading-4 text-[#86909C]">
-              特殊条款{ c.terms ? <span className="text-[#4E5969]">：{c.terms}</span> : "：标准合同，无特殊条款"}<br />
-              双方签署版文件自动存档；每次修订重新上传、重新用章。
-            </div>
+          <div className="mt-3 border-t border-[#F2F3F5] pt-2 text-[10px] leading-4 text-[#86909C]">
+            特殊条款{ c.terms ? <span className="text-[#4E5969]">：{c.terms}</span> : "：标准合同，无特殊条款"}<br />
+            双方签署版文件自动存档；每次修订重新上传、重新用章。
           </div>
         </div>
 
