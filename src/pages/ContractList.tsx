@@ -2,7 +2,7 @@
 // 状态页签 + 搜索；合同号链接进详情；新建合同（合同+订单合二为一）
 import { useState } from "react";
 import { useNavigate } from "react-router";
-import { CONTRACTS, ONLINE_STEPS, OFFLINE_STEPS, fmtMoney, type ContractStatus } from "@/data/contracts";
+import { CONTRACTS, ONLINE_STEPS, OFFLINE_STEPS, fmtMoney, expiringContracts, daysToEnd, type ContractStatus } from "@/data/contracts";
 import { ENTITY_NAME } from "@/data/entities";
 import ArcoShell from "@/components/ArcoShell";
 import { Button } from "@/components/ui/button";
@@ -26,10 +26,21 @@ export default function ContractList() {
   const [tab, setTab] = useState<(typeof TABS)[number]>("全部");
   const [kw, setKw] = useState("");
   const shown = CONTRACTS.filter((c) => (tab === "全部" || c.status === tab) && (!kw || c.id.includes(kw) || c.customer.includes(kw)));
+  const expiring = expiringContracts(90);
 
   return (
     <ArcoShell breadcrumb="合同管理">
       <main className="space-y-4 p-6">
+        {expiring.length > 0 && (
+          <div className="flex items-center justify-between rounded-[4px] border border-[#FFE1B3] bg-[#FFF7E8] px-4 py-2.5 text-[12px]">
+            <span className="text-[#B25E00]">
+              ⏳ <strong>{expiring.length}</strong> 份生效合同将于 90 天内到期（合计月租 <strong className="font-mono">{fmtMoney(expiring.reduce((s, c) => s + c.amount, 0))}</strong> 元/月）
+              {expiring.slice(0, 3).map((c) => <span key={c.id} className="ml-3 text-[#4E5969]">{c.id}（{c.customer}，剩 {daysToEnd(c)} 天）</span>)}
+              {expiring.length > 3 && <span className="ml-1 text-[#86909C]">等</span>}
+            </span>
+            <button onClick={() => { setTab("已生效"); }} className="shrink-0 text-[#165DFF] hover:underline">查看生效合同 →</button>
+          </div>
+        )}
         <div className="flex items-center justify-between rounded-[4px] border border-[#E5E6EB] bg-white px-4 py-2.5">
           <div className="flex items-center gap-3">
             <span className="text-sm font-semibold text-[#1D2129]">合同管理</span>
@@ -71,7 +82,12 @@ export default function ContractList() {
                       <span className={`rounded-[2px] px-1.5 py-0.5 text-[10px] ${STATUS_CLS[c.status]}`}>{c.status}</span>
                       {c.status === "签署中" && <span className="ml-1.5 text-[10px] text-[#86909C]">{steps[c.step]} · {c.step + 1}/4</span>}
                     </td>
-                    <td className="px-3 py-2.5 text-[#86909C]">{c.start} ~ {c.end}</td>
+                    <td className="px-3 py-2.5 text-[#86909C]">
+                      {c.start} ~ {c.end}
+                      {c.status === "已生效" && daysToEnd(c) <= 90 && (
+                        <span className={`ml-1.5 rounded-[2px] px-1 py-0.5 text-[10px] ${daysToEnd(c) <= 30 ? "bg-[#FFECE8] text-[#F53F3F]" : "bg-[#FFF3E8] text-[#FF7D00]"}`}>剩 {daysToEnd(c)} 天</span>
+                      )}
+                    </td>
                     <td className="px-3 py-2.5 text-right"><button className="rounded-[2px] border border-[#E5E6EB] px-2 py-0.5 text-[11px] text-[#4E5969] hover:border-[#165DFF] hover:text-[#165DFF]">{c.status === "审批中" ? "去审批" : c.status === "待用章" || c.status === "签署中" ? "去签署" : "查看"}</button></td>
                   </tr>
                 );

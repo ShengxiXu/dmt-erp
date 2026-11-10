@@ -2,7 +2,7 @@
 // 签署状态机 mock：线上契约锁 / 线下实物章 双链路四步，异常出口（待修订/已终止），版本历史
 import { useState } from "react";
 import { useSearchParams, useNavigate, Link } from "react-router";
-import { CONTRACTS, ONLINE_STEPS, OFFLINE_STEPS, fmtMoney, checkDiscount, SPECIALS, type Contract } from "@/data/contracts";
+import { CONTRACTS, ONLINE_STEPS, OFFLINE_STEPS, fmtMoney, checkDiscount, SPECIALS, daysToEnd, type Contract } from "@/data/contracts";
 import { GET_OPP, updateOpp } from "@/data/customers";
 import { ENTITY_BY_ID } from "@/data/entities";
 import { useBilling, getBills, getSubscriptions, periodOf, dueDateOf, fmtD } from "@/data/billing";
@@ -77,7 +77,7 @@ export default function ContractDetail() {
   };
 
   const steps = c.seal === "online" ? ONLINE_STEPS : OFFLINE_STEPS;
-  const daysLeft = Math.round((new Date(c.end).getTime() - new Date("2026-10-26").getTime()) / 86400000);
+  const daysLeft = daysToEnd(c);
   /** 签署进度：只有进入「待用章 / 签署中 / 已生效」才推进签署链路；审批中 / 待出合同等前置阶段双链路均未开始（-1 = 无当前节点） */
   const signing = c.status === "待用章" || c.status === "签署中" || c.status === "已生效";
   const signStep = signing ? (c.step >= 4 ? 4 : c.step) : -1;
@@ -242,7 +242,11 @@ export default function ContractDetail() {
             <span className="font-mono text-lg font-semibold text-[#1D2129]">{c.id}</span>
             <span className={`rounded-[2px] px-2 py-0.5 text-xs ${STATUS_CLS[c.status]}`}>{c.status}</span>
             <span className="text-sm text-[#4E5969]">{c.customer}</span>
-            {c.status === "已生效" && <span className="rounded-[2px] bg-[#E8F8F2] px-2 py-0.5 text-xs text-[#00701A]">到期还有 {daysLeft} 天 · 回收倒计时已启动</span>}
+            {c.status === "已生效" && (daysLeft <= 30
+              ? <span className="rounded-[2px] bg-[#FFECE8] px-2 py-0.5 text-xs text-[#F53F3F]">⚠ 将于 {c.end} 到期（剩 {daysLeft} 天），需立即启动续签谈判</span>
+              : daysLeft <= 90
+                ? <span className="rounded-[2px] bg-[#FFF3E8] px-2 py-0.5 text-xs text-[#FF7D00]">将于 {c.end} 到期（剩 {daysLeft} 天），可启动续签谈判</span>
+                : <span className="rounded-[2px] bg-[#E8F8F2] px-2 py-0.5 text-xs text-[#00701A]">到期还有 {daysLeft} 天 · 回收倒计时已启动</span>)}
             {c.terminateReason && <span className="text-xs text-[#B3261E]">{c.terminateReason}</span>}
             <div className="ml-auto flex gap-2">
               {(c.status === "待用章" || c.status === "签署中") && (

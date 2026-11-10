@@ -6,6 +6,7 @@ import { Bell } from "lucide-react";
 import { SHEETS } from "@/data/sheets";
 import { RECEIVABLES, useReceivables } from "@/data/receivables";
 import { dueFollowUps, promiseBroken, promiseOverDays } from "@/data/finance";
+import { expiringContracts, daysToEnd } from "@/data/contracts";
 import { WORK_ORDERS } from "@/data/delivery";
 import { getOpps, useOpps } from "@/data/customers";
 
@@ -33,6 +34,8 @@ export default function NoticeBell() {
       list.push({ level: "orange", group: "工单", text: `开通工单 ${w.id}（${w.customer}）执行中`, to: `/delivery/detail?id=${w.id}` }));
     getOpps().filter((d) => d.stage === "赢单").slice(0, 3).forEach((d) =>
       list.push({ level: "blue", group: "商机", text: `商机 ${d.id} 已赢单待签约：${d.name}`, to: "/opportunity" }));
+    expiringContracts(90).slice(0, 5).forEach((c) =>
+      list.push({ level: daysToEnd(c) <= 30 ? "orange" : "blue", group: "到期", text: `合同 ${c.id}（${c.customer}）将于 ${c.end} 到期，剩 ${daysToEnd(c)} 天，月租 ${c.amount.toLocaleString("zh-CN")} 元/月`, to: "/contract" }));
     return list;
   }, [v]);
 

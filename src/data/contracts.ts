@@ -1,5 +1,7 @@
 // 特批申请 + 合同管理（蓝图 B3 批次）
 // 依据《特批与合同管理模块设计-v1.0》：合同+订单合二为一，合同生效即订单生效
+import { DEMO_TODAY } from "@/data/settings";
+
 export const SPECIAL_LEVELS = ["业务支撑部（业务条款）", "财务负责人（折扣与账期）", "管理层（例外与风险）"];
 
 export interface FlowStep {
@@ -246,3 +248,9 @@ export function initContractApproval(discount: number): FlowStep[] {
 }
 
 export const fmtMoney = (n: number) => n.toLocaleString("zh-CN");
+
+/** 距合同到期的剩余天数（演示基准日口径；负数 = 已到期未终止） */
+export const daysToEnd = (c: Contract) => Math.round((new Date(c.end).getTime() - new Date(DEMO_TODAY).getTime()) / 86400000);
+/** 到期预警清单：已生效且 days 天内到期（含已到期未终止），按剩余天数升序 */
+export const expiringContracts = (days = 90) =>
+  CONTRACTS.filter((c) => c.status === "已生效" && daysToEnd(c) <= days).sort((a, b) => daysToEnd(a) - daysToEnd(b));
