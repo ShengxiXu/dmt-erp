@@ -1,6 +1,7 @@
 // 供应商账单：采购侧支出凭证 → 费用归类（成本条目）→ 直接/间接口径（间接归集成本中心）→ 被核算单引用 → 合同
 // 设计原则：录入只需选「费用归类」一个业务字段，归属自动带出；与订单的关联由系统在月结/核算时自动建立，全程无需手选订单。
 import { useMemo, useState } from "react";
+import { Link } from "react-router";
 import ArcoShell from "@/components/ArcoShell";
 import CenterModal from "@/components/CenterModal";
 import { Badge } from "@/components/ui/badge";
@@ -39,20 +40,20 @@ function resourceOptions(costItemKey: string): { key: string; label: string }[] 
   return (ARCHIVE_ROWS[ak] ?? []).map((r) => ({ key: r.id, label: `${ARCHIVE_NAME[ak]} · ${r.id}${r.name ? ` ${r.name}` : ""}` }));
 }
 
-const STATUS_COLOR: Record<BillStatus, string> = {
+export const STATUS_COLOR: Record<BillStatus, string> = {
   待入账: "bg-[#FFF3E8] text-[#FF7D00]",
   已入账: "bg-[#E8F3FF] text-[#165DFF]",
   已月结: "bg-[#E8F8F2] text-[#00B42A]",
   已作废: "bg-[#F2F3F5] text-[#86909C]",
 };
-const TAG_COLOR: Record<NonNullable<SupplierBill["tag"]>, string> = {
+export const TAG_COLOR: Record<NonNullable<SupplierBill["tag"]>, string> = {
   差异: "bg-[#FFF3E8] text-[#FF7D00]",
   争议: "bg-[#FFECE8] text-[#F53F3F]",
 };
 const FILTERS: ("全部" | BillStatus | "差异" | "争议")[] = ["全部", "待入账", "已入账", "已月结", "差异", "争议"];
 
 /** 账单被哪些核算单引用（账本耗用单的来源单号 = 账单号） */
-function billRefs(b: SupplierBill) {
+export function billRefs(b: SupplierBill) {
   const hit = SHEET_ENTRIES.filter((e) => e.srcType === "账本耗用单" && e.srcId === b.id);
   return hit.map((e) => {
     const sheet = SHEETS.find((s) => s.id === "CE-2026-1008")!; // 演示台账中条目归属该核算单
@@ -153,7 +154,7 @@ export default function Bills() {
                 const refs = billRefs(b);
                 return (
                   <tr key={b.id} className="cursor-pointer border-b last:border-0 hover:bg-[#F7F8FA]" onClick={() => setDetail(b.id)}>
-                    <td className="px-3 py-2.5 font-mono font-medium text-[#165DFF]">{b.id}{b.source === "邮件导入" && <span className="ml-1 rounded-[2px] bg-[#E8F3FF] px-1 py-0.5 text-[9px]">邮件</span>}</td>
+                    <td className="px-3 py-2.5 font-mono font-medium"><Link to={`/bill/detail?id=${b.id}`} className="text-[#165DFF] hover:underline" onClick={(e) => e.stopPropagation()}>{b.id}</Link>{b.source === "邮件导入" && <span className="ml-1 rounded-[2px] bg-[#E8F3FF] px-1 py-0.5 text-[9px]">邮件</span>}</td>
                     <td className="px-3 py-2.5 font-medium text-[#1D2129]">{b.supplier}</td>
                     <td className="px-3 py-2.5 font-mono text-[#4E5969]">{b.period}</td>
                     <td className="px-3 py-2.5 text-[#4E5969]">{item?.name ?? b.costItemKey}{b.poNo && <div className="text-[10px] text-[#86909C]">采购单 {b.poNo}</div>}{b.contractNo && <div className="text-[10px] text-[#86909C]">合同 {b.contractNo}</div>}</td>
@@ -284,6 +285,9 @@ function DetailModal({ bill, onClose }: { bill: SupplierBill; onClose: () => voi
   return (
     <CenterModal title={`账单 ${bill.id}`} sub={`${bill.supplier} · ${bill.period}`} onClose={onClose} width={620}>
       <div className="space-y-3 text-xs">
+        <div className="flex justify-end">
+          <Link to={`/bill/detail?id=${bill.id}`} className="text-[11px] text-[#165DFF] hover:underline" onClick={onClose}>打开完整详情页 ›</Link>
+        </div>
         <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 rounded-[2px] bg-[#F7F8FA] p-3 text-[#4E5969]">
           <span>金额：<b className="font-mono text-[#1D2129]">{fmt(bill.amount)} 元</b></span>
           <span>状态：<Badge className={`${STATUS_COLOR[bill.status]} hover:bg-inherit`}>{bill.status}</Badge></span>
@@ -475,8 +479,8 @@ function EmailRowDetail({ row, imported }: { row: EmailBillRow; imported: boolea
       <td className="py-1.5">
         {imported ? (
           row.result?.hold
-            ? <span className="rounded-[2px] bg-[#FFECE8] px-1.5 py-0.5 text-[10px] text-[#F53F3F]">已生成争议账单 {row.result.billId}（{row.result.holdReason}）</span>
-            : <span className="rounded-[2px] bg-[#E8F8F2] px-1.5 py-0.5 text-[10px] text-[#00B42A]">已生成 {row.result?.billId}{row.result?.billId && bills.find((b) => b.id === row.result!.billId)?.status === "已入账" ? "（已入账）" : ""}</span>
+            ? <span className="rounded-[2px] bg-[#FFECE8] px-1.5 py-0.5 text-[10px] text-[#F53F3F]">已生成争议账单 <Link to={`/bill/detail?id=${row.result.billId}`} className="font-mono underline hover:text-[#F53F3F]" onClick={(e) => e.stopPropagation()}>{row.result.billId}</Link>（{row.result.holdReason}）</span>
+            : <span className="rounded-[2px] bg-[#E8F8F2] px-1.5 py-0.5 text-[10px] text-[#00B42A]">已生成 <Link to={`/bill/detail?id=${row.result?.billId}`} className="font-mono underline" onClick={(e) => e.stopPropagation()}>{row.result?.billId}</Link>{row.result?.billId && bills.find((b) => b.id === row.result!.billId)?.status === "已入账" ? "（已入账）" : ""}</span>
         ) : p ? (
           <span className={`rounded-[2px] px-1.5 py-0.5 text-[10px] ${PROBLEM_CLS[p]}`}>{p}</span>
         ) : (

@@ -24,6 +24,7 @@ import CostCenters from './pages/CostCenters'
 import CostItems from './pages/CostItems'
 import ChainMap from './pages/ChainMap'
 import Bills from './pages/Bills'
+import BillDetail from './pages/BillDetail'
 import PurchaseContracts from './pages/PurchaseContracts'
 import PurchaseReqs from './pages/PurchaseReqs'
 import PurchaseOrders from './pages/PurchaseOrders'
@@ -70,6 +71,7 @@ export default function App() {
       <Route path="/cost-centers" element={<CostCenters />} />
       <Route path="/cost-items" element={<CostItems />} />
       <Route path="/bills" element={<Bills />} />
+      <Route path="/bill/detail" element={<BillDetail />} />
       <Route path="/purchase/contracts" element={<PurchaseContracts />} />
       <Route path="/purchase/reqs" element={<PurchaseReqs />} />
       <Route path="/purchase/orders" element={<PurchaseOrders />} />
