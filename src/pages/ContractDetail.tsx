@@ -249,6 +249,9 @@ export default function ContractDetail() {
                 : <span className="rounded-[2px] bg-[#E8F8F2] px-2 py-0.5 text-xs text-[#00701A]">到期还有 {daysLeft} 天 · 回收倒计时已启动</span>)}
             {c.terminateReason && <span className="text-xs text-[#B3261E]">{c.terminateReason}</span>}
             <div className="ml-auto flex gap-2">
+              {c.status === "已生效" && daysLeft <= 90 && (
+                <Button size="sm" onClick={() => navigate(`/contract/edit?renew=${c.id}`)}>发起续签</Button>
+              )}
               {(c.status === "待用章" || c.status === "签署中") && (
                 <>
                   <Button size="sm" variant="outline" onClick={() => setReviseOpen(true)}>条款修改</Button>

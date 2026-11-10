@@ -5,6 +5,7 @@ import { useNavigate, useSearchParams } from "react-router";
 import { SPECIALS, CONTRACTS, checkDiscount, fmtMoney, initContractApproval, type OrderLine } from "@/data/contracts";
 import { GET_OPP, CUSTOMERS, OPPS_OF } from "@/data/customers";
 import { ENTITIES, ENTITY_BY_ID } from "@/data/entities";
+import { DEMO_TODAY } from "@/data/settings";
 import { useCatalog, CATS, PTYPES, GET_TYPE, SPEC_FIELDS, PLANS, buildSpec, missingRequired } from "@/data/products";
 import CustomerSelect from "@/components/CustomerSelect";
 import ArcoShell from "@/components/ArcoShell";
@@ -18,6 +19,7 @@ export default function ContractEdit() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [step, setStep] = useState(0);
+  const [renewSrc, setRenewSrc] = useState("");   // 续签起草：源合同号（?renew=HT-xxx 带入）
   const [base, setBase] = useState({
     customer: "", dealId: "", specialId: "", discount: "0", terms: "", entityId: "ENT-HQ",
     seal: "online" as "online" | "offline", pay: "月付" as "月付" | "季度付" | "半年付" | "年付",
@@ -30,7 +32,7 @@ export default function ContractEdit() {
   /** 当前客户名下可签合同的商机（跟进中 / 已报价 / 赢单；输单关闭不可选） */
   const custId = CUSTOMERS.find((c) => c.name === base.customer)?.id ?? "";
   const oppsOfCust = OPPS_OF(custId).filter((d) => d.stage !== "输单");
-  const canNext1 = base.customer && base.dealId && !discountErr;
+  const canNext1 = base.customer && (base.dealId || renewSrc) && !discountErr;
   const entity = ENTITY_BY_ID(base.entityId);
 
   const pickSpecial = (id: string) => {
@@ -71,6 +73,21 @@ export default function ContractEdit() {
 
   /** 商机「去签约」直达：?customer=客户名&deal=CJ-xxx —— 进页面自动选客户、锁定商机（含自动特批）并预填订单行 */
   useEffect(() => {
+    // 续签直达：?renew=HT-xxx —— 客户 / 签约主体 / 付款方式 / 用章 / 订单行带入；期限 = 旧合同到期次日开始、等长续一期；折扣与特批属一次性，不随续签带入（如需折扣重新走特批）
+    const renewId = searchParams.get("renew");
+    if (renewId) {
+      const src = CONTRACTS.find((x) => x.id === renewId);
+      if (src) {
+        const fmtD = (t: Date) => `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
+        const sd = new Date(src.end); sd.setDate(sd.getDate() + 1);
+        const months = (new Date(src.end).getFullYear() - new Date(src.start).getFullYear()) * 12 + (new Date(src.end).getMonth() - new Date(src.start).getMonth()) + 1;
+        const ed = new Date(sd); ed.setMonth(ed.getMonth() + months); ed.setDate(ed.getDate() - 1);
+        setRenewSrc(renewId);
+        setBase((b) => ({ ...b, customer: src.customer, entityId: src.entityId ?? "ENT-HQ", pay: src.pay, seal: src.seal, discount: "0", terms: "", start: fmtD(sd), end: fmtD(ed) }));
+        setLines(src.lines.map((l) => ({ ...l, specs: { ...(l.specs ?? {}) } })));
+        return;
+      }
+    }
     const dealId = searchParams.get("deal");
     const custName = searchParams.get("customer");
     const opp = dealId ? GET_OPP(dealId) : undefined;
@@ -96,7 +113,9 @@ export default function ContractEdit() {
       status: "审批中", step: 0,
       approvals: initContractApproval(discount), approvalStep: 1,
       lines,
-      versions: [{ v: 1, note: `销售提交合同申请（关联商机 ${base.dealId}${base.specialId ? `，特批 ${base.specialId}，折扣 ${base.discount}%` : "，标准合同"}），进入合同申请审批`, at: "2026-10-26" }],
+      versions: [{ v: 1, note: renewSrc
+        ? `销售提交续签合同申请（源合同 ${renewSrc} 到期续签${base.specialId ? `，特批 ${base.specialId}，折扣 ${base.discount}%` : "，标准合同"}），进入合同申请审批`
+        : `销售提交合同申请（关联商机 ${base.dealId}${base.specialId ? `，特批 ${base.specialId}，折扣 ${base.discount}%` : "，标准合同"}），进入合同申请审批`, at: DEMO_TODAY }],
     });
     navigate(`/contract/detail?id=${id}`);
   };
@@ -110,6 +129,11 @@ export default function ContractEdit() {
           流程说明：合同流程由<strong>销售发起</strong>（填写合同要素 + 订单行并提交申请）→ <strong>合同申请审批</strong>（业务支撑部负责人复核；非标合同增加财务复核）→ 审批通过转业务支撑部<strong>出具正式合同并上传</strong>（执行折扣一致性校验）→ 登记「待用章」进入签署。
           上传正式合同不是销售的动作，请勿在本页寻找上传入口。
         </div>
+        {renewSrc && (
+          <div className="rounded-[4px] border border-[#FFE1B3] bg-[#FFF7E8] px-4 py-2.5 text-[11px] leading-5 text-[#B25E00]">
+            正在起草<strong>续签合同</strong>（源合同 <span className="font-mono">{renewSrc}</span>）：客户、签约主体、付款方式、用章方式与原订单行已带入，期限默认按「旧合同到期次日开始、等长续一期」预填——请与客户核对价格与期限；<strong>折扣与特批不随续签自动带入</strong>（特批属一次性），如续签需折扣请先在特批申请重新审批。
+          </div>
+        )}
         <div className="flex items-center rounded-[4px] border border-[#E5E6EB] bg-white px-4 py-3">
           {STEPS.map((s, i) => (
             <div key={s} className="flex flex-1 items-center last:flex-none">
@@ -132,10 +156,10 @@ export default function ContractEdit() {
               </div>
               <div>
                 <div className="mb-0.5 text-xs text-[#4E5969]">关联商机 <span className="text-[#F53F3F]">*</span>{!base.customer && <span className="ml-1 text-[#86909C]">（先选客户）</span>}{base.specialId && <span className="ml-1 text-[#165DFF]">（特批单锁定，不可改）</span>}</div>
-                <select className={`w-full rounded-[2px] border border-[#E5E6EB] bg-white px-2 py-1.5 text-sm ${base.customer && !oppsOfCust.length ? "text-[#FF7D00]" : ""}`}
-                  value={base.dealId} disabled={!base.customer || !!base.specialId}
+                <select className={`w-full rounded-[2px] border border-[#E5E6EB] bg-white px-2 py-1.5 text-sm ${base.customer && !oppsOfCust.length && !renewSrc ? "text-[#FF7D00]" : ""}`}
+                  value={base.dealId} disabled={!base.customer || !!base.specialId || !!renewSrc}
                   onChange={(e) => applyDeal(e.target.value)}>
-                  <option value="">{base.customer ? (oppsOfCust.length ? "选择该客户名下的商机（选定后按意向产品自动预填订单行）" : "该客户暂无可签商机（请到商机管理创建）") : "请先选择客户"}</option>
+                  <option value="">{renewSrc ? `续签来源 ${renewSrc}（续签无需关联新商机）` : base.customer ? (oppsOfCust.length ? "选择该客户名下的商机（选定后按意向产品自动预填订单行）" : "该客户暂无可签商机（请到商机管理创建）") : "请先选择客户"}</option>
                   {oppsOfCust.map((d) => (
                     <option key={d.id} value={d.id}>{d.id} · {d.name} · {d.products.map((p) => p.ptype).join(" + ")} · 预计合同 {fmtMoney(d.expectAmount)} 元{d.expectMonths ? `（${d.expectMonths} 个月 · 月均 ${fmtMoney(Math.round(d.expectAmount / d.expectMonths))}）` : ""}{d.stage === "赢单" ? "（已赢单）" : ""}</option>
                   ))}
