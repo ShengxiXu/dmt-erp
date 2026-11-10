@@ -7,6 +7,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { bills, useBills, addBill, setBillStatus, billCenter, type SupplierBill, type BillStatus } from "@/data/bills";
+import {
+  BILL_EMAILS, useBillEmails, checkRow, rowProblem, importEmail, ignoreEmail, type BillEmail, type EmailBillRow,
+} from "@/data/billEmails";
 import { getCostItems } from "@/data/costItems";
 import { getContracts } from "@/data/purchase";
 import { SHEET_ENTRIES, SHEETS, fmt } from "@/data/sheets";
@@ -54,6 +57,8 @@ function billRefs(b: SupplierBill) {
 
 export default function Bills() {
   useBills();
+  useBillEmails();
+  const [tab, setTab] = useState<"bills" | "emails">("bills");
   const [f, setF] = useState<(typeof FILTERS)[number]>("全部");
   const [kw, setKw] = useState("");
   const [showAdd, setShowAdd] = useState(false);
@@ -85,6 +90,19 @@ export default function Bills() {
           <span>核算单通过审批后挂在合同上。全程不用手选订单。</span>
         </section>
 
+        {/* 页签：账单台账 / 邮件导入 */}
+        <div className="flex flex-wrap items-center gap-3 rounded-[4px] border border-[#E5E6EB] bg-white px-4 py-2.5">
+          <div className="flex rounded-[4px] bg-[#F2F3F5] p-0.5">
+            {([["bills", "账单台账"], ["emails", `邮件导入${BILL_EMAILS.some((e) => e.status === "未导入") ? `（${BILL_EMAILS.filter((e) => e.status === "未导入").length} 封未处理）` : ""}`]] as const).map(([k, label]) => (
+              <button key={k} onClick={() => setTab(k)} className={`rounded-[3px] px-3 py-1 text-[12px] transition-colors ${tab === k ? "bg-white font-medium text-[#165DFF] shadow-sm" : "text-[#86909C] hover:text-[#4E5969]"}`}>{label}</button>
+            ))}
+          </div>
+          <span className="text-[11px] text-[#86909C]">运营商账单以邮件送达 → 解析附件 → 与采购合同基准核对 → 差异调整 → 生成账单（自动标记来源「邮件导入」，可回溯原始邮件）</span>
+        </div>
+
+        {tab === "emails" ? (
+          <EmailInbox />
+        ) : (<>
         <section className="grid gap-3 md:grid-cols-3">
           {[
             { t: "待入账", v: stats.wait, u: "张", c: "text-[#FF7D00]" },
@@ -127,7 +145,7 @@ export default function Bills() {
                 const refs = billRefs(b);
                 return (
                   <tr key={b.id} className="cursor-pointer border-b last:border-0 hover:bg-[#F7F8FA]" onClick={() => setDetail(b.id)}>
-                    <td className="px-3 py-2.5 font-mono font-medium text-[#165DFF]">{b.id}</td>
+                    <td className="px-3 py-2.5 font-mono font-medium text-[#165DFF]">{b.id}{b.source === "邮件导入" && <span className="ml-1 rounded-[2px] bg-[#E8F3FF] px-1 py-0.5 text-[9px]">邮件</span>}</td>
                     <td className="px-3 py-2.5 font-medium text-[#1D2129]">{b.supplier}</td>
                     <td className="px-3 py-2.5 font-mono text-[#4E5969]">{b.period}</td>
                     <td className="px-3 py-2.5 text-[#4E5969]">{item?.name ?? b.costItemKey}{b.poNo && <div className="text-[10px] text-[#86909C]">采购单 {b.poNo}</div>}{b.contractNo && <div className="text-[10px] text-[#86909C]">合同 {b.contractNo}</div>}</td>
@@ -143,6 +161,7 @@ export default function Bills() {
             </tbody>
           </table>
         </section>
+        </>)}
       </main>
 
       {showAdd && <AddModal onClose={() => setShowAdd(false)} />}
@@ -266,6 +285,14 @@ function DetailModal({ bill, onClose }: { bill: SupplierBill; onClose: () => voi
           {bill.contractNo && <span>采购合同：{bill.contractNo}</span>}
           {bill.resRef && <span>关联资源：{bill.resRef}</span>}
           {bill.note && <span className="col-span-2">备注：{bill.note}</span>}
+          {bill.diff && (
+            <div className="col-span-2 rounded-[2px] border border-[#FFECE8] bg-[#FFF7F5] px-2.5 py-1.5 leading-5">
+              <span className="font-medium text-[#F53F3F]">核对差异：</span>
+              合同基准 ¥{fmt(bill.diff.expected)}，账单 ¥{fmt(bill.amount)}，差异 {bill.diff.diff > 0 ? "+" : ""}¥{fmt(bill.diff.diff)} 元
+              （{bill.diff.handle}{bill.diff.reason ? `：${bill.diff.reason}` : "，未登记原因"}）
+              <span className="ml-1 text-[#86909C]">来源邮件 {bill.emailId}</span>
+            </div>
+          )}
         </div>
 
         <div>
@@ -298,6 +325,206 @@ function DetailModal({ bill, onClose }: { bill: SupplierBill; onClose: () => voi
             }}>确认入账</Button>
           </div>
         )}
+      </div>
+    </CenterModal>
+  );
+}
+
+// ---------- 邮件导入：财务邮箱收件箱（运营商账单邮件）→ 解析核对 → 差异调整 ----------
+const PROBLEM_CLS: Record<string, string> = {
+  超基准: "bg-[#FFECE8] text-[#F53F3F]",
+  低于基准: "bg-[#E8F3FF] text-[#165DFF]",
+  无基准: "bg-[#FFF3E8] text-[#FF7D00]",
+  资源未匹配: "bg-[#FFECE8] text-[#F53F3F]",
+};
+
+function EmailInbox() {
+  useBillEmails();
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [importing, setImporting] = useState<BillEmail | null>(null);
+
+  const pending = BILL_EMAILS.filter((e) => e.status === "未导入").length;
+
+  return (
+    <section className="overflow-hidden rounded-[4px] border border-[#E5E6EB] bg-white">
+      <div className="flex items-center justify-between border-b px-4 py-2.5">
+        <div className="flex items-center gap-3">
+          <span className="text-sm font-semibold">财务邮箱 · 运营商账单</span>
+          <span className="text-[11px] text-[#86909C]">
+            {pending ? `${pending} 封待处理` : "全部处理完毕"} · 真实环境：IMAP 定时收信 → 按发件人域识别运营商 → 附件模板化解析（原型用预置邮件模拟）
+          </span>
+        </div>
+      </div>
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="border-b bg-[#F7F8FA] text-left text-[#4E5969]">
+            <th className="px-3 py-2 w-8" />
+            <th className="px-3 py-2">发件人 / 主题</th><th className="px-3 py-2">运营商 · 账期</th>
+            <th className="px-3 py-2">附件</th><th className="px-3 py-2 text-right">账单金额</th>
+            <th className="px-3 py-2">核对结果</th><th className="px-3 py-2">状态</th><th className="px-3 py-2 text-right">操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          {BILL_EMAILS.map((em) => {
+            const open = expanded === em.id;
+            const total = em.rows.reduce((s, r) => s + r.amount, 0);
+            const problems = em.rows.map((r) => ({ r, p: rowProblem(r) })).filter((x) => x.p);
+            return [
+              <tr key={em.id} className="border-b last:border-0 hover:bg-[#F7F8FA]">
+                <td className="px-3 py-2.5">
+                  <button onClick={() => setExpanded(open ? null : em.id)} className="text-[#86909C] hover:text-[#165DFF]">{open ? "▾" : "▸"}</button>
+                </td>
+                <td className="px-3 py-2.5">
+                  <div className="font-medium text-[#1D2129]">{em.subject}</div>
+                  <div className="text-[10px] text-[#86909C]">{em.from} · {em.receivedAt}</div>
+                </td>
+                <td className="px-3 py-2.5 text-[#4E5969]">{em.supplier} · <span className="font-mono">{em.period}</span></td>
+                <td className="px-3 py-2.5 font-mono text-[10px] text-[#86909C]">{em.attachName}</td>
+                <td className="px-3 py-2.5 text-right font-mono font-semibold">¥{fmt(total)}</td>
+                <td className="px-3 py-2.5">
+                  {em.status === "未导入" ? (
+                    problems.length
+                      ? <span className="rounded-[2px] bg-[#FFECE8] px-1.5 py-0.5 text-[10px] text-[#F53F3F]">{problems.length} 行需处理</span>
+                      : <span className="rounded-[2px] bg-[#E8F8F2] px-1.5 py-0.5 text-[10px] text-[#00B42A]">全部与合同基准一致</span>
+                  ) : <span className="text-[10px] text-[#C9CDD4]">—</span>}
+                </td>
+                <td className="px-3 py-2.5">
+                  <span className={`rounded-[2px] px-1.5 py-0.5 text-[10px] ${em.status === "未导入" ? "bg-[#FFF3E8] text-[#FF7D00]" : em.status === "已导入" ? "bg-[#E8F8F2] text-[#00B42A]" : "bg-[#F2F3F5] text-[#86909C]"}`}>{em.status}</span>
+                </td>
+                <td className="px-3 py-2.5 text-right">
+                  {em.status === "未导入" && (
+                    <>
+                      <button onClick={() => setImporting(em)} className="mr-1 rounded-[2px] bg-[#165DFF] px-2 py-0.5 text-[11px] text-white hover:bg-[#4080FF]">导入</button>
+                      <button onClick={() => { if (confirm("忽略该邮件？（非账单类邮件）")) ignoreEmail(em.id); }} className="rounded-[2px] border border-[#E5E6EB] px-2 py-0.5 text-[11px] text-[#86909C] hover:text-[#4E5969]">忽略</button>
+                    </>
+                  )}
+                </td>
+              </tr>,
+              open && (
+                <tr key={`${em.id}-rows`} className="border-b bg-[#FAFBFC] last:border-0">
+                  <td colSpan={8} className="px-8 py-3">
+                    <div className="mb-1.5 text-[11px] font-semibold text-[#4E5969]">附件解析明细（{em.rows.length} 行，逐行与采购合同基准核对）</div>
+                    <table className="w-full">
+                      <thead>
+                        <tr className="text-left text-[10px] text-[#86909C]">
+                          <th className="py-1 pr-4">#</th><th className="py-1 pr-4">费用名称</th><th className="py-1 pr-4">费用归类</th>
+                          <th className="py-1 pr-4">资源编号</th><th className="py-1 pr-4">合同基准</th>
+                          <th className="py-1 pr-4 text-right">账单金额</th><th className="py-1 pr-4 text-right">差异</th><th className="py-1">核对 / 结果</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {em.rows.map((r) => <EmailRowDetail key={r.lineNo} row={r} imported={em.status !== "未导入"} />)}
+                      </tbody>
+                    </table>
+                  </td>
+                </tr>
+              ),
+            ];
+          })}
+          {!BILL_EMAILS.length && <tr><td colSpan={8} className="px-3 py-10 text-center text-[#86909C]">收件箱为空</td></tr>}
+        </tbody>
+      </table>
+      {importing && (
+        <ImportEmailModal email={importing} onClose={() => setImporting(null)} onDone={() => { setImporting(null); setExpanded(null); }} />
+      )}
+    </section>
+  );
+}
+
+function EmailRowDetail({ row, imported }: { row: EmailBillRow; imported: boolean }) {
+  const ck = checkRow(row);
+  const p = rowProblem(row);
+  return (
+    <tr className="border-t border-[#F2F3F5] text-[11px] text-[#4E5969]">
+      <td className="py-1.5 pr-4 font-mono">{row.lineNo}</td>
+      <td className="py-1.5 pr-4">{row.itemName}</td>
+      <td className="py-1.5 pr-4 font-mono">{row.costItemKey}</td>
+      <td className="py-1.5 pr-4 font-mono">{row.resRef ?? "—"}</td>
+      <td className="py-1.5 pr-4 font-mono">{ck.hasBase ? `¥${fmt(ck.expected!)}（${row.contractNo}）` : <span className="text-[#FF7D00]">无基准</span>}</td>
+      <td className="py-1.5 pr-4 text-right font-mono">¥{fmt(row.amount)}</td>
+      <td className={`py-1.5 pr-4 text-right font-mono ${ck.diff > 0 ? "text-[#F53F3F]" : ck.diff < 0 ? "text-[#165DFF]" : "text-[#86909C]"}`}>
+        {ck.hasBase ? `${ck.diff > 0 ? "+" : ""}${fmt(ck.diff)}（${ck.diffPct}%）` : "—"}
+      </td>
+      <td className="py-1.5">
+        {imported ? (
+          row.result?.hold
+            ? <span className="rounded-[2px] bg-[#FFF3E8] px-1.5 py-0.5 text-[10px] text-[#FF7D00]">暂挂：{row.result.holdReason}</span>
+            : <span className="rounded-[2px] bg-[#E8F8F2] px-1.5 py-0.5 text-[10px] text-[#00B42A]">已生成 {row.result?.billId}</span>
+        ) : p ? (
+          <span className={`rounded-[2px] px-1.5 py-0.5 text-[10px] ${PROBLEM_CLS[p]}`}>{p}</span>
+        ) : (
+          <span className="rounded-[2px] bg-[#E8F8F2] px-1.5 py-0.5 text-[10px] text-[#00B42A]">一致</span>
+        )}
+      </td>
+    </tr>
+  );
+}
+
+// ---------- 导入核对弹窗：差异行选择「按实入账 / 暂挂对账」并登记原因 ----------
+function ImportEmailModal({ email, onClose, onDone }: { email: BillEmail; onClose: () => void; onDone: () => void }) {
+  const [decisions, setDecisions] = useState<Record<number, "按实入账" | "暂挂">>({});
+  const [reasons, setReasons] = useState<Record<number, string>>({});
+  const [err, setErr] = useState<string | null>(null);
+
+  const problems = email.rows.map((r) => ({ r, p: rowProblem(r) })).filter((x) => x.p);
+  const total = email.rows.reduce((s, r) => s + r.amount, 0);
+
+  const submit = () => {
+    const e2 = importEmail(email.id, decisions, reasons);
+    if (e2) { setErr(e2); return; }
+    onDone();
+  };
+
+  return (
+    <CenterModal title={`导入账单邮件 · ${email.supplier}（${email.period}）`} sub={`${email.subject} · 合计 ¥${fmt(total)}`} width={760} onClose={onClose}>
+      <div className="space-y-3 text-xs">
+        {problems.length > 0 ? (
+          <>
+            <div className="rounded-[2px] border border-[#FFECE8] bg-[#FFF7F5] px-3 py-2 text-[11px] leading-5 text-[#4E5969]">
+              <span className="font-medium text-[#F53F3F]">{problems.length} 行与系统基准不一致或无基准</span>，请逐行选择处理方式：
+              <b>按实入账</b>（以运营商金额生成账单，差异与原因留痕）或 <b>暂挂对账</b>（不生成账单，登记原因后与运营商核对）。
+            </div>
+            <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
+              {problems.map(({ r, p }) => {
+                const ck = checkRow(r);
+                return (
+                  <div key={r.lineNo} className="rounded-[4px] border border-[#E5E6EB] p-3">
+                    <div className="flex items-center gap-2">
+                      <span className={`rounded-[2px] px-1.5 py-0.5 text-[10px] ${PROBLEM_CLS[p!]}`}>{p}</span>
+                      <span className="font-medium text-[#1D2129]">{r.itemName}</span>
+                      <span className="ml-auto font-mono text-[#86909C]">
+                        基准 {ck.hasBase ? `¥${fmt(ck.expected!)}` : "—"} → 账单 <b className="text-[#1D2129]">¥{fmt(r.amount)}</b>
+                        {ck.hasBase && <b className={ck.diff > 0 ? "text-[#F53F3F]" : "text-[#165DFF]"}>（{ck.diff > 0 ? "+" : ""}{fmt(ck.diff)}）</b>}
+                      </span>
+                    </div>
+                    <div className="mt-2 flex items-center gap-2">
+                      {(["按实入账", "暂挂"] as const).map((d) => (
+                        <label key={d} className={`flex cursor-pointer items-center gap-1.5 rounded-[2px] border px-2.5 py-1 ${decisions[r.lineNo] === d ? "border-[#165DFF] bg-[#F0F5FF] text-[#165DFF]" : "border-[#E5E6EB] text-[#4E5969] hover:border-[#BEDAFF]"}`}>
+                          <input type="radio" name={`d-${r.lineNo}`} className="accent-[#165DFF]" checked={decisions[r.lineNo] === d} onChange={() => setDecisions((s) => ({ ...s, [r.lineNo]: d }))} />
+                          {d === "按实入账" ? "按实入账（差异留痕）" : "暂挂对账（不生成账单）"}
+                        </label>
+                      ))}
+                      <Input className="flex-1" placeholder={decisions[r.lineNo] === "暂挂" ? "暂挂原因（建议必填）：如阶梯折扣未生效，待与运营商确认" : "差异原因（选填）：如 DC 侧电力附加费"}
+                        value={reasons[r.lineNo] ?? ""} onChange={(e) => setReasons((s) => ({ ...s, [r.lineNo]: e.target.value }))} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        ) : (
+          <div className="rounded-[2px] border border-[#E8F8F2] bg-[#F2FBF7] px-3 py-2 text-[11px] text-[#00B42A]">
+            全部 {email.rows.length} 行与采购合同基准一致、资源编号全部对上档案，可直接导入生成账单（状态：待入账）。
+          </div>
+        )}
+        {err && <div className="rounded-[2px] bg-[#FFECE8] px-3 py-2 text-[11px] text-[#F53F3F]">{err}</div>}
+        <div className="flex items-center justify-between border-t border-[#F2F3F5] pt-3">
+          <span className="text-[10px] text-[#86909C]">导入后账单进入「账单台账」，来源标记邮件导入，差异可在账单详情回溯</span>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={onClose}>取消</Button>
+            <Button size="sm" disabled={problems.some(({ r }) => !decisions[r.lineNo])} onClick={submit}>确认导入</Button>
+          </div>
+        </div>
       </div>
     </CenterModal>
   );

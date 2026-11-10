@@ -24,6 +24,14 @@ export interface SupplierBill {
   status: BillStatus;
   note?: string;
   createdAt: string;
+  source?: "手工录入" | "邮件导入";  // 来源（邮件导入的账单可回溯到原始邮件）
+  emailId?: string;                 // 来源邮件 id（EM-2026-xxxx）
+  diff?: {                          // 邮件导入核对差异留痕（无差异不带此字段）
+    expected: number;               // 系统基准（采购合同价）
+    diff: number;                   // 账单 − 基准
+    reason?: string;                // 差异原因（按实入账时登记）
+    handle: "按实入账" | "暂挂对账";
+  };
 }
 
 // ---------- 预置账单（号段与核算单演示数据的来源单号一致，可直接被引用） ----------
