@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import {
   ROLES, USERS, ALL_MENUS, PERM_LOGS, saveUser, saveRole, deleteRole, duplicateRole,
   setRoleMenu, setRoleMenus, toggleUserStatus, setSessionRole, roleMembers, useSessionRole, useUsers,
-  type User,
+  DATA_SCOPE_DESC, type DataScope, type User,
 } from "@/data/users";
 
 type Tab = "users" | "roles" | "matrix";
@@ -20,7 +20,7 @@ export default function SystemUsers() {
   useUsers(); useSessionRole();
   const [tab, setTab] = useState<Tab>("users");
   const [editing, setEditing] = useState<Partial<User> | null>(null);
-  const [roleEditing, setRoleEditing] = useState<{ oldName?: string; name: string; desc: string } | null>(null);
+  const [roleEditing, setRoleEditing] = useState<{ oldName?: string; name: string; desc: string; dataScope?: DataScope } | null>(null);
   const [copying, setCopying] = useState<string | null>(null);
   const [preview, setPreview] = useState<User | null>(null);
   const [matrixRole, setMatrixRole] = useState("业务支撑部");
@@ -63,7 +63,7 @@ export default function SystemUsers() {
         {tab === "users" && <UsersTab onEdit={(u) => setEditing({ ...u })} onPreview={(u) => setPreview(u)} />}
 
         {tab === "roles" && (
-          <RolesTab onEdit={(r) => setRoleEditing({ oldName: r.name, name: r.name, desc: r.desc })}
+          <RolesTab onEdit={(r) => setRoleEditing({ oldName: r.name, name: r.name, desc: r.desc, dataScope: r.dataScope })}
             onCopy={(name) => setCopying(name)}
             onDelete={(name) => {
               const err = deleteRole(name);
@@ -130,6 +130,23 @@ export default function SystemUsers() {
             <div>
               <div className="mb-0.5 text-xs text-[#4E5969]">职责说明</div>
               <Input value={roleEditing.desc} onChange={(e) => setRoleEditing({ ...roleEditing, desc: e.target.value })} placeholder="如：华东区销售主管——负责…" />
+            </div>
+            <div>
+              <div className="mb-1 text-xs text-[#4E5969]">数据权限 <span className="text-[#F53F3F]">*</span>
+                <span className="ml-2 font-normal text-[#86909C]">控制角色在客户 / 商机等列表中能看到谁的数据（功能权限外的第二道权限）</span>
+              </div>
+              <div className="space-y-1.5">
+                {(Object.keys(DATA_SCOPE_DESC) as DataScope[]).map((s) => (
+                  <label key={s} className={`flex cursor-pointer items-start gap-2 rounded-[2px] border px-3 py-2 ${(roleEditing.dataScope ?? "全部数据") === s ? "border-[#165DFF] bg-[#F0F5FF]" : "border-[#E5E6EB] hover:border-[#BEDAFF]"}`}>
+                    <input type="radio" name="dataScope" className="mt-0.5 accent-[#165DFF]" checked={(roleEditing.dataScope ?? "全部数据") === s}
+                      onChange={() => setRoleEditing({ ...roleEditing, dataScope: s })} />
+                    <span>
+                      <span className={`text-xs font-medium ${(roleEditing.dataScope ?? "全部数据") === s ? "text-[#165DFF]" : "text-[#1D2129]"}`}>{s}</span>
+                      <span className="block text-[10px] leading-4 text-[#86909C]">{DATA_SCOPE_DESC[s]}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
             </div>
             <div className="flex justify-end gap-2 border-t border-[#F2F3F5] pt-3">
               <Button variant="outline" size="sm" onClick={() => setRoleEditing(null)}>取消</Button>
@@ -255,7 +272,7 @@ function RolesTab({ onEdit, onCopy, onDelete }: {
         <table className="w-full text-xs">
           <thead>
             <tr className="border-b bg-[#F7F8FA] text-left text-[#4E5969]">
-              <th className="px-3 py-2">角色</th><th className="px-3 py-2">职责说明</th><th className="px-3 py-2 text-center">启用成员</th>
+              <th className="px-3 py-2">角色</th><th className="px-3 py-2">职责说明</th><th className="px-3 py-2 text-center">数据权限</th><th className="px-3 py-2 text-center">启用成员</th>
               <th className="px-3 py-2 text-center">菜单数</th><th className="px-3 py-2 text-center">类型</th><th className="px-3 py-2 text-right">操作</th>
             </tr>
           </thead>
@@ -263,7 +280,13 @@ function RolesTab({ onEdit, onCopy, onDelete }: {
             {ROLES.map((r) => (
               <tr key={r.name} className="border-b last:border-0 hover:bg-[#F7F8FA]">
                 <td className="px-3 py-2.5 font-medium text-[#1D2129]">{r.name}</td>
-                <td className="max-w-[420px] px-3 py-2.5 text-[#4E5969]">{r.desc}</td>
+                <td className="max-w-[360px] px-3 py-2.5 text-[#4E5969]">{r.desc}</td>
+                <td className="px-3 py-2.5 text-center">
+                  <span className={`rounded-[2px] px-1.5 py-0.5 text-[10px] ${
+                    r.dataScope === "全部数据" ? "bg-[#E8F3FF] text-[#165DFF]"
+                    : r.dataScope === "本部门数据" ? "bg-[#FFF3E8] text-[#FF7D00]"
+                    : "bg-[#FFECE8] text-[#F53F3F]"}`} title={DATA_SCOPE_DESC[r.dataScope]}>{r.dataScope}</span>
+                </td>
                 <td className="px-3 py-2.5 text-center font-mono">{roleMembers(r.name)}</td>
                 <td className="px-3 py-2.5 text-center font-mono text-[#165DFF]">{r.menus.length}</td>
                 <td className="px-3 py-2.5 text-center">
@@ -286,7 +309,8 @@ function RolesTab({ onEdit, onCopy, onDelete }: {
       </div>
       <div className="rounded-[4px] border border-[#E5E6EB] bg-white px-4 py-2.5 text-[11px] leading-5 text-[#86909C]">
         内置角色不可删除（保证系统基本分工可用），权限可在权限矩阵页签调整；自定义角色可删除（需无成员）。
-        「复制」把源角色的整套菜单权限复制给新角色，适合从相近岗位快速派生。
+        「复制」把源角色的整套菜单权限与数据权限复制给新角色，适合从相近岗位快速派生。
+        数据权限（本人/本部门/全部）在角色编辑弹窗维护，控制客户、商机等列表可见的数据范围。
       </div>
     </>
   );
@@ -309,7 +333,13 @@ function MatrixTab({ groups, activeRole, matrixRole, setMatrixRole }: {
             {r.name}<span className={`ml-1 text-[10px] ${matrixRole === r.name ? "text-[#BEDAFF]" : "text-[#C9CDD4]"}`}>{roleMembers(r.name)}人</span>
           </button>
         ))}
-        <span className="ml-auto max-w-[420px] truncate text-[11px] text-[#86909C]">{activeRole.desc}</span>
+        <span className="ml-auto flex max-w-[460px] items-center gap-2 truncate text-[11px] text-[#86909C]">
+          <span className={`shrink-0 rounded-[2px] px-1.5 py-0.5 text-[10px] ${
+            activeRole.dataScope === "全部数据" ? "bg-[#E8F3FF] text-[#165DFF]"
+            : activeRole.dataScope === "本部门数据" ? "bg-[#FFF3E8] text-[#FF7D00]"
+            : "bg-[#FFECE8] text-[#F53F3F]"}`}>{activeRole.dataScope}</span>
+          <span className="truncate">{activeRole.desc}</span>
+        </span>
       </div>
 
       <div className="flex flex-wrap items-center gap-2 rounded-[4px] border border-[#E5E6EB] bg-white px-4 py-2.5 text-[11px]">

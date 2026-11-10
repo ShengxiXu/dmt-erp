@@ -13,11 +13,12 @@ import { promiseBroken, promiseOverDays, dueFollowUps } from "@/data/finance";
 import { R1_ROWS } from "@/data/resources";
 import { getBatches, useSettle } from "@/data/settle";
 import { useSessionRole, setSessionRole, USERS } from "@/data/users";
+import { getOpps, OPP_STAGES } from "@/data/customers";
 import { getNotices, unreadCount, useNotices } from "@/data/notices";
 import { bills } from "@/data/bills";
 import { BILL_EMAILS } from "@/data/billEmails";
 
-const ROLES = ["业务支撑部", "技术部", "财务", "管理层", "系统管理员"] as const;
+const ROLES = ["业务支撑部", "技术部", "财务", "管理层", "销售部", "系统管理员"] as const;
 type Role = (typeof ROLES)[number];
 
 const fmtWan = (n: number) => (n >= 10000 ? `${(n / 10000).toFixed(1)} 万` : n.toLocaleString("zh-CN"));
@@ -84,6 +85,14 @@ function buildTodos(role: Role): Todo[] {
       if (e) t.push({ title: `${e.id} 已售 ${e.dynamic.usedM}M / ${e.capacityM}M`, sub: `${e.product} · 与 ${e.sharedWith} 共用，扩容采购可提前排期`, link: "/resources/r1", cta: "查看" });
       if (overdueInv.length)
         t.push({ title: `逾期 / 欠停应收合计 ${fmtWan(overdueSum)} 元`, sub: `${overdueInv.length} 笔 · ${overdueInv.map((r) => r.customer).join("、")}`, link: "/finance/overdue", cta: "查看" });
+      return t;
+    }
+    case "销售部": {
+      const t: Todo[] = [];
+      const un = unreadCount();
+      if (un) t.push({ title: `${un} 条未读通知`, sub: "商机动态、审批结果实时推送", link: "/notifications", cta: "去查看", hot: true });
+      getOpps().filter((o) => o.stage === "跟进中" || o.stage === "已报价").slice(0, 5).forEach((o) =>
+        t.push({ title: `商机 ${o.id} · ${o.name}`, sub: `阶段：${o.stage} · 预计 ${fmtWan(o.expectAmount)} 元 / ${o.expectMonths} 个月 · 负责销售 ${o.sales}`, link: "/opportunity", cta: "去跟进" }));
       return t;
     }
     case "系统管理员": {
@@ -173,6 +182,12 @@ export default function Workbench() {
       { label: "待入账账单", value: `${bills.filter((b) => b.status === "待入账").length} 张`, delta: "手工待确认 + 争议暂挂", good: true, to: "/bills" },
       { label: "审批中核算单", value: `${approving.length} 单`, delta: "审批中心", good: true, to: "/approval" },
     ],
+    销售部: [
+      { label: "我的待办", value: `${todos.length} 项`, delta: "按紧急度排序", good: true, to: "#todo" },
+      { label: "在跟进商机", value: `${getOpps().filter((o) => o.stage === "跟进中" || o.stage === "已报价").length} 个`, delta: "数据范围：仅本人数据", good: true, to: "/opportunity" },
+      { label: "本月赢单", value: `${getOpps().filter((o) => o.stage === "赢单").length} 单`, delta: "CRM 同步赢单回写", good: true, to: "/opportunity" },
+      { label: "未读通知", value: `${unreadCount()} 条`, delta: "消息通知中心", good: unreadCount() === 0, to: "/notifications" },
+    ],
   };
 
   // ---------- 角色关注卡（右列第一张，随角色切换） ----------
@@ -196,6 +211,8 @@ export default function Workbench() {
     .filter((g) => g.list.length)
     .map((g) => ({ label: g.st, count: g.list.length, sum: g.list.reduce((s, r) => s + r.amount - r.received, 0) }));
   const invMax = Math.max(...invByStatus.map((g) => g.count), 1);
+  const oppByStage = OPP_STAGES.map((s) => ({ label: s, count: getOpps().filter((o) => o.stage === s).length })).filter((g) => g.count);
+  const oppMax = Math.max(...oppByStage.map((g) => g.count), 1);
 
   const quick = [
     { to: "/", label: "核算单录入", icon: PencilLine, desc: "合同流程带入 · 无新建入口", tone: "bg-[#EEF2FF] text-[#4F46E5]" },
@@ -261,6 +278,7 @@ export default function Workbench() {
                 {role === "技术部" && <>{todos.length} 项待办：核算单技术条目、在途工单处理。工单从「开通工单」列表按 deadline 推进。</>}
                 {role === "财务" && <>{approving.length} 张核算单待审批，逾期应收 {fmtWan(overdueSum)} 元。审批在「审批中心」处理，月结在「月结」页跑批。</>}
                 {role === "管理层" && <>经营概览：逾期应收 {fmtWan(overdueSum)} 元，{SHEETS.filter((s) => s.margin < 45).length} 张核算单毛利低于阈值。</>}
+                {role === "销售部" && <>今天有 {todos.length} 项待办：商机跟进与未读通知。客户与商机按「仅本人数据」隔离，只能看到本人名下的数据。</>}
                 {role === "系统管理员" && <>系统概览：{USERS.length} 个账号、{unreadCount()} 条未读通知、{approving.length} 单在审。用户与角色、审批流、策略参数在「系统管理」维护，权限调整即时生效。</>}
               </p>
             </div>
@@ -419,6 +437,28 @@ export default function Workbench() {
                   ))}
                 </div>
                 <p className="mt-4 text-[12px] leading-5 text-[#86909C]">权限矩阵调整即时生效；审批流在「审批流配置」，参数在「策略中心」维护</p>
+              </>)}
+              {role === "销售部" && (<>
+                <div className="mb-4 flex items-center justify-between">
+                  <h2 className="flex items-center gap-2.5 text-[17px] font-semibold tracking-tight text-[#1D2129]">
+                    <span className="h-4 w-1 rounded-full bg-gradient-to-b from-[#6366F1] to-[#A78BFA]" />商机阶段分布
+                  </h2>
+                  <Link to="/opportunity" className="text-[13px] text-[#165DFF] hover:underline">全部商机</Link>
+                </div>
+                <div className="space-y-3">
+                  {oppByStage.map((g) => (
+                    <div key={g.label}>
+                      <div className="mb-1 flex justify-between text-[13px]">
+                        <span className="text-[#4E5969]">{g.label}</span>
+                        <span className={`font-medium ${g.label === "赢单" ? "text-[#00B42A]" : g.label === "输单" ? "text-[#86909C]" : "text-[#1D2129]"}`}>{g.count} 个</span>
+                      </div>
+                      <div className="h-1.5 overflow-hidden rounded-full bg-[#F2F3F5]">
+                        <div className={`h-full rounded-full ${g.label === "赢单" ? "bg-gradient-to-r from-[#00B42A] to-[#34C77B]" : "bg-gradient-to-r from-[#6366F1] to-[#818CF8]"}`} style={{ width: `${(g.count / oppMax) * 100}%` }} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-4 text-[12px] leading-5 text-[#86909C]">数据权限「仅本人数据」：列表只显示本人名下客户与商机</p>
               </>)}
               {(role === "财务" || role === "管理层") && (<>
                 <div className="mb-4 flex items-center justify-between">

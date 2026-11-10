@@ -12,9 +12,16 @@ import { NAV_GROUPS } from "@/components/navConfig";
 export interface Role {
   name: string;            // 角色名（唯一标识：业务支撑部 / 技术部 / 财务 / 管理层 / 销售部 / 系统管理员）
   desc: string;            // 职责说明
-  menus: string[];         // 可见菜单 path（含子菜单）
+  menus: string[];         // 可见菜单 path（含子菜单）= 功能权限
+  dataScope: DataScope;    // 数据权限：可见数据范围（本人 / 本部门 / 全部）
   builtin: boolean;        // 内置角色（不可删除；演示保留）
 }
+export type DataScope = "全部数据" | "本部门数据" | "仅本人数据";
+export const DATA_SCOPE_DESC: Record<DataScope, string> = {
+  全部数据: "可见全公司该模块的全部数据",
+  本部门数据: "仅可见本部门（同角色）成员名下的数据",
+  仅本人数据: "仅可见本人名下的数据（客户/商机等的归属人 = 本人）",
+};
 export interface User {
   id: string;              // U-xxx
   name: string;
@@ -45,22 +52,22 @@ export function pathAllowed(menus: string[], path: string): boolean {
 
 // ---------- 角色（内置，可改权限不可删） ----------
 export const ROLES: Role[] = persistable("roles", () => [
-  { name: "业务支撑部", desc: "交付运营主责：核算单填报、审批发起、开通工单协调、采购执行、应收跟进", builtin: true,
+  { name: "业务支撑部", desc: "交付运营主责：核算单填报、审批发起、开通工单协调、采购执行、应收跟进", builtin: true, dataScope: "全部数据",
     menus: ALL_PATHS.filter((p) => p !== "/system/users") },
-  { name: "技术部", desc: "资源与实施：技术成本条目、资源分配与绑定、开通实施、到货入库、设备档案", builtin: true,
+  { name: "技术部", desc: "资源与实施：技术成本条目、资源分配与绑定、开通实施、到货入库、设备档案", builtin: true, dataScope: "全部数据",
     menus: ["/workbench", "/product", "/product/bom", "/materials", "/cost-items",
       "/resources/r1", "/resources/r2", "/resources/r3", "/resources/r4", "/resources/chain-map",
       "/purchase/reqs", "/purchase/orders", "/purchase/contracts", "/bills",
       "/", "/approval", "/delivery", "/cost", "/finance"] },
-  { name: "财务", desc: "应收应付、开票收款、财务节点审批、月结跑批、欠费策略执行、坏账审批", builtin: true,
+  { name: "财务", desc: "应收应付、开票收款、财务节点审批、月结跑批、欠费策略执行、坏账审批", builtin: true, dataScope: "全部数据",
     menus: ["/workbench", "/customer", "/contract", "/special", "/approval", "/cost",
       "/finance", "/finance/invoices", "/finance/payments", "/finance/overdue",
       "/billing", "/finance/settle", "/lifecycle", "/system/settings"] },
-  { name: "管理层", desc: "经营视角：看全局指标、批大额度单据、审批流与策略查阅，不做日常录入", builtin: true,
+  { name: "管理层", desc: "经营视角：看全局指标、批大额度单据、审批流与策略查阅，不做日常录入", builtin: true, dataScope: "全部数据",
     menus: ALL_PATHS.filter((p) => p !== "/system/users") },
-  { name: "销售部", desc: "售前与客情：客户、商机、特批、合同查阅；不进入核算与交付环节", builtin: true,
+  { name: "销售部", desc: "售前与客情：客户、商机、特批、合同查阅；不进入核算与交付环节", builtin: true, dataScope: "仅本人数据",
     menus: ["/workbench", "/analytics", "/customer", "/opportunity", "/special", "/contract", "/finance"] },
-  { name: "系统管理员", desc: "系统配置：用户与角色权限、审批流、策略参数、主体印章", builtin: true,
+  { name: "系统管理员", desc: "系统配置：用户与角色权限、审批流、策略参数、主体印章", builtin: true, dataScope: "全部数据",
     menus: ALL_PATHS },
 ]);
 
@@ -88,6 +95,11 @@ backfill("系统管理员", ALL_PATHS);
 backfill("业务支撑部", ALL_PATHS.filter((p) => p !== "/system/users"));
 backfill("管理层", ALL_PATHS.filter((p) => p !== "/system/users"));
 backfill("财务", ["/finance/claims"]);
+
+// ---------- 数据权限（旧快照回填：销售部默认仅本人，其余默认全部） ----------
+ROLES.forEach((r) => {
+  if (!r.dataScope) r.dataScope = r.name === "销售部" ? "仅本人数据" : "全部数据";
+});
 
 // ---------- 全局会话（当前演示角色） ----------
 const sessionBox = persistable("session", () => ({ role: "业务支撑部" }));
@@ -186,8 +198,8 @@ const log = (action: string) => {
 
 export const roleMembers = (name: string) => USERS.filter((u) => u.role === name && u.status === "启用").length;
 
-/** 新建 / 更新角色（oldName 存在 = 改名/改职责；改名同步迁移其用户与会话） */
-export function saveRole(patch: { oldName?: string; name: string; desc: string }): string | null {
+/** 新建 / 更新角色（oldName 存在 = 改名/改职责；改名同步迁移该角色下所有用户与会话） */
+export function saveRole(patch: { oldName?: string; name: string; desc: string; dataScope?: DataScope }): string | null {
   const name = patch.name.trim();
   if (!name) return "角色名不能为空";
   if (patch.oldName) {
@@ -201,11 +213,12 @@ export function saveRole(patch: { oldName?: string; name: string; desc: string }
     }
     r.name = name;
     r.desc = patch.desc.trim() || r.desc;
-    log(`角色「${name}」职责更新`);
+    if (patch.dataScope) r.dataScope = patch.dataScope;
+    log(`角色「${name}」资料更新（数据权限：${r.dataScope}）`);
   } else {
     if (ROLES.some((x) => x.name === name)) return "角色名已存在";
-    ROLES.push({ name, desc: patch.desc.trim() || "（未填写职责说明）", builtin: false, menus: ["/workbench"] });
-    log(`新建角色「${name}」（默认仅工作台，请到权限矩阵配置菜单）`);
+    ROLES.push({ name, desc: patch.desc.trim() || "（未填写职责说明）", builtin: false, dataScope: patch.dataScope ?? "全部数据", menus: ["/workbench"] });
+    log(`新建角色「${name}」（数据权限：${patch.dataScope ?? "全部数据"}；默认仅工作台，请到权限矩阵配置菜单）`);
   }
   notify({ level: "blue", group: "系统", title: "角色变更", text: `角色「${name}」已${patch.oldName ? "更新" : "创建"}`, to: "/system/users", roles: ["系统管理员"] });
   sBump();
@@ -235,9 +248,35 @@ export function duplicateRole(srcName: string, newName: string): string | null {
   if (!src) return "源角色不存在";
   if (!name) return "新角色名不能为空";
   if (ROLES.some((x) => x.name === name)) return "角色名已存在";
-  ROLES.push({ name, desc: `${src.desc}（复制自「${srcName}」，可按需调整）`, builtin: false, menus: [...src.menus] });
-  log(`复制角色「${srcName}」→ 新建「${name}」（${src.menus.length} 项菜单）`);
+  ROLES.push({ name, desc: `${src.desc}（复制自「${srcName}」，可按需调整）`, builtin: false, dataScope: src.dataScope, menus: [...src.menus] });
+  log(`复制角色「${srcName}」→ 新建「${name}」（${src.menus.length} 项菜单，数据权限：${src.dataScope}）`);
   notify({ level: "blue", group: "系统", title: "角色复制", text: `已由「${srcName}」复制创建「${name}」`, to: "/system/users", roles: ["系统管理员"] });
   sBump();
   return null;
+}
+
+// ---------- 数据权限判定 ----------
+/** 演示身份：当前会话角色下第一个启用账号（正式环境 = 登录用户本人） */
+export const currentUser = (): User | undefined => USERS.find((u) => u.role === sessionBox.role && u.status === "启用");
+/** 指定角色（默认当前会话角色）的数据权限范围 */
+export const dataScopeOf = (roleName?: string): DataScope =>
+  ROLES.find((r) => r.name === (roleName ?? sessionBox.role))?.dataScope ?? "全部数据";
+/**
+ * 归属人是否在当前数据范围内。
+ * 口径：全部数据 → 全可见；仅本人 → 归属人 = 当前演示身份；本部门 → 归属人是同部门（同角色）任一启用成员；
+ * 无归属人的记录仅「全部数据」可见（收敛默认，防越权）。
+ */
+export function inDataScope(owner: string | undefined): boolean {
+  const scope = dataScopeOf();
+  if (scope === "全部数据") return true;
+  if (!owner) return false;
+  if (scope === "仅本人数据") return owner === currentUser()?.name;
+  return USERS.some((u) => u.role === sessionBox.role && u.status === "启用" && u.name === owner);
+}
+/** 数据范围横幅文案（列表页头提示用；全部数据返回 null 不显示） */
+export function scopeBanner(hidden: number): string | null {
+  const scope = dataScopeOf();
+  if (scope === "全部数据") return null;
+  const who = scope === "仅本人数据" ? `当前身份：${currentUser()?.name ?? "—"}` : "含本部门全部成员名下数据";
+  return `数据范围：${scope} · ${who}${hidden > 0 ? ` · 已隐藏 ${hidden} 条范围外数据` : ""}`;
 }

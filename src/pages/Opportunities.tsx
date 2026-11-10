@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { useOpps, getOpps, addOpp, updateOpp, CUSTOMERS, OPP_STAGES, OPP_SOURCES, type Opportunity, type OppProduct, type OppStage } from "@/data/customers";
 import { CONTRACTS } from "@/data/contracts";
+import { inDataScope, scopeBanner, currentUser } from "@/data/users";
 import { useCatalog, CATS, PTYPES } from "@/data/products";
 import ArcoShell from "@/components/ArcoShell";
 import CenterModal from "@/components/CenterModal";
@@ -34,7 +35,7 @@ function OppForm({ initial, presetCustomer, onClose }: { initial?: Opportunity |
     expectedCloseAt: initial?.expectedCloseAt ?? "",
     stage: initial?.stage ?? "跟进中" as OppStage,
     source: initial?.source ?? OPP_SOURCES[0],
-    sales: initial?.sales ?? CUSTOMERS.find((c) => c.name === (presetCustomer ? CUSTOMER_NAME(presetCustomer) : ""))?.sales ?? "张弛",
+    sales: initial?.sales ?? CUSTOMERS.find((c) => c.name === (presetCustomer ? CUSTOMER_NAME(presetCustomer) : ""))?.sales ?? currentUser()?.name ?? "张弛",
     remark: initial?.remark ?? "",
   });
   const customer = CUSTOMERS.find((c) => c.name === customerName);
@@ -164,11 +165,13 @@ export default function Opportunities() {
   const [editing, setEditing] = useState<Opportunity | null>(null);
 
   const all = getOpps().filter((d) => !customerFilter || d.customerId === customerFilter);
-  const shown = all.filter((d) =>
+  const scoped = all.filter((d) => inDataScope(d.sales));
+  const shown = scoped.filter((d) =>
     (stage === "全部" || d.stage === stage) &&
     (!kw || d.name.includes(kw) || d.id.includes(kw) || CUSTOMER_NAME(d.customerId).includes(kw))
   );
-  const counts = Object.fromEntries(OPP_STAGES.map((s) => [s, all.filter((d) => d.stage === s).length]));
+  const counts = Object.fromEntries(OPP_STAGES.map((s) => [s, scoped.filter((d) => d.stage === s).length]));
+  const banner = scopeBanner(all.length - scoped.length);
 
   return (
     <ArcoShell breadcrumb="商机管理">
@@ -190,6 +193,10 @@ export default function Opportunities() {
           </div>
           <Button size="sm" onClick={() => setCreating(true)}>＋ 新建商机</Button>
         </div>
+
+        {banner && (
+          <div className="rounded-[4px] border border-[#FFECE8] bg-[#FFF7F5] px-4 py-2 text-[11px] text-[#F53F3F]">🔒 {banner}</div>
+        )}
 
         <div className="overflow-x-auto rounded-[4px] border border-[#E5E6EB] bg-white">
           <table className="w-full text-xs">

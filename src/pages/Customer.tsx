@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { CUSTOMERS, useOpps, OPPS_OF, type Customer } from "@/data/customers";
+import { inDataScope, scopeBanner, currentUser } from "@/data/users";
 import { CONTRACTS, fmtMoney } from "@/data/contracts";
 import { RECEIVABLES, PAYMENTS, invBalance } from "@/data/receivables";
 import { customerFinance, FIN_TODAY } from "@/data/finance";
@@ -23,7 +24,9 @@ export default function Customer() {
   const [viewing, setViewing] = useState<Customer | null>(null);
   const [viewTab, setViewTab] = useState<"overview" | "opps" | "contracts" | "bills" | "resources" | "timeline">("overview");
   const navigate = useNavigate();
-  const shown = list.filter((c) => !kw || c.name.includes(kw) || c.contact.includes(kw) || (c.creditCode ?? "").includes(kw));
+  const shownAll = list.filter((c) => !kw || c.name.includes(kw) || c.contact.includes(kw) || (c.creditCode ?? "").includes(kw));
+  const shown = shownAll.filter((c) => inDataScope(c.sales));
+  const banner = scopeBanner(shownAll.length - shown.length);
 
   const save = () => {
     if (!editing?.name) return;
@@ -47,8 +50,12 @@ export default function Customer() {
             <span className="text-sm font-semibold text-[#1D2129]">客户档案</span>
             <Input className="w-56" placeholder="搜索客户 / 联系人 / 信用代码" value={kw} onChange={(e) => setKw(e.target.value)} />
           </div>
-          <Button size="sm" onClick={() => setEditing({ name: "", creditCode: "", level: "C", industry: "", source: "", address: "", contact: "", contactTitle: "", phone: "", email: "", sales: "张弛", status: "潜在" })}>＋ 新建客户</Button>
+          <Button size="sm" onClick={() => setEditing({ name: "", creditCode: "", level: "C", industry: "", source: "", address: "", contact: "", contactTitle: "", phone: "", email: "", sales: currentUser()?.name ?? "张弛", status: "潜在" })}>＋ 新建客户</Button>
         </div>
+
+        {banner && (
+          <div className="rounded-[4px] border border-[#FFECE8] bg-[#FFF7F5] px-4 py-2 text-[11px] text-[#F53F3F]">🔒 {banner}</div>
+        )}
 
         <div className="overflow-x-auto rounded-[4px] border border-[#E5E6EB] bg-white">
           <table className="w-full text-xs">
