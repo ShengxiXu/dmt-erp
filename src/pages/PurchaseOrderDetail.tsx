@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { useParams } from "react-router";
 import { usePurchaseFlow, PO_BY_NO, poTotalWithTax, submitPo, submitPoDirect, approvePo, rejectPo, savePoDraft, saveContractPrice, addReceiptBatch, completeInbound, setPoAttachments, fmtMoney, type POLine, type PurchaseOrder } from "@/data/purchaseFlow";
-import { useApprovalFlow, POINT_BY_ID, CHAINS_OF } from "@/data/approvalFlow";
+import { useApprovalFlow, POINT_BY_ID, resolveChain } from "@/data/approvalFlow";
 import { PURCHASE_CONTRACTS } from "@/data/purchase";
 import { R1_ROWS } from "@/data/resources";
 import { Link } from "react-router";
@@ -30,17 +30,9 @@ function ApprovalStep({ po }: { po: PurchaseOrder }) {
   const [rejectReason, setRejectReason] = useState("");
   const totalWithTax = poTotalWithTax(po);
   const bigAmount = totalWithTax >= 100000;
-  // 审批链来自「系统管理 → 审批流配置」（AP-02 采购审批）：按分支条件匹配启用链，不写死在页面
+  // 审批链来自「系统管理 → 审批流配置」（AP-02 采购审批）：统一引擎按分支条件匹配启用链，不写死在页面
   const point = POINT_BY_ID("AP-02");
-  const chains = CHAINS_OF("AP-02").filter((c) => c.enabled);
-  const hitChain = (() => {
-    for (const c of chains.filter((x) => x.branch)) {
-      const m = c.branch.match(/([\d,]+)/);
-      const th = m ? Number(m[1].replace(/,/g, "")) : null;
-      if (th != null && totalWithTax >= th) return c;
-    }
-    return chains.find((c) => !c.branch);
-  })();
+  const hitChain = resolveChain("AP-02", { amount: totalWithTax });
   const approverText = hitChain
     ? hitChain.nodes.map((n) => `${n.approverSource === "指定人" ? "" : `${n.approverSource}·`}${n.approver}（${n.mode}）`).join(" → ")
     : "未配置（请到审批流配置补链）";

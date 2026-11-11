@@ -12,6 +12,9 @@ import { getCostItems, useCostItems, SETTLE_RULE, uncoveredClasses, type CostIte
 import { GET_TYPE, MAT_DEF, useCatalog } from "@/data/products";
 import { CONTRACTS, type Contract } from "@/data/contracts";
 import { snapshotEsts, usePoolSettle, type PoolEst } from "@/data/poolSettle";
+import { SHEETS } from "@/data/sheets";
+import { submitForApproval } from "@/data/approvalFlow";
+import { currentUser } from "@/data/users";
 import ArchivePicker from "@/components/SearchSelect";
 import ArcoShell from "@/components/ArcoShell";
 import { Input } from "@/components/ui/input";
@@ -1061,6 +1064,14 @@ export default function Home() {
                   `成本无出处提示：以下资源类没有直接成本条目覆盖，费用将通过间接费用分摊，请确认是否继续提交：\n${uncovered.map((k) => `· ${MAT_DEF(k)?.name ?? k}`).join("\n")}\n\n（可在「成本条目库」为条目补挂「适用资源」后重新提交）`
                 )) return;
                 lockPoolEsts(); setSent(true);
+                // 接入统一审批引擎：提交即匹配审批点/链并生成实例；未命中则直接生效并说明原因
+                const sheet0 = SHEETS.find((s) => s.id === "CE-2026-1008");
+                if (sheet0) {
+                  const r = submitForApproval("成本核算单 · 提交", sheet0.id, `${sheet0.customer} · ${sheet0.contract}`,
+                    { monthlyCost: sheet0.monthlyCost, contractValue: sheet0.contractValue, margin: sheet0.margin, lines: sheet0.lines },
+                    currentUser()?.name ?? "演示用户");
+                  if (!r.hit) alert(`未进入审批：${r.reason ?? "未命中审批点，单据直接生效"}`);
+                }
               }}>
                 {sent ? "已提交审批" : "提交审批"}
               </Button>
