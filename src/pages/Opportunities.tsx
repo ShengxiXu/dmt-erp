@@ -3,10 +3,13 @@
 // 支持 /opportunity?customer=CU-xxx 从客户档案带过滤进入
 import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
+import { Download } from "lucide-react";
 import { useOpps, getOpps, addOpp, updateOpp, CUSTOMERS, OPP_STAGES, OPP_SOURCES, type Opportunity, type OppProduct, type OppStage } from "@/data/customers";
 import { CONTRACTS } from "@/data/contracts";
 import { inDataScope, scopeBanner, currentUser } from "@/data/users";
 import { useCatalog, CATS, PTYPES } from "@/data/products";
+import { DEMO_TODAY } from "@/data/settings";
+import { exportCsv } from "@/utils/exportCsv";
 import ArcoShell from "@/components/ArcoShell";
 import CenterModal from "@/components/CenterModal";
 import CustomerSelect from "@/components/CustomerSelect";
@@ -190,6 +193,11 @@ export default function Opportunities() {
               ))}
             </div>
             <Input className="w-56" placeholder="搜索商机编号 / 名称 / 客户" value={kw} onChange={(e) => setKw(e.target.value)} />
+            <button onClick={() => exportCsv(`商机台账_${DEMO_TODAY}`, ["商机编号", "客户", "商机名称", "意向产品", "预计合同额(元)", "预计成交", "阶段", "来源", "负责销售"],
+              shown.map((d) => [d.id, CUSTOMER_NAME(d.customerId), d.name, d.products.map((p) => p.ptype).join("+"), d.expectAmount, d.expectedCloseAt ?? "", d.stage, d.source ?? "", d.sales]))}
+              className="flex items-center gap-1 rounded-[2px] border border-[#E5E6EB] px-2.5 py-1.5 text-xs text-[#4E5969] hover:border-[#165DFF] hover:text-[#165DFF]">
+              <Download size={12} /> 导出
+            </button>
           </div>
           <Button size="sm" onClick={() => setCreating(true)}>＋ 新建商机</Button>
         </div>

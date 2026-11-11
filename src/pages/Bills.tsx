@@ -2,6 +2,7 @@
 // 设计原则：录入只需选「费用归类」一个业务字段，归属自动带出；与订单的关联由系统在月结/核算时自动建立，全程无需手选订单。
 import { useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
+import { Download } from "lucide-react";
 import ArcoShell from "@/components/ArcoShell";
 import CenterModal from "@/components/CenterModal";
 import { Badge } from "@/components/ui/badge";
@@ -15,6 +16,8 @@ import { getCostItems } from "@/data/costItems";
 import { getContracts } from "@/data/purchase";
 import { SHEET_ENTRIES, SHEETS, fmt } from "@/data/sheets";
 import { R1_ROWS, R2_ROWS, R3_ROWS, R4_ROWS } from "@/data/resources";
+import { DEMO_TODAY } from "@/data/settings";
+import { exportCsv } from "@/utils/exportCsv";
 
 /** 费用归类的取数来源 → 资源档案（决定账单可关联哪些资源；间接/字典类无映射 = 无需关联资源） */
 const SRC_ARCHIVE: Record<string, string> = {
@@ -138,6 +141,11 @@ export default function Bills() {
               ))}
             </div>
             <Input className="ml-2 w-48" placeholder="搜索账单号 / 供应商 / 费用归类" value={kw} onChange={(e) => setKw(e.target.value)} />
+            <button onClick={() => exportCsv(`供应商账单_${DEMO_TODAY}`, ["账单号", "供应商", "账期", "费用归类", "金额(元)", "状态", "标记", "来源", "采购单", "合同"],
+              rows.map((b) => { const item = getCostItems().find((i) => i.key === b.costItemKey); return [b.id, b.supplier, b.period, item?.name ?? b.costItemKey, b.amount, b.status, b.tag ?? "", b.source ?? "", b.poNo ?? "", b.contractNo ?? ""]; }))}
+              className="flex items-center gap-1 rounded-[2px] border border-[#E5E6EB] px-2.5 py-1.5 text-xs text-[#4E5969] hover:border-[#165DFF] hover:text-[#165DFF]">
+              <Download size={12} /> 导出
+            </button>
             <Button size="sm" className="ml-auto" onClick={() => setShowAdd(true)}>录入账单</Button>
           </div>
           <table className="w-full text-xs">

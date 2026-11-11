@@ -2,10 +2,13 @@
 // 状态页签 + 搜索；合同号链接进详情；新建合同（合同+订单合二为一）
 import { useState } from "react";
 import { useNavigate } from "react-router";
+import { Download } from "lucide-react";
 import { CONTRACTS, ONLINE_STEPS, OFFLINE_STEPS, fmtMoney, expiringContracts, daysToEnd, type ContractStatus } from "@/data/contracts";
 import { ENTITY_NAME } from "@/data/entities";
 import { inDataScope, scopeBanner } from "@/data/users";
 import { ownerOfDeal } from "@/data/ownership";
+import { DEMO_TODAY } from "@/data/settings";
+import { exportCsv } from "@/utils/exportCsv";
 import ArcoShell from "@/components/ArcoShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -57,6 +60,11 @@ export default function ContractList() {
               ))}
             </div>
             <Input className="w-52" placeholder="搜索合同号 / 客户" value={kw} onChange={(e) => setKw(e.target.value)} />
+            <button onClick={() => exportCsv(`合同台账_${DEMO_TODAY}`, ["合同号", "客户", "订单内容", "月租合计(元)", "付款方式", "折扣", "签约主体", "状态", "合同期限"],
+              shown.map((c) => [c.id, c.customer, c.lines.map((l) => l.ptype).join("+"), c.amount, c.pay, c.discount ? `${c.discount}%` : "标准", ENTITY_NAME(c.entityId), c.status, `${c.start} ~ ${c.end}`]))}
+              className="flex items-center gap-1 rounded-[2px] border border-[#E5E6EB] px-2.5 py-1.5 text-xs text-[#4E5969] hover:border-[#165DFF] hover:text-[#165DFF]">
+              <Download size={12} /> 导出
+            </button>
           </div>
           <Button size="sm" onClick={() => navigate("/contract/edit")}>＋ 新建合同</Button>
         </div>

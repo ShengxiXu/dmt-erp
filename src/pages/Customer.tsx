@@ -2,12 +2,15 @@
 // 客户下挂「商机」（一个客户可有多个，特批必须挂在具体商机上），统一在 /opportunity 维护，本页提供跳转入口
 import { useState } from "react";
 import { Link, useNavigate } from "react-router";
+import { Download } from "lucide-react";
 import { CUSTOMERS, useOpps, OPPS_OF, type Customer } from "@/data/customers";
 import { inDataScope, scopeBanner, currentUser } from "@/data/users";
 import { CONTRACTS, fmtMoney } from "@/data/contracts";
 import { RECEIVABLES, PAYMENTS, invBalance } from "@/data/receivables";
 import { customerFinance, FIN_TODAY } from "@/data/finance";
 import { R1_ROWS } from "@/data/resources";
+import { DEMO_TODAY } from "@/data/settings";
+import { exportCsv } from "@/utils/exportCsv";
 import ArcoShell from "@/components/ArcoShell";
 import CenterModal from "@/components/CenterModal";
 import { RegionCascader } from "@/components/RegionCascader";
@@ -49,6 +52,11 @@ export default function Customer() {
           <div className="flex items-center gap-3">
             <span className="text-sm font-semibold text-[#1D2129]">客户档案</span>
             <Input className="w-56" placeholder="搜索客户 / 联系人 / 信用代码" value={kw} onChange={(e) => setKw(e.target.value)} />
+            <button onClick={() => exportCsv(`客户档案_${DEMO_TODAY}`, ["客户编号", "客户名称", "等级", "行业", "联系人", "归属销售", "商机数", "状态", "最近跟进"],
+              shown.map((c) => [c.id, c.name, c.level ?? "", c.industry, c.contact, c.sales, `${OPPS_OF(c.id).length}`, c.status, c.createdAt]))}
+              className="flex items-center gap-1 rounded-[2px] border border-[#E5E6EB] px-2.5 py-1.5 text-xs text-[#4E5969] hover:border-[#165DFF] hover:text-[#165DFF]">
+              <Download size={12} /> 导出
+            </button>
           </div>
           <Button size="sm" onClick={() => setEditing({ name: "", creditCode: "", level: "C", industry: "", source: "", address: "", contact: "", contactTitle: "", phone: "", email: "", sales: currentUser()?.name ?? "张弛", status: "潜在" })}>＋ 新建客户</Button>
         </div>

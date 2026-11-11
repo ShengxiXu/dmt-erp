@@ -1,9 +1,12 @@
 import { useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
+import { Download } from "lucide-react";
 import { SHEETS, fmt, type SheetStatus } from "@/data/sheets";
 import { CONTRACTS } from "@/data/contracts";
 import { inDataScope, scopeBanner } from "@/data/users";
 import { ownerOfDeal } from "@/data/ownership";
+import { DEMO_TODAY } from "@/data/settings";
+import { exportCsv } from "@/utils/exportCsv";
 import ArcoShell from "@/components/ArcoShell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -75,6 +78,11 @@ export default function CostList() {
               ))}
             </div>
             <Input className="ml-2 w-48" placeholder="搜索核算单号 / 客户 / 合同" value={kw} onChange={(e) => setKw(e.target.value)} />
+            <button onClick={() => exportCsv(`成本台账_${DEMO_TODAY}`, ["核算单号", "客户", "合同", "订单行", "月成本(元)", "合同月额(元)", "毛利", "业务支撑部", "技术部", "状态", "当前节点", "更新时间"],
+              rows.map((s) => [s.id, s.customer, s.contract, s.lines, s.monthlyCost, s.contractValue, `${s.margin}%`, s.opsDone ? "已提交" : "未提交", s.techDone ? "已提交" : "未提交", s.status, s.curNode ?? "", s.updated]))}
+              className="flex items-center gap-1 rounded-[2px] border border-[#E5E6EB] px-2.5 py-1.5 text-xs text-[#4E5969] hover:border-[#165DFF] hover:text-[#165DFF]">
+              <Download size={12} /> 导出
+            </button>
             <button onClick={() => setOnlyPending(!onlyPending)}
               className={`rounded-[2px] border px-2.5 py-1 text-xs ${onlyPending ? "border-[#FFCF8B] bg-[#FFF7E8] text-[#FF7D00]" : "border-[#E5E6EB] text-[#4E5969] hover:bg-[#F2F3F5]"}`}>
               待补关联{pendingCount > 0 ? `（${pendingCount}）` : ""}
