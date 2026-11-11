@@ -1,8 +1,9 @@
 // P08 采购单详情（/purchase/orders/:poNo）—— 四步办理：① 采购审批（P08-2/3）② 下单与合同价（P08-4）③ 到货验收（P08-5）④ 资源入库建档（P08-6）
 import { useState } from "react";
 import { useParams } from "react-router";
-import { usePurchaseFlow, PO_BY_NO, poTotalWithTax, submitPo, submitPoDirect, approvePo, rejectPo, savePoDraft, saveContractPrice, addReceiptBatch, completeInbound, setPoAttachments, fmtMoney, type POLine, type PurchaseOrder } from "@/data/purchaseFlow";
-import { useApprovalFlow, FLOW_BY_DOC, resolveBranch } from "@/data/approvalFlow";
+import { usePurchaseFlow, PO_BY_NO, poTotalWithTax, submitPo, approvePo, rejectPo, savePoDraft, saveContractPrice, addReceiptBatch, completeInbound, setPoAttachments, fmtMoney, type POLine, type PurchaseOrder } from "@/data/purchaseFlow";
+import { useApprovalFlow, FLOW_BY_DOC, resolveBranch, INSTANCE_OF_DOC, approveInstance, rejectInstance } from "@/data/approvalFlow";
+import { currentUser } from "@/data/users";
 import { PURCHASE_CONTRACTS } from "@/data/purchase";
 import { R1_ROWS } from "@/data/resources";
 import { Link } from "react-router";
@@ -95,8 +96,7 @@ function ApprovalStep({ po }: { po: PurchaseOrder }) {
             <Button size="sm" variant="outline" onClick={() => savePoDraft(po.poNo, { supplier, paymentTerms, lines })}>保存草稿</Button>
             <Button size="sm" onClick={() => {
               savePoDraft(po.poNo, { supplier, paymentTerms, lines });
-              if (flow && !flow.enabled) submitPoDirect(po.poNo); // 审批流已停用：提交直接生效（A2 配置驱动）
-              else submitPo(po.poNo);
+              submitPo(po.poNo); // 统一引擎：命中审批流 → 待审批锁定；未命中（停用/条件不满足）→ 直接生效已下单
             }}>{flow && !flow.enabled ? "提交（审批流已停用，直接生效）" : "提交审批（锁定）"}</Button>
           </span>
         </div>
@@ -110,14 +110,22 @@ function ApprovalStep({ po }: { po: PurchaseOrder }) {
           </div>
           {po.rejectReason && <div className="text-[#F53F3F]">上次驳回原因（v{po.version - 1}）：{po.rejectReason}</div>}
           <div className="flex gap-2">
-            <Button size="sm" className="bg-[#00B42A] hover:bg-[#00B42A]/90" onClick={() => approvePo(po.poNo)}>批准（→ 已下单）</Button>
+            <Button size="sm" className="bg-[#00B42A] hover:bg-[#00B42A]/90" onClick={() => {
+              const i = INSTANCE_OF_DOC(po.poNo);
+              if (i) approveInstance(i.id, currentUser()?.name ?? "当前登录人", "");
+              else approvePo(po.poNo); // 兜底：无实例（老数据）走原直接审批
+            }}>批准（→ 已下单）</Button>
             <Button size="sm" variant="outline" onClick={() => setRejectOpen(true)}>驳回（{hitBranch?.rejectPolicy ?? "退回发起人"}）</Button>
           </div>
           {rejectOpen && (
             <div className="flex items-center gap-2 border-t border-[#FFE8C8] pt-2">
               <Input className="flex-1" placeholder="驳回原因（留痕，必填）" value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} />
               <Button size="sm" variant="outline" onClick={() => setRejectOpen(false)}>取消</Button>
-              <Button size="sm" variant="destructive" disabled={!rejectReason.trim()} onClick={() => rejectPo(po.poNo, rejectReason.trim())}>确认驳回</Button>
+              <Button size="sm" variant="destructive" disabled={!rejectReason.trim()} onClick={() => {
+                const i = INSTANCE_OF_DOC(po.poNo);
+                if (i) rejectInstance(i.id, currentUser()?.name ?? "当前登录人", rejectReason.trim());
+                else rejectPo(po.poNo, rejectReason.trim());
+              }}>确认驳回</Button>
             </div>
           )}
         </div>

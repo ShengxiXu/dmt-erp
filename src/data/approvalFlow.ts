@@ -345,46 +345,66 @@ export function rejectInstance(id: string, by: string, comment: string): string 
   const cur = inst.snapshot.nodes[inst.curNodeIdx];
   inst.results.push({ nodeIdx: inst.curNodeIdx, nodeLabel: nodeLabel(cur), action: "驳回", by, time: demoNow(), comment });
   inst.status = "已驳回";
-  finishSheet(inst, "已驳回");
+  finishSheet(inst, "已驳回", comment);
   notify({ level: "red", group: "审批", title: `审批驳回：${inst.docId}`, text: `${inst.summary} · ${nodeLabel(cur)} 驳回：${comment}（${inst.snapshot.rejectPolicy}）`, to: "/approval" });
   logFlow(`${inst.docId}：${nodeLabel(cur)} 驳回（by ${by}）：${comment}`);
   bump();
   return null;
 }
 
-// ---------- 引擎 ↔ 核算单写回 ----------
+// ---------- 引擎 ↔ 业务单据写回 ----------
+// 写回注册表：核算单由引擎直改 SHEETS；采购单 / 坏账申请等其他单据由各自模块注册写回函数，
+// 审批动作（提交/通过/驳回）统一经此入口真实写回业务单据，避免模块间循环依赖。
+export type DocWriteBackStatus = "审批中" | "已通过" | "已驳回";
+export type DocWriteBack = (docId: string, status: DocWriteBackStatus, comment?: string) => void;
+const writeBacks: Partial<Record<DocType, DocWriteBack>> = {};
+export function registerDocWriteBack(docType: DocType, fn: DocWriteBack) { writeBacks[docType] = fn; }
+
 function syncSheet(inst: ApprovalInstance) {
   const s = SHEETS.find((x) => x.id === inst.docId);
-  if (!s) return;
-  s.status = "审批中";
-  const cur = inst.snapshot.nodes[inst.curNodeIdx];
-  s.curNode = cur ? nodeLabel(cur) : undefined;
-  s.updated = demoNow();
+  if (s) {
+    s.status = "审批中";
+    const cur = inst.snapshot.nodes[inst.curNodeIdx];
+    s.curNode = cur ? nodeLabel(cur) : undefined;
+    s.updated = demoNow();
+  }
+  writeBacks[inst.docType]?.(inst.docId, "审批中");
 }
-function finishSheet(inst: ApprovalInstance, status: "已通过" | "已驳回") {
+function finishSheet(inst: ApprovalInstance, status: "已通过" | "已驳回", comment?: string) {
   const s = SHEETS.find((x) => x.id === inst.docId);
-  if (!s) return;
-  s.status = status;
-  s.curNode = undefined;
-  s.updated = demoNow();
+  if (s) {
+    s.status = status;
+    s.curNode = undefined;
+    s.updated = demoNow();
+  }
+  writeBacks[inst.docType]?.(inst.docId, status, comment);
 }
 
-// ---------- 在途单回填（旧快照只有审批中状态、没有实例：按现配置补建，停在末节点、前置节点记通过） ----------
-SHEETS.filter((s) => s.status === "审批中" && !INSTANCE_OF_DOC(s.id)).forEach((s) => {
-  const ctx = { monthlyCost: s.monthlyCost, contractValue: s.contractValue, margin: s.margin, lines: s.lines };
-  const { hit, flow, branch } = simulate("成本核算单 · 提交", ctx);
-  if (!hit || !flow || !branch) return;
-  const results: NodeResult[] = branch.nodes.slice(0, Math.max(0, branch.nodes.length - 1)).map((n, i) => ({
-    nodeIdx: i, nodeLabel: nodeLabel(n), action: "通过", by: resolveApprover(n), time: s.updated, comment: "历史在途单回填",
-  }));
-  INSTANCES.unshift({
+// ---------- 在途单回填（历史数据只有单据的审批中状态、没有实例：按现配置补建，停在末节点、前置节点记通过） ----------
+/** 为在途单据补建审批实例：已有在途实例直接复用；否则按现配置 simulate，命中则建实例并返回，未命中返回 null */
+export function ensureInstance(docType: DocType, docId: string, summary: string, ctx: Record<string, unknown>): ApprovalInstance | null {
+  const existing = INSTANCE_OF_DOC(docId);
+  if (existing && existing.status === "审批中") return existing;
+  const { hit, flow, branch } = simulate(docType, ctx);
+  if (!hit || !flow || !branch) return null;
+  const instance: ApprovalInstance = {
     id: `AV-${String(INSTANCES.length + 1).padStart(3, "0")}`,
-    docType: "成本核算单 · 提交", docId: s.id, summary: `${s.customer} · ${s.contract}`,
+    docType, docId, summary,
     flowId: flow.id, flowName: flow.name, branchId: branch.id, branchName: branch.name,
     snapshot: { nodes: branch.nodes.map((n) => ({ ...n })), rejectPolicy: branch.rejectPolicy, branch: branch.conds.length ? condsText(branch.conds) : "兜底分支" },
-    status: "审批中", curNodeIdx: Math.max(0, branch.nodes.length - 1), results,
-    submitter: "系统回填", submitAt: s.updated, ctx,
-  });
+    status: "审批中", curNodeIdx: Math.max(0, branch.nodes.length - 1),
+    results: branch.nodes.slice(0, Math.max(0, branch.nodes.length - 1)).map((n, i) => ({
+      nodeIdx: i, nodeLabel: nodeLabel(n), action: "通过", by: resolveApprover(n), time: demoNow(), comment: "历史在途单回填",
+    })),
+    submitter: "系统回填", submitAt: demoNow(), ctx: { ...ctx },
+  };
+  INSTANCES.unshift(instance);
+  return instance;
+}
+
+SHEETS.filter((s) => s.status === "审批中" && !INSTANCE_OF_DOC(s.id)).forEach((s) => {
+  const ctx = { monthlyCost: s.monthlyCost, contractValue: s.contractValue, margin: s.margin, lines: s.lines };
+  ensureInstance("成本核算单 · 提交", s.id, `${s.customer} · ${s.contract}`, ctx);
 });
 
 // ---------- 配置维护（变更记留痕 + 通知） ----------
@@ -435,5 +455,5 @@ export const ENGINE_RULES = [
   "提交那一刻对分支做快照：在途单据按提交时配置走完，配置后改只影响新提交",
   "审批人 = 指定人 / 角色（取该角色启用成员）/ 部门负责人（按部门主数据解析，可自定义部门与负责人）",
   "通过 = 流转下一节点，末节点通过 = 单据生效；驳回 = 按分支的驳回策略退回，意见必填并通知发起人",
-  "审批动作真实写回业务单据（核算单状态/当前节点），流转记录随实例持久化；配置与审批全程留痕",
+  "审批动作真实写回业务单据（核算单 / 采购单 / 坏账申请等，经写回注册表），流转记录随实例持久化；配置与审批全程留痕",
 ];

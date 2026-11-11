@@ -7,6 +7,8 @@ import { PURCHASE_CONTRACTS, saveContract } from "@/data/purchase";
 import { demoNow } from "@/data/settings";
 import { notify } from "@/data/notices";
 import { persistable } from "@/data/persist";
+import { submitForApproval, registerDocWriteBack, ensureInstance, INSTANCE_OF_DOC } from "@/data/approvalFlow";
+import { currentUser } from "@/data/users";
 
 // ---------- P08-1 采购需求单 ----------
 export type ReqSource = "手工提报" | "资源不足联动" | "业务规划";
@@ -186,13 +188,18 @@ export function savePoDraft(poNo: string, patch: Partial<PurchaseOrder>) {
   const po = PO_BY_NO(poNo);
   if (po && po.status === "草稿") { Object.assign(po, patch); bump(); }
 }
-// P08-2 操作：提交 → P08-3 待审批（提交后锁定）；审批点停用（A2 配置）时提交直接生效
+// P08-2 操作：提交 → 统一审批引擎（A2）：命中审批流则生成实例、状态经写回注册表置「待审批」；
+// 未命中（流停用 / 触发条件不满足）→ 直接生效「已下单」，与 submitPoDirect 同口径
 export function submitPo(poNo: string) {
   const po = PO_BY_NO(poNo);
   if (!po || po.status !== "草稿") return;
   if (po.lines.some((l) => !(l.unitPrice > 0))) return;
-  po.status = "待审批";
-  notify({ level: "blue", group: "采购", title: "采购单待审批", text: `${po.poNo}（${po.supplier} · ¥${poTotalWithTax(po).toLocaleString("zh-CN")}）已提交，待采购审批`, to: `/purchase/orders/${po.poNo}` });
+  const amount = poTotalWithTax(po);
+  const { hit } = submitForApproval("采购单 · 提交", po.poNo, `${po.supplier} · ¥${fmtMoney(amount)}`, { amount }, currentUser()?.name ?? "演示用户");
+  if (!hit) {
+    po.status = "已下单";
+    notify({ level: "blue", group: "采购", title: "采购单直接生效", text: `${po.poNo}（${po.supplier} · ¥${fmtMoney(amount)}）未命中启用审批流，已直接下单`, to: `/purchase/orders/${po.poNo}` });
+  }
   bump();
 }
 export function submitPoDirect(poNo: string) {
@@ -314,3 +321,23 @@ export function completeInbound(poNo: string, payload: {
 // 挂起工单是否已被采购入库恢复（DeliveryDetail 读取）
 export const woResumedByPurchase = (woId: string): PurchaseOrder | undefined =>
   PURCHASE_ORDERS.find((p) => p.inboundDone && p.resumedWo === woId);
+
+// ---------- A2 统一审批引擎挂接 ----------
+// 审批结果写回：审批中 → 待审批（锁定）；已通过 → 已下单；已驳回 → 退回草稿（版本 +1，留痕）
+registerDocWriteBack("采购单 · 提交", (docId, status, comment) => {
+  const po = PO_BY_NO(docId);
+  if (!po) return;
+  if (status === "审批中") { po.status = "待审批"; }
+  else if (status === "已通过") {
+    po.status = "已下单";
+    notify({ level: "green", group: "采购", title: "采购单已下单", text: `${po.poNo}（${po.supplier}）审批通过，已通知供应商`, to: `/purchase/orders/${po.poNo}` });
+  } else {
+    po.status = "草稿"; po.version += 1; po.rejectReason = comment ?? "";
+    notify({ level: "red", group: "采购", title: "采购单被驳回", text: `${po.poNo}（${po.supplier}）退回草稿（v${po.version}）：${comment ?? ""}`, to: `/purchase/orders/${po.poNo}` });
+  }
+  bump();
+});
+// 在途单回填：历史「待审批」且无审批实例的采购单，按现配置补建实例（停在末节点）
+PURCHASE_ORDERS.filter((p) => p.status === "待审批" && !INSTANCE_OF_DOC(p.poNo)).forEach((p) => {
+  ensureInstance("采购单 · 提交", p.poNo, `${p.supplier} · ¥${fmtMoney(poTotalWithTax(p))}`, { amount: poTotalWithTax(p) });
+});

@@ -2,6 +2,8 @@
 import { useState } from "react";
 import { Link } from "react-router";
 import { useReceivables, getInvoices, getTickets, getBadDebtApps, createSuspendTicket, executeTicket, runOverdueScan, submitBadDebt, decideBadDebt, overdueDays, invBalance, getOverduePolicy, type SuspendTicket, type BadDebtApp } from "@/data/receivables";
+import { useApprovalFlow, INSTANCE_OF_DOC, approveInstance, rejectInstance } from "@/data/approvalFlow";
+import { currentUser } from "@/data/users";
 import { useSettings, cfgNum, getCfg } from "@/data/settings";
 import ArcoShell from "@/components/ArcoShell";
 import CenterModal from "@/components/CenterModal";
@@ -133,6 +135,7 @@ function BadDebtForm({ onClose }: { onClose: () => void }) {
 
 export default function Overdue() {
   useReceivables();
+  useApprovalFlow(); // 审批引擎写回（坏账申请状态）后同步刷新
   useSettings();
   const [tab, setTab] = useState<"欠费账单" | "停机复机工单" | "坏账申请">("欠费账单");
   const [kw, setKw] = useState("");
@@ -300,8 +303,19 @@ export default function Overdue() {
                     <td className="px-3 py-2.5 text-right">
                       {a.status === "审批中" && (
                         <span className="flex justify-end gap-2">
-                          <button className="text-[#00B42A] hover:underline" onClick={() => { if (confirm(`通过坏账申请 ${a.bdNo}？账单转为坏账，订阅强制进入退订流程（P06）。`)) decideBadDebt(a.bdNo, true); }}>通过</button>
-                          <button className="text-[#F53F3F] hover:underline" onClick={() => { if (confirm(`驳回坏账申请 ${a.bdNo}？`)) decideBadDebt(a.bdNo, false); }}>驳回</button>
+                          <button className="text-[#00B42A] hover:underline" onClick={() => {
+                            if (!confirm(`通过坏账申请 ${a.bdNo}？账单转为坏账，订阅强制进入退订流程（P06）。`)) return;
+                            const i = INSTANCE_OF_DOC(a.bdNo);
+                            if (i) approveInstance(i.id, currentUser()?.name ?? "当前登录人", ""); // 走统一审批引擎（写回 + 留痕）
+                            else decideBadDebt(a.bdNo, true);
+                          }}>通过</button>
+                          <button className="text-[#F53F3F] hover:underline" onClick={() => {
+                            const reason = prompt(`驳回坏账申请 ${a.bdNo}？请填写驳回原因（必填）：`);
+                            if (!reason?.trim()) return;
+                            const i = INSTANCE_OF_DOC(a.bdNo);
+                            if (i) rejectInstance(i.id, currentUser()?.name ?? "当前登录人", reason.trim());
+                            else decideBadDebt(a.bdNo, false);
+                          }}>驳回</button>
                         </span>
                       )}
                     </td>

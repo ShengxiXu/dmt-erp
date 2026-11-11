@@ -6,6 +6,8 @@ import { notify } from "@/data/notices";
 import { useSyncExternalStore } from "react";
 import { cfgNum, getCfg, DEMO_TODAY, demoNow } from "@/data/settings";
 import { persistable } from "@/data/persist";
+import { submitForApproval, registerDocWriteBack, ensureInstance, INSTANCE_OF_DOC } from "@/data/approvalFlow";
+import { currentUser } from "@/data/users";
 
 // ---------- 客户账单（应收） ----------
 export type InvStatus = "已发出" | "部分收款" | "已收讫" | "逾期" | "欠停" | "坏账";
@@ -313,14 +315,15 @@ export function addCollectRecord(data: Omit<CollectRecord, "crNo">): string | nu
   return null;
 }
 
-// P04-9：坏账申请（提交 → 审批中；走 P10 AP-04 链）
+// P04-9：坏账申请（提交 → 统一审批引擎 A2 匹配「坏账申请单 · 提交」流；未命中则自动生效：账单直接转坏账）
 export function submitBadDebt(data: Omit<BadDebtApp, "bdNo" | "status" | "createdAt">): string | null {
   if (!data.invNos.length) return "请选择逾期账单";
   if (data.collectRecord.trim().length < 10) return "催收记录不少于 10 字";
   if (data.reason === "其他" && !data.reasonText?.trim()) return "坏账原因=其他时必须填写说明";
   const bdNo = `BD-2026-${String(rcSeqBox.bd++).padStart(3, "0")}`;
   BADDEBT_APPS.unshift({ ...data, bdNo, status: "审批中", createdAt: now() });
-  notify({ level: "red", group: "财务", title: "坏账申请已提交", text: `${bdNo}（${data.customer} · ${data.invNos.length} 笔）进入审批（默认链：财务主管 + 管理层）`, to: "/finance?tab=collect" });
+  const { hit } = submitForApproval("坏账申请单 · 提交", bdNo, `${data.customer} · ${data.invNos.length} 笔 · ¥${data.total.toLocaleString("zh-CN")}`, { amount: data.total }, currentUser()?.name ?? "演示用户");
+  if (!hit) decideBadDebt(bdNo, true); // 未命中启用审批流：自动通过并转坏账（与核算/采购同口径：不审批即生效）
   bump();
   return null;
 }
@@ -339,3 +342,14 @@ export function decideBadDebt(bdNo: string, pass: boolean): string | null {
   bump();
   return null;
 }
+
+// ---------- A2 统一审批引擎挂接 ----------
+// 审批结果写回：已通过 / 已驳回 → 复用 decideBadDebt 的业务副作用（状态 + 账单转坏账 + 通知 + 留痕）
+registerDocWriteBack("坏账申请单 · 提交", (docId, status) => {
+  if (status === "审批中") return; // 提交时已置为审批中
+  decideBadDebt(docId, status === "已通过");
+});
+// 在途单回填：历史「审批中」且无审批实例的坏账申请，按现配置补建实例（停在末节点）
+BADDEBT_APPS.filter((a) => a.status === "审批中" && !INSTANCE_OF_DOC(a.bdNo)).forEach((a) => {
+  ensureInstance("坏账申请单 · 提交", a.bdNo, `${a.customer} · ${a.invNos.length} 笔 · ¥${a.total.toLocaleString("zh-CN")}`, { amount: a.total });
+});
