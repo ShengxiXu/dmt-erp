@@ -395,6 +395,7 @@ export function saveFlow(patch: ApprovalFlow): string | null {
   if (!patch.branches.some((b) => b.enabled && !b.conds.length)) return "需要一个启用的兜底分支（不设条件的分支）";
   if (patch.branches.some((b) => b.enabled && !b.nodes.length)) return "启用的分支至少需要一个节点";
   if (patch.branches.some((b) => b.enabled && b.nodes.some((n) => !n.approver.trim()))) return "每个节点都要指定审批人";
+  patch.branches.forEach((b) => { if (!b.conds.length) b.name = "兜底分支"; }); // 兜底是身份不是名字：固定标签，不可自定义
   const isNew = !FLOW_BY_ID(patch.id);
   const i = FLOWS.findIndex((f) => f.id === patch.id);
   const stamped: ApprovalFlow = { ...patch, updatedAt: now(), updatedBy: "管理员-王芳" };
