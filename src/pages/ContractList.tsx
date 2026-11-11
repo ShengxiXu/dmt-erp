@@ -4,6 +4,8 @@ import { useState } from "react";
 import { useNavigate } from "react-router";
 import { CONTRACTS, ONLINE_STEPS, OFFLINE_STEPS, fmtMoney, expiringContracts, daysToEnd, type ContractStatus } from "@/data/contracts";
 import { ENTITY_NAME } from "@/data/entities";
+import { inDataScope, scopeBanner } from "@/data/users";
+import { ownerOfDeal } from "@/data/ownership";
 import ArcoShell from "@/components/ArcoShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,7 +27,10 @@ export default function ContractList() {
   const navigate = useNavigate();
   const [tab, setTab] = useState<(typeof TABS)[number]>("全部");
   const [kw, setKw] = useState("");
-  const shown = CONTRACTS.filter((c) => (tab === "全部" || c.status === tab) && (!kw || c.id.includes(kw) || c.customer.includes(kw)));
+  // 数据权限：合同沿「商机 → 客户」链路解析归属人后按角色数据范围过滤
+  const scoped = CONTRACTS.filter((c) => inDataScope(ownerOfDeal(c.dealId, c.customer)));
+  const shown = scoped.filter((c) => (tab === "全部" || c.status === tab) && (!kw || c.id.includes(kw) || c.customer.includes(kw)));
+  const banner = scopeBanner(CONTRACTS.length - scoped.length);
   const expiring = expiringContracts(90);
 
   return (
@@ -47,7 +52,7 @@ export default function ContractList() {
             <div className="flex rounded-[2px] border border-[#E5E6EB] p-0.5">
               {TABS.map((t) => (
                 <button key={t} onClick={() => setTab(t)} className={`rounded-[2px] px-2.5 py-1 text-xs ${tab === t ? "bg-[#165DFF] text-white" : "text-[#4E5969] hover:bg-[#F2F3F5]"}`}>
-                  {t}{t !== "全部" ? `（${CONTRACTS.filter((c) => c.status === t).length}）` : ""}
+                  {t}{t !== "全部" ? `（${scoped.filter((c) => c.status === t).length}）` : ""}
                 </button>
               ))}
             </div>
@@ -55,6 +60,10 @@ export default function ContractList() {
           </div>
           <Button size="sm" onClick={() => navigate("/contract/edit")}>＋ 新建合同</Button>
         </div>
+
+        {banner && (
+          <div className="rounded-[4px] border border-[#FFECE8] bg-[#FFF7F5] px-4 py-2 text-[11px] text-[#F53F3F]">🔒 {banner}</div>
+        )}
 
         <div className="overflow-x-auto rounded-[4px] border border-[#E5E6EB] bg-white">
           <table className="w-full text-xs">

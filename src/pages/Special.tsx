@@ -5,6 +5,8 @@ import { useState } from "react";
 import { useNavigate } from "react-router";
 import { SPECIALS, SPECIAL_LEVELS, type Special } from "@/data/contracts";
 import { CUSTOMERS, useOpps, getOpps, GET_OPP, type Opportunity } from "@/data/customers";
+import { inDataScope, scopeBanner } from "@/data/users";
+import { ownerOfDeal } from "@/data/ownership";
 import ArcoShell from "@/components/ArcoShell";
 import CenterModal from "@/components/CenterModal";
 import CustomerSelect from "@/components/CustomerSelect";
@@ -86,7 +88,10 @@ export default function Special() {
   // 当前登录人视角：业务支撑部（一级）/ 财务负责人（二级）/ 管理层（三级）——原型合并演示
   const myName = "周敏";
   const todoList = list.filter((s) => s.status === "审批中" && s.flows[s.current - 1]?.name.includes(myName));
-  const shown = (tab === "mine" ? list : todoList).filter((s) => !kw || s.id.includes(kw) || s.customer.includes(kw) || (GET_OPP(s.dealId)?.name ?? "").includes(kw));
+  // 数据权限：「我的申请」按归属（商机/客户）过滤；「待我审批」是审批职责不受数据范围限制
+  const scopedList = list.filter((s) => inDataScope(ownerOfDeal(s.dealId, s.customer)));
+  const banner = scopeBanner(list.length - scopedList.length);
+  const shown = (tab === "mine" ? scopedList : todoList).filter((s) => !kw || s.id.includes(kw) || s.customer.includes(kw) || (GET_OPP(s.dealId)?.name ?? "").includes(kw));
 
   // 选中客户后可选择的商机（一个客户可有多个商机，特批必须指明针对哪一个）
   const customerObj = CUSTOMERS.find((c) => c.name === form.customer);
@@ -136,6 +141,10 @@ export default function Special() {
           </div>
           <Button size="sm" onClick={() => setCreating(true)}>＋ 发起特批申请</Button>
         </div>
+
+        {banner && (
+          <div className="rounded-[4px] border border-[#FFECE8] bg-[#FFF7F5] px-4 py-2 text-[11px] text-[#F53F3F]">🔒 {banner}（「待我审批」页签为审批职责视图，不受数据范围限制）</div>
+        )}
 
         <div className="overflow-x-auto rounded-[4px] border border-[#E5E6EB] bg-white">
           <table className="w-full text-xs">

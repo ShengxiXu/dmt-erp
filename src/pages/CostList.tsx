@@ -1,6 +1,9 @@
 import { useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { SHEETS, fmt, type SheetStatus } from "@/data/sheets";
+import { CONTRACTS } from "@/data/contracts";
+import { inDataScope, scopeBanner } from "@/data/users";
+import { ownerOfDeal } from "@/data/ownership";
 import ArcoShell from "@/components/ArcoShell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -25,14 +28,23 @@ export default function CostList() {
   const [f, setF] = useState<(typeof FILTERS)[number]>(initStatus && FILTERS.includes(initStatus) ? initStatus : "全部");
   const [onlyPending, setOnlyPending] = useState(sp.get("pending") === "1");
   const [kw, setKw] = useState(sp.get("kw") ?? "");
-  const rows = useMemo(() => SHEETS.filter((s) => (f === "全部" || s.status === f) && (!onlyPending || (s.pendingLink ?? 0) > 0) && (!kw || s.id.includes(kw) || s.customer.includes(kw) || s.contract.includes(kw))), [f, onlyPending, kw]);
-  const pendingCount = useMemo(() => SHEETS.filter((s) => (s.pendingLink ?? 0) > 0).length, []);
-  const stats = useMemo(() => ({
-    pending: SHEETS.filter((s) => s.status === "审批中").length,
-    todo: SHEETS.filter((s) => s.status === "待填写" || s.status === "待对方提交").length,
-    pass: SHEETS.filter((s) => s.status === "已通过").length,
-    reject: SHEETS.filter((s) => s.status === "已驳回").length,
-  }), []);
+  // 数据权限：核算单沿「合同 → 商机 / 客户」链路解析归属人后按角色数据范围过滤
+  const sheetOwner = (s: (typeof SHEETS)[number]) => {
+    const cid = s.contract.split(" ")[0];
+    const c = CONTRACTS.find((x) => x.id === cid);
+    return ownerOfDeal(c?.dealId, s.customer);
+  };
+  // scoped 不做 memo：会话角色切换时数据范围要即时重算（数组很小，每次渲染重算无压力）
+  const scoped = SHEETS.filter((s) => inDataScope(sheetOwner(s)));
+  const banner = scopeBanner(SHEETS.length - scoped.length);
+  const rows = useMemo(() => scoped.filter((s) => (f === "全部" || s.status === f) && (!onlyPending || (s.pendingLink ?? 0) > 0) && (!kw || s.id.includes(kw) || s.customer.includes(kw) || s.contract.includes(kw))), [f, onlyPending, kw]); // eslint-disable-line react-hooks/exhaustive-deps
+  const pendingCount = scoped.filter((s) => (s.pendingLink ?? 0) > 0).length;
+  const stats = {
+    pending: scoped.filter((s) => s.status === "审批中").length,
+    todo: scoped.filter((s) => s.status === "待填写" || s.status === "待对方提交").length,
+    pass: scoped.filter((s) => s.status === "已通过").length,
+    reject: scoped.filter((s) => s.status === "已驳回").length,
+  };
 
   return (
     <ArcoShell breadcrumb="成本台账">
@@ -69,6 +81,9 @@ export default function CostList() {
             </button>
             <span className="ml-auto text-xs text-[#86909C]">月成本 = 周期性条目合计；毛利 = 1 − 月成本÷合同月额（简化口径）</span>
           </div>
+          {banner && (
+            <div className="border-b border-[#FFECE8] bg-[#FFF7F5] px-4 py-2 text-[11px] text-[#F53F3F]">🔒 {banner}</div>
+          )}
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b bg-[#F7F8FA] text-left text-[#4E5969]">
