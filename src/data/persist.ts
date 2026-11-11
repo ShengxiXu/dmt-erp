@@ -51,6 +51,11 @@ export function hasPersistedData(): boolean {
   return Object.keys(ensureLoaded()).length > 0;
 }
 
+/** 指定台账是否来自本地快照（区分「出厂初始值」与「用户已持久化的数据」，供版本迁移判断） */
+export function hasSnapshot(name: string): boolean {
+  return name in ensureLoaded();
+}
+
 // 自动保存：页面关闭 / 切后台时必存；定时兜底覆盖长时间停留不刷新的场景
 if (typeof window !== "undefined") {
   window.addEventListener("beforeunload", saveNow);

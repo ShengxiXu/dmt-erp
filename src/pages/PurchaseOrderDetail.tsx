@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { useParams } from "react-router";
 import { usePurchaseFlow, PO_BY_NO, poTotalWithTax, submitPo, submitPoDirect, approvePo, rejectPo, savePoDraft, saveContractPrice, addReceiptBatch, completeInbound, setPoAttachments, fmtMoney, type POLine, type PurchaseOrder } from "@/data/purchaseFlow";
-import { useApprovalFlow, POINT_BY_ID, resolveChain } from "@/data/approvalFlow";
+import { useApprovalFlow, FLOW_BY_DOC, resolveBranch } from "@/data/approvalFlow";
 import { PURCHASE_CONTRACTS } from "@/data/purchase";
 import { R1_ROWS } from "@/data/resources";
 import { Link } from "react-router";
@@ -30,11 +30,11 @@ function ApprovalStep({ po }: { po: PurchaseOrder }) {
   const [rejectReason, setRejectReason] = useState("");
   const totalWithTax = poTotalWithTax(po);
   const bigAmount = totalWithTax >= 100000;
-  // 审批链来自「系统管理 → 审批流配置」（AP-02 采购审批）：统一引擎按分支条件匹配启用链，不写死在页面
-  const point = POINT_BY_ID("AP-02");
-  const hitChain = resolveChain("AP-02", { amount: totalWithTax });
-  const approverText = hitChain
-    ? hitChain.nodes.map((n) => `${n.approverSource === "指定人" ? "" : `${n.approverSource}·`}${n.approver}（${n.mode}）`).join(" → ")
+  // 审批流来自「系统管理 → 审批流配置」（采购单 · 提交）：统一引擎按分支条件匹配启用分支，不写死在页面
+  const flow = FLOW_BY_DOC("采购单 · 提交");
+  const hitBranch = flow ? resolveBranch(flow.id, { amount: totalWithTax }) : null;
+  const approverText = hitBranch
+    ? hitBranch.nodes.map((n) => `${n.approverSource === "指定人" ? "" : `${n.approverSource}·`}${n.approver}（${n.mode}）`).join(" → ")
     : "未配置（请到审批流配置补链）";
 
   const patch = (i: number, k: keyof POLine, v: string) =>
@@ -95,9 +95,9 @@ function ApprovalStep({ po }: { po: PurchaseOrder }) {
             <Button size="sm" variant="outline" onClick={() => savePoDraft(po.poNo, { supplier, paymentTerms, lines })}>保存草稿</Button>
             <Button size="sm" onClick={() => {
               savePoDraft(po.poNo, { supplier, paymentTerms, lines });
-              if (point && !point.enabled) submitPoDirect(po.poNo); // 审批点已停用：提交直接生效（A2 配置驱动）
+              if (flow && !flow.enabled) submitPoDirect(po.poNo); // 审批流已停用：提交直接生效（A2 配置驱动）
               else submitPo(po.poNo);
-            }}>{point && !point.enabled ? "提交（审批点已停用，直接生效）" : "提交审批（锁定）"}</Button>
+            }}>{flow && !flow.enabled ? "提交（审批流已停用，直接生效）" : "提交审批（锁定）"}</Button>
           </span>
         </div>
       )}
@@ -105,13 +105,13 @@ function ApprovalStep({ po }: { po: PurchaseOrder }) {
         <div className="space-y-2 rounded-[4px] border border-[#FF7D00]/30 bg-[#FFF7E8] px-4 py-3 text-xs">
           <div className="font-medium text-[#1D2129]">
             待审批：{approverText}
-            {bigAmount && hitChain && <span className="ml-2 rounded-[2px] bg-[#FFF3E8] px-1.5 py-0.5 text-[10px] text-[#FF7D00]">命中大额分支链</span>}
-            <Link to="/system/approval" className="ml-2 font-normal text-[#165DFF] hover:underline">审批链来源：审批流配置（AP-02）</Link>
+            {bigAmount && hitBranch && <span className="ml-2 rounded-[2px] bg-[#FFF3E8] px-1.5 py-0.5 text-[10px] text-[#FF7D00]">命中大额分支链</span>}
+            <Link to="/system/approval" className="ml-2 font-normal text-[#165DFF] hover:underline">审批链来源：审批流配置（采购单 · 提交）</Link>
           </div>
           {po.rejectReason && <div className="text-[#F53F3F]">上次驳回原因（v{po.version - 1}）：{po.rejectReason}</div>}
           <div className="flex gap-2">
             <Button size="sm" className="bg-[#00B42A] hover:bg-[#00B42A]/90" onClick={() => approvePo(po.poNo)}>批准（→ 已下单）</Button>
-            <Button size="sm" variant="outline" onClick={() => setRejectOpen(true)}>驳回（{hitChain?.rejectPolicy ?? "退回发起人"}）</Button>
+            <Button size="sm" variant="outline" onClick={() => setRejectOpen(true)}>驳回（{hitBranch?.rejectPolicy ?? "退回发起人"}）</Button>
           </div>
           {rejectOpen && (
             <div className="flex items-center gap-2 border-t border-[#FFE8C8] pt-2">

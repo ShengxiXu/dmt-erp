@@ -83,6 +83,7 @@ export const NAV_GROUPS: { group: string; items: NavItem[] }[] = [
   {
     group: "系统管理",
     items: [
+      { to: "/system/departments", label: "部门管理", icon: Users },
       { to: "/system/users", label: "用户与角色", icon: ShieldCheck },
       { to: "/system/entities", label: "主体与印章", icon: Building2 },
       { to: "/system/settings", label: "策略中心", icon: Settings2 },

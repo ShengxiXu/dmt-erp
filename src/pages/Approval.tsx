@@ -100,7 +100,7 @@ export default function Approval() {
                       <td className="px-3 py-2.5">
                         <Badge className={`${STATUS_COLOR[s.status]} hover:bg-inherit`}>{s.status}</Badge>
                         {i?.status === "审批中" && <div className="mt-0.5 text-[10px] text-[#165DFF]">当前节点：{nodeLabel(i.snapshot.nodes[i.curNodeIdx])}</div>}
-                        {i && i.status !== "审批中" && <div className="mt-0.5 text-[10px] text-[#86909C]">{i.chainName ?? i.chainId} · {i.results.length} 级已审</div>}
+                        {i && i.status !== "审批中" && <div className="mt-0.5 text-[10px] text-[#86909C]">{i.branchName ?? "—"} · {i.results.length} 级已审</div>}
                       </td>
                       <td className="px-3 py-2.5 text-[#86909C]">{s.updated}</td>
                       <td className="px-3 py-2.5 text-right">
@@ -124,7 +124,7 @@ export default function Approval() {
             <button onClick={back} className="py-3 text-[13px] text-[#86909C] hover:text-[#165DFF]">← 返回列表</button>
             <span className="py-3 font-mono text-[14px] text-[#1D2129]">{sheet.id}</span>
             <Badge className={sheet.status === "已通过" ? "bg-[#E8F8F2] text-[#00B42A] hover:bg-[#E8F8F2]" : sheet.status === "已驳回" ? "bg-[#FFECE8] text-[#F53F3F] hover:bg-[#FFECE8]" : "bg-[#E8F3FF] text-[#165DFF] hover:bg-[#E8F3FF]"}>{sheet.status}</Badge>
-            {inst && <span className="py-3 text-xs text-[#86909C]">审批实例 {inst.id} · 链「{inst.chainName ?? inst.chainId}」（{inst.snapshot.branch}）· 提交人 {inst.submitter} {inst.submitAt}</span>}
+            {inst && <span className="py-3 text-xs text-[#86909C]">审批实例 {inst.id} · 流「{inst.flowName}」分支「{inst.branchName ?? "—"}」（{inst.snapshot.branch}）· 提交人 {inst.submitter} {inst.submitAt}</span>}
           </div>
 
           <main className="space-y-4 p-6">

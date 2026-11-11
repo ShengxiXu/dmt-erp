@@ -40,6 +40,7 @@ import Settle from './pages/Settle'
 import FinanceCenter from './pages/FinanceCenter'
 import Notifications from './pages/Notifications'
 import SystemUsers from './pages/SystemUsers'
+import Departments from './pages/Departments'
 import Claims from './pages/Claims'
 
 export default function App() {
@@ -77,6 +78,7 @@ export default function App() {
       <Route path="/purchase/orders" element={<PurchaseOrders />} />
       <Route path="/purchase/orders/:poNo" element={<PurchaseOrderDetail />} />
       <Route path="/system/approval" element={<ApprovalConfig />} />
+      <Route path="/system/departments" element={<Departments />} />
       <Route path="/system/users" element={<SystemUsers />} />
       <Route path="/system/entities" element={<Entities />} />
       <Route path="/system/settings" element={<SettingsPage />} />

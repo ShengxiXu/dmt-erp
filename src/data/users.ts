@@ -24,8 +24,8 @@ export const DATA_SCOPE_DESC: Record<DataScope, string> = {
   本部门数据: "仅可见与本人同部门（按用户档案中的所属部门判定，与角色无关）成员名下的数据",
   仅本人数据: "仅可见本人名下的数据（客户/商机等的归属人 = 本人）",
 };
-/** 部门（组织归属）：挂在用户档案上，与角色解耦；数据权限中的「本部门」按此判定 */
-export const DEPARTMENTS = ["业务支撑部", "技术部", "财务部", "销售部", "综合管理部"];
+/** 部门（组织归属）：挂在用户档案上，与角色解耦；数据权限中的「本部门」按此判定。
+ *  部门主数据（可自定义维护）在 @/data/departments，此处仅保留类型；「本部门」按用户档案 dept 字段值判定，与主数据是否存在无关 */
 export interface User {
   id: string;              // U-xxx
   name: string;

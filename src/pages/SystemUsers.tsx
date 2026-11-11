@@ -9,15 +9,16 @@ import CenterModal from "@/components/CenterModal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  ROLES, USERS, ALL_MENUS, PERM_LOGS, DEPARTMENTS, saveUser, saveRole, deleteRole, duplicateRole,
+  ROLES, USERS, ALL_MENUS, PERM_LOGS, saveUser, saveRole, deleteRole, duplicateRole,
   setRoleMenu, setRoleMenus, toggleUserStatus, setSessionRole, roleMembers, useSessionRole, useUsers,
   DATA_SCOPE_DESC, type DataScope, type User,
 } from "@/data/users";
+import { DEPTS, deptNames, useDepartments } from "@/data/departments";
 
 type Tab = "users" | "roles" | "matrix";
 
 export default function SystemUsers() {
-  useUsers(); useSessionRole();
+  useUsers(); useSessionRole(); useDepartments();
   const [tab, setTab] = useState<Tab>("users");
   const [editing, setEditing] = useState<Partial<User> | null>(null);
   const [roleEditing, setRoleEditing] = useState<{ oldName?: string; name: string; desc: string; dataScope?: DataScope } | null>(null);
@@ -31,7 +32,7 @@ export default function SystemUsers() {
   const save = () => {
     if (!editing?.name?.trim() || !editing?.role) return;
     saveUser({
-      name: editing.name.trim(), role: editing.role, dept: editing.dept ?? DEPARTMENTS[0], phone: editing.phone ?? "",
+      name: editing.name.trim(), role: editing.role, dept: editing.dept ?? deptNames()[0] ?? "综合管理部", phone: editing.phone ?? "",
       email: editing.email, status: editing.status ?? "启用", id: editing.id,
       lastLoginAt: editing.lastLoginAt,
     });
@@ -51,7 +52,7 @@ export default function SystemUsers() {
             </div>
           </div>
           {tab === "users" && (
-            <Button size="sm" onClick={() => setEditing({ name: "", role: ROLES[0]?.name ?? "业务支撑部", dept: DEPARTMENTS[0], phone: "", email: "", status: "启用" })}>
+            <Button size="sm" onClick={() => setEditing({ name: "", role: ROLES[0]?.name ?? "业务支撑部", dept: deptNames()[0] ?? "综合管理部", phone: "", email: "", status: "启用" })}>
               <UserPlus size={13} className="mr-1" /> 新建用户
             </Button>
           )}
@@ -106,8 +107,8 @@ export default function SystemUsers() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <div className="mb-0.5 text-xs text-[#4E5969]">部门 <span className="text-[#F53F3F]">*</span></div>
-                <select className="w-full rounded-[2px] border border-[#E5E6EB] bg-white px-2 py-1.5 text-sm" value={editing.dept ?? DEPARTMENTS[0]} onChange={(e) => setEditing({ ...editing, dept: e.target.value })}>
-                  {DEPARTMENTS.map((d) => <option key={d} value={d}>{d}</option>)}
+                <select className="w-full rounded-[2px] border border-[#E5E6EB] bg-white px-2 py-1.5 text-sm" value={editing.dept ?? deptNames()[0] ?? ""} onChange={(e) => setEditing({ ...editing, dept: e.target.value })}>
+                  {deptNames().map((d) => <option key={d} value={d}>{d}</option>)}
                 </select>
               </div>
               <div>
@@ -224,7 +225,7 @@ function UsersTab({ onEdit, onPreview }: { onEdit: (u: User) => void; onPreview:
         </select>
         <select className="rounded-[2px] border border-[#E5E6EB] bg-white px-2 py-1.5 text-xs" value={fDept} onChange={(e) => setFDept(e.target.value)}>
           <option>全部</option>
-          {DEPARTMENTS.map((d) => <option key={d}>{d}</option>)}
+          {DEPTS.map((d) => <option key={d.name}>{d.name}</option>)}
         </select>
         <select className="rounded-[2px] border border-[#E5E6EB] bg-white px-2 py-1.5 text-xs" value={fStatus} onChange={(e) => setFStatus(e.target.value)}>
           <option>全部</option><option>启用</option><option>停用</option>
