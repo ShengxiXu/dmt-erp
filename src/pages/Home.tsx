@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useSearchParams, Link } from "react-router";
 import {
   CATEGORIES,
@@ -601,6 +601,12 @@ export default function Home() {
   /** 付款方式：合同带入；缺失时手工维护，不影响成本金额、仅作为收款账期依据 */
   const [payCycle, setPayCycle] = useState<string>(contract?.pay ?? "月付");
   const [, bump] = useState(0);
+  /** 条目金额上抛：写暂存并触发重算。引用必须稳定（useCallback）——EntryRow 的副作用依赖它，
+   *  若每次渲染生成新函数引用，副作用会每轮重跑→再次 setState→无限渲染卡死页面 */
+  const reportAmount = useCallback((key: string, v: number | null) => {
+    amountStore[key] = v;
+    bump((x) => x + 1);
+  }, []);
 
   /** 订阅条目库 / 产品目录变更（条目停用、装配调整实时反映到填报页） */
   useCostItems();
@@ -835,7 +841,7 @@ export default function Home() {
                 locked={submitted[dept]}
                 stale={itemByKey[base].status === "停用"}
                 onRemove={() => removeRow(l.id, rk)}
-                onAmount={(key, v) => { amountStore[key] = v; bump((x) => x + 1); }}
+                onAmount={reportAmount}
                 internetRows={internetPickStore[l.id] ?? []}
                 onPickInternets={(rs) => { internetPickStore[l.id] = rs; bump((x) => x + 1); }}
                 ipFreeSearch={!rows.ops.some((k) => k.split("|")[0] === "op1b")}
