@@ -3,10 +3,11 @@
 // 供应商账单按口径关联（周期性 → 合同，一次性 → 采购单）。
 // 两级模型：采购合同（约定）→ 采购订单（合同下按单执行，见采购管理 /purchase/orders）。
 import { useState } from "react";
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { usePurchase, getContracts, saveContract, removeContract, setContractAttachments, type PurchaseContract, type PurchaseBilling } from "@/data/purchase";
 import { ENTITIES, ENTITY_NAME } from "@/data/entities";
 import { usePurchaseFlow, POS_OF_CONTRACT, poTotal } from "@/data/purchaseFlow";
+import { usePayRequests, PAY_REQUESTS, fmtMoney as fmtPay } from "@/data/payRequests";
 import ArcoShell from "@/components/ArcoShell";
 import CenterModal from "@/components/CenterModal";
 import { Button } from "@/components/ui/button";
@@ -16,12 +17,24 @@ const PO_STATUS_CLS: Record<string, string> = {
   草稿: "bg-[#F2F3F5] text-[#4E5969]", 待审批: "bg-[#FFF3E8] text-[#FF7D00]", 已下单: "bg-[#E8F3FF] text-[#165DFF]",
   部分到货: "bg-[#FEF0FF] text-[#722ED1]", 验收完成: "bg-[#E8F8F2] text-[#00B42A]",
 };
+const PAY_STATUS_CLS: Record<string, string> = {
+  待审批: "bg-[#E8F3FF] text-[#165DFF]", 待付款: "bg-[#FFF3E8] text-[#FF7D00]",
+  已付款: "bg-[#E8F8F2] text-[#00B42A]", 已驳回: "bg-[#FFECE8] text-[#F53F3F]",
+};
 
 // 合同详情：名下采购单（按单计价类合同的执行全貌）+ 附件
 function ContractDetailModal({ contract, onClose }: { contract: PurchaseContract; onClose: () => void }) {
   usePurchaseFlow();
+  usePayRequests();
   const pos = POS_OF_CONTRACT(contract.id);
   const totalExec = pos.reduce((s, p) => s + poTotal(p), 0);
+  // 付款进度 = 反向索引付款申请：直接挂合同号，或挂名下采购单（一次性货款走 PO）
+  const pays = PAY_REQUESTS.filter((p) => p.contractNo === contract.id || (p.poNo && pos.some((x) => x.poNo === p.poNo)));
+  const paidAmt = pays.filter((p) => p.status === "已付款").reduce((s, p) => s + p.amount, 0);
+  const inflightAmt = pays.filter((p) => p.status === "待审批" || p.status === "待付款").reduce((s, p) => s + p.amount, 0);
+  const rejectedCnt = pays.filter((p) => p.status === "已驳回").length;
+  const initiated = paidAmt + inflightAmt;
+  const paidPct = initiated ? Math.round((paidAmt / initiated) * 100) : 0;
   return (
     <CenterModal title={`采购合同 · ${contract.id}`} sub={`${contract.name}｜${contract.supplier}`} width={640} onClose={onClose}>
       <div className="space-y-3 text-xs">
@@ -56,6 +69,53 @@ function ContractDetailModal({ contract, onClose }: { contract: PurchaseContract
           ) : (
             <div className="rounded-[2px] border border-dashed border-[#E5E6EB] p-3 text-center text-[#C9CDD4]">
               暂无关联采购单{contract.billing === "按单计价" ? "（设备类采购在「转采购单」时挂本合同）" : "（周期性月租类合同由 R1/R2 档案与供应商账单直接引用）"}
+            </div>
+          )}
+        </div>
+        <div>
+          <div className="mb-1 flex items-center gap-2 font-semibold text-[#1D2129]">
+            付款进度
+            {!!pays.length && <span className="text-[11px] font-normal text-[#86909C]">已付 ¥ {fmtPay(paidAmt)} / 已发起 ¥ {fmtPay(initiated)}（{pays.length} 笔付款申请）</span>}
+            <Link to="/pay-requests" className="ml-auto text-[11px] font-normal text-[#165DFF] hover:underline" onClick={onClose}>付款申请 →</Link>
+          </div>
+          {pays.length ? (
+            <>
+              <div className="mb-2 flex items-center gap-3 rounded-[2px] bg-[#F7F8FA] px-3 py-2">
+                <div className="h-2 w-40 overflow-hidden rounded-full bg-[#E5E6EB]">
+                  <div className="h-full rounded-full bg-[#00B42A] transition-all" style={{ width: `${paidPct}%` }} />
+                </div>
+                <span className="text-[11px] font-medium text-[#1D2129]">{paidPct}%</span>
+                <span className="rounded-[2px] bg-[#E8F8F2] px-1.5 py-0.5 text-[10px] text-[#00B42A]">已付 ¥ {fmtPay(paidAmt)} · {pays.filter((p) => p.status === "已付款").length} 笔</span>
+                <span className="rounded-[2px] bg-[#FFF3E8] px-1.5 py-0.5 text-[10px] text-[#FF7D00]">在途 ¥ {fmtPay(inflightAmt)} · {pays.filter((p) => p.status === "待审批" || p.status === "待付款").length} 笔</span>
+                {rejectedCnt > 0 && <span className="rounded-[2px] bg-[#FFECE8] px-1.5 py-0.5 text-[10px] text-[#F53F3F]">已驳回 {rejectedCnt} 笔</span>}
+              </div>
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b bg-[#F7F8FA] text-left text-[#4E5969]">
+                    <th className="px-2 py-1.5">付款单号</th><th className="px-2 py-1.5">类型</th><th className="px-2 py-1.5 text-right">金额（元）</th>
+                    <th className="px-2 py-1.5">状态</th><th className="px-2 py-1.5">申请人</th><th className="px-2 py-1.5">申请时间 / 付款时间</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pays.map((p) => (
+                    <tr key={p.prNo} className="border-b last:border-0">
+                      <td className="px-2 py-1.5">
+                        <Link to={`/pay-requests?kw=${p.prNo}`} className="font-mono text-[#165DFF] hover:underline" onClick={onClose}>{p.prNo}</Link>
+                        {p.version > 1 && <span className="ml-1 rounded-[2px] bg-[#F2F3F5] px-1 py-0.5 text-[9px] text-[#86909C]">v{p.version}</span>}
+                      </td>
+                      <td className="px-2 py-1.5 text-[#4E5969]">{p.payType}</td>
+                      <td className="px-2 py-1.5 text-right font-medium text-[#1D2129]">¥ {fmtPay(p.amount)}</td>
+                      <td className="px-2 py-1.5"><span className={`rounded-[2px] px-1.5 py-0.5 text-[10px] ${PAY_STATUS_CLS[p.status]}`}>{p.status}</span></td>
+                      <td className="px-2 py-1.5 text-[#4E5969]">{p.applicant}</td>
+                      <td className="px-2 py-1.5 text-[#86909C]">{p.createdAt}{p.paidAt ? ` → ${p.paidAt}` : ""}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          ) : (
+            <div className="rounded-[2px] border border-dashed border-[#E5E6EB] p-3 text-center text-[#C9CDD4]">
+              暂无关联付款申请（周期性月租经供应商账单、货款经采购单发起付款后自动归集到此）
             </div>
           )}
         </div>
@@ -222,7 +282,12 @@ export default function PurchaseContracts() {
   const [kw, setKw] = useState("");
   const [billing, setBilling] = useState<"全部" | PurchaseBilling>("全部");
   const [form, setForm] = useState<{ open: boolean; initial?: PurchaseContract }>({ open: false });
-  const [detailId, setDetailId] = useState<string | null>(null);
+  const [sp, setSp] = useSearchParams();
+  const [detailId, setDetailId] = useState<string | null>(sp.get("id"));
+  const openDetail = (id: string | null) => {
+    setDetailId(id);
+    if (!id) { const next = new URLSearchParams(sp); next.delete("id"); setSp(next, { replace: true }); }
+  };
   const shown = getContracts().filter((c) =>
     (billing === "全部" || c.billing === billing) &&
     (!kw || c.id.includes(kw) || c.name.includes(kw) || c.supplier.includes(kw) || c.subject.includes(kw)));
@@ -257,7 +322,7 @@ export default function PurchaseContracts() {
               {shown.map((c) => {
                 const pos = POS_OF_CONTRACT(c.id);
                 return (
-                <tr key={c.id} className="cursor-pointer border-b last:border-0 hover:bg-[#F7F8FA]" onClick={() => setDetailId(c.id)}>
+                <tr key={c.id} className="cursor-pointer border-b last:border-0 hover:bg-[#F7F8FA]" onClick={() => openDetail(c.id)}>
                   <td className="px-3 py-2.5 font-mono font-semibold text-[#165DFF]">{c.id}
                     {(c.attachments?.length ?? 0) > 0 && <span className="ml-1 text-[10px] text-[#86909C]" title="附件">📎{c.attachments!.length}</span>}
                   </td>
@@ -295,7 +360,7 @@ export default function PurchaseContracts() {
       </main>
 
       {form.open && <ContractForm initial={form.initial} onClose={() => setForm({ open: false })} />}
-      {detailId && (() => { const c = getContracts().find((x) => x.id === detailId); return c ? <ContractDetailModal contract={c} onClose={() => setDetailId(null)} /> : null; })()}
+      {detailId && (() => { const c = getContracts().find((x) => x.id === detailId); return c ? <ContractDetailModal contract={c} onClose={() => openDetail(null)} /> : null; })()}
     </ArcoShell>
   );
 }

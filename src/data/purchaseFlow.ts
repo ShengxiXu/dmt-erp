@@ -90,6 +90,7 @@ export const PURCHASE_REQS: PurchaseReq[] = persistable("purchaseReqs", () => [
 export const PURCHASE_ORDERS: PurchaseOrder[] = persistable("purchaseOrders", () => [
   {
     poNo: "PO-2026-052", supplier: "华为渠道-上海XX", reqNos: [], createdAt: "2026-11-02 16:30",
+    contractId: "CT-2026-031", // 华为设备框架合同（零星采购也挂框架，付款进度归集到合同）
     lines: [{ lineType: "设备", spec: "华为 AR6121 CPE", unitPrice: 4300, quantity: 2, receivedQty: 0, acceptedQty: 0 }],
     taxRate: 0.13, paymentTerms: "月结 30 天", status: "草稿", version: 1, batches: [], inboundDone: false,
   },
@@ -133,6 +134,8 @@ export const poTotal = (po: PurchaseOrder) => po.lines.reduce((s, l) => s + l.un
 export const poTotalWithTax = (po: PurchaseOrder) => Math.round(poTotal(po) * (1 + po.taxRate));
 
 const poSeqBox = persistable("purchase.seq", () => ({ po: 53, req: 1103 }));
+// 旧快照回填：PO-2026-052 早期快照未挂框架合同（华为设备框架），补挂后付款进度可间接归集
+PURCHASE_ORDERS.forEach((p) => { if (p.poNo === "PO-2026-052" && !p.contractId) p.contractId = "CT-2026-031"; });
 // SN 全局唯一登记（真实环境为设备档案序列号索引；原型以登记簿模拟查重）
 const REGISTERED_SNS: string[] = persistable("registeredSns", () => ["SN-AR6121-0001", "SN-AR6121-0002", "SN-AR6121-0003"]);
 export const fmtMoney = (n: number) => n.toLocaleString("zh-CN");
@@ -192,7 +195,7 @@ export function createPoFromReqs(reqNos: string[], supplier: string, contractId?
   return poNo;
 }
 // 某采购合同档案名下的采购单（合同页反向查询）
-export const POS_OF_CONTRACT = (contractId: string) => PURCHASE_ORDERS.filter((p) => p.contractId === contractId);
+export const POS_OF_CONTRACT = (contractId: string) => PURCHASE_ORDERS.filter((p) => p.contractId === contractId || p.contractNo === contractId);
 // 附件维护（原型 mock；正式环境走对象存储 + 留痕）
 export function setPoAttachments(poNo: string, files: string[]) {
   const po = PO_BY_NO(poNo);

@@ -1,7 +1,7 @@
 // 付款申请（/pay-requests）—— 应付侧唯一付款入口：申请 → 统一审批引擎 → 待付款 → 财务执行付款
 // 与供应商账单的关系：账单 = 应付凭证（确认欠多少），付款申请 = 出钱动作（走流程后才可付款）
 import { useMemo, useState } from "react";
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import ArcoShell from "@/components/ArcoShell";
 import CenterModal from "@/components/CenterModal";
 import { Badge } from "@/components/ui/badge";
@@ -34,8 +34,9 @@ export default function PayRequests() {
   usePayRequests();
   useBills();
   useApprovalFlow();
+  const [sp] = useSearchParams();
   const [f, setF] = useState<(typeof FILTERS)[number]>("全部");
-  const [kw, setKw] = useState("");
+  const [kw, setKw] = useState(sp.get("kw") ?? ""); // 支持 ?kw= 深链（如从采购合同付款进度跳入）
   const [showAdd, setShowAdd] = useState(false);
 
   // 审批流来自「系统管理 → 审批流配置」（付款申请单 · 提交）：分支按金额匹配，大额自动加审管理层
@@ -123,7 +124,7 @@ export default function PayRequests() {
                     <td className="px-3 py-2.5 text-[#4E5969]">
                       {(p.sourceBillNos ?? []).map((b) => <div key={b} className="font-mono text-[10px]">账单 <Link to={`/bills/detail?id=${b}`} className="text-[#165DFF] hover:underline" onClick={(e) => e.stopPropagation()}>{b}</Link></div>)}
                       {p.poNo && <div className="font-mono text-[10px]">采购单 <Link to={`/purchase/orders/${p.poNo}`} className="text-[#165DFF] hover:underline" onClick={(e) => e.stopPropagation()}>{p.poNo}</Link></div>}
-                      {p.contractNo && <div className="font-mono text-[10px] text-[#86909C]">合同 {p.contractNo}</div>}
+                      {p.contractNo && <div className="font-mono text-[10px]">合同 <Link to={`/purchase/contracts?id=${p.contractNo}`} className="text-[#165DFF] hover:underline" onClick={(e) => e.stopPropagation()}>{p.contractNo}</Link></div>}
                       {!p.sourceBillNos?.length && !p.poNo && !p.contractNo && <span className="text-[#C9CDD4]">—</span>}
                     </td>
                     <td className="px-3 py-2.5 font-mono text-[#4E5969]">{p.expectPayDate}</td>
