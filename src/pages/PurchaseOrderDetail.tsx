@@ -5,7 +5,7 @@ import { usePurchaseFlow, PO_BY_NO, poTotalWithTax, submitPo, approvePo, rejectP
 import { useApprovalFlow, FLOW_BY_DOC, resolveBranch, INSTANCE_OF_DOC, approveInstance, rejectInstance } from "@/data/approvalFlow";
 import { currentUser } from "@/data/users";
 import { PURCHASE_CONTRACTS } from "@/data/purchase";
-import { R1_ROWS } from "@/data/resources";
+import { R1_ROWS, R4_ROWS } from "@/data/resources";
 import { Link } from "react-router";
 import ArcoShell from "@/components/ArcoShell";
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,74 @@ const LINE_TYPE_CLS: Record<POLine["lineType"], string> = {
   设备: "bg-[#E8F8F2] text-[#00B42A]",
   其他资源: "bg-[#F2F3F5] text-[#4E5969]",
 };
+
+// ---------- 规格主数据选择器（草稿态）：按明细类型从主数据/采购合同选择，自动带出参考价并联动供应商 ----------
+function SpecPicker({ line, onChange, onSupplier }: { line: POLine; onChange: (patch: Partial<POLine>) => void; onSupplier: (s: string) => void }) {
+  const selCls = "w-full rounded-[2px] border border-[#E5E6EB] bg-white px-1.5 py-1";
+
+  // 设备：R4 设备库存档案（按型号），品牌命中设备框架合同带框架价，否则带库存成本价
+  if (line.lineType === "设备") {
+    const cur = line.spec.match(/^.*?（与 (.*?) 在库档案同型号）$/)?.[1] ?? "";
+    return (
+      <select className={selCls} value={cur} onChange={(e) => {
+        const d = R4_ROWS.find((r) => r.id === e.target.value);
+        if (!d) return;
+        const brand = d.supplier.slice(0, 2); // 华为 / 华三 / …
+        const fw = PURCHASE_CONTRACTS.find((c) => c.subject === "设备框架" && c.supplier.includes(brand));
+        onChange({ spec: `${d.name}（与 ${d.id} 在库档案同型号）`, unitPrice: fw?.unitPrice ?? d.costPrice });
+        onSupplier(d.supplier);
+      }}>
+        <option value="">选择型号…</option>
+        {R4_ROWS.map((d) => <option key={d.id} value={d.id}>{d.name}（在库 {d.dynamic.stock} · 参考价 ¥{fmtMoney(d.costPrice)}）</option>)}
+      </select>
+    );
+  }
+
+  // IP 段：前缀 + 机房组合（与 R3 口径一致）
+  if (line.lineType === "IP 段") {
+    const m = line.spec.match(/^(\/\d+) 段（(.*?)）$/);
+    const [prefix, room] = m ? [m[1], m[2]] : ["", ""];
+    return (
+      <span className="flex items-center gap-1">
+        <select className={`${selCls} w-20`} value={prefix} onChange={(e) => onChange({ spec: `${e.target.value} 段（${room || "请选择机房"}）` })}>
+          <option value="">前缀</option>
+          {["/24", "/23", "/22", "/21", "/20"].map((p) => <option key={p}>{p}</option>)}
+        </select>
+        <Input className="h-7 w-32" list="po-ip-rooms" placeholder="机房" value={room === "请选择机房" ? "" : room} onChange={(e) => onChange({ spec: `${prefix || "/24"} 段（${e.target.value}）` })} />
+        <datalist id="po-ip-rooms">{["上海漕河泾", "临港智算中心", "北京亦庄"].map((r) => <option key={r} value={r} />)}</datalist>
+      </span>
+    );
+  }
+
+  // 带宽容量：带宽/线路/波道类采购合同
+  if (line.lineType === "带宽容量") {
+    const LIST = PURCHASE_CONTRACTS.filter((c) => ["出口带宽", "基础线路", "OTN 波道"].includes(c.subject));
+    return (
+      <select className={selCls} value={LIST.find((c) => c.name === line.spec)?.id ?? ""} onChange={(e) => {
+        const c = LIST.find((x) => x.id === e.target.value);
+        if (!c) return;
+        onChange({ spec: c.name, unitPrice: c.unitPrice ?? c.linePrice ?? 0 });
+        onSupplier(c.supplier);
+      }}>
+        <option value="">选择采购合同…</option>
+        {LIST.map((c) => <option key={c.id} value={c.id}>{c.name}（{c.subject} · {c.billing === "按单计价" ? `¥${fmtMoney(c.unitPrice ?? 0)}/单` : `月租 ¥${fmtMoney(c.monthlyCost ?? c.linePrice ?? 0)}`}）</option>)}
+      </select>
+    );
+  }
+
+  // 其他资源：全部采购合同
+  return (
+    <select className={selCls} value={PURCHASE_CONTRACTS.find((c) => `${c.subject} · ${c.name}` === line.spec)?.id ?? ""} onChange={(e) => {
+      const c = PURCHASE_CONTRACTS.find((x) => x.id === e.target.value);
+      if (!c) return;
+      onChange({ spec: `${c.subject} · ${c.name}`, unitPrice: c.unitPrice ?? c.linePrice ?? 0 });
+      onSupplier(c.supplier);
+    }}>
+      <option value="">选择采购合同…</option>
+      {PURCHASE_CONTRACTS.map((c) => <option key={c.id} value={c.id}>{c.subject} · {c.name}</option>)}
+    </select>
+  );
+}
 
 // ---------- ① 采购审批（草稿编辑 + 提交 + 批准/驳回） ----------
 function ApprovalStep({ po }: { po: PurchaseOrder }) {
@@ -66,6 +134,7 @@ function ApprovalStep({ po }: { po: PurchaseOrder }) {
             <tr className="border-b bg-[#F7F8FA] text-left text-[#4E5969]">
               <th className="px-3 py-2">明细类型</th><th className="px-3 py-2">规格</th><th className="px-3 py-2">单价（元）</th>
               <th className="px-3 py-2">数量</th><th className="px-3 py-2">金额（元）</th>
+              {!locked && <th className="w-10 px-3 py-2" />}
             </tr>
           </thead>
           <tbody>
@@ -79,14 +148,33 @@ function ApprovalStep({ po }: { po: PurchaseOrder }) {
                   )}
                 </td>
                 <td className="max-w-[280px] px-3 py-2">
-                  {locked ? <span className="text-[#1D2129]">{l.spec}</span> : <Input value={l.spec} onChange={(e) => patch(i, "spec", e.target.value)} />}
+                  {locked ? <span className="text-[#1D2129]">{l.spec}</span> : (
+                    <SpecPicker line={l} onChange={(patchLine) => setLines((ls) => ls.map((x, j) => j === i ? { ...x, ...patchLine } : x))} onSupplier={setSupplier} />
+                  )}
                 </td>
                 <td className="px-3 py-2">{locked ? fmtMoney(l.unitPrice) : <Input className="w-24" type="number" min={0} value={l.unitPrice || ""} onChange={(e) => patch(i, "unitPrice", e.target.value)} />}</td>
                 <td className="px-3 py-2">{locked ? l.quantity : <Input className="w-20" type="number" min={1} value={l.quantity || ""} onChange={(e) => patch(i, "quantity", e.target.value)} />}</td>
                 <td className="px-3 py-2 font-medium text-[#1D2129]">{fmtMoney(l.unitPrice * l.quantity)}</td>
+                {!locked && (
+                  <td className="px-3 py-2 text-center">
+                    {lines.length > 1 && (
+                      <button className="text-[#86909C] hover:text-[#F53F3F]" title="删除本行" onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))}>✕</button>
+                    )}
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
+          {!locked && (
+            <tfoot>
+              <tr className="border-t bg-[#F7F8FA]">
+                <td colSpan={6} className="px-3 py-2">
+                  <Button size="sm" variant="outline" onClick={() => setLines((ls) => [...ls, { lineType: "设备", spec: "", unitPrice: 0, quantity: 1, receivedQty: 0, acceptedQty: 0 }])}>＋ 添加明细行</Button>
+                  <span className="ml-3 text-[11px] text-[#86909C]">规格由主数据 / 采购合同选择，单价自动带参考价（可改，留痕）</span>
+                </td>
+              </tr>
+            </tfoot>
+          )}
         </table>
       </div>
 
