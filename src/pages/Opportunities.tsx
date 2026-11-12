@@ -71,7 +71,7 @@ function OppForm({ initial, presetCustomer, preset, onSaved, onClose }: {
       stage: form.stage, source: form.source, sales: form.sales, remark: form.remark || undefined,
     };
     if (initial) updateOpp(initial.id, patch);
-    else onSaved?.(addOpp(patch));
+    else { const newId = addOpp(patch); onSaved?.(newId); }
     onClose();
   };
 
