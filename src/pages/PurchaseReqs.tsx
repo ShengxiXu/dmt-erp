@@ -1,11 +1,12 @@
 // P08-1 采购需求（/purchase/reqs）
 // 需求来源三类：手工提报 / 资源不足联动（P02/P05 挂起单自动生成，携带工单链接，采购完成后反向通知恢复）/ 业务规划。
 // 列表默认视图 + 条件搜索；待处理需求可「转采购单」（多选汇总 → P08-2 草稿）或关闭。
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { usePurchaseFlow, getReqs, addReq, closeReq, createPoFromReqs, reqToContractChange, type PurchaseReq, type ReqSource, type ReqType } from "@/data/purchaseFlow";
+import { usePurchaseFlow, getReqs, addReq, closeReq, createPoFromReqs, reqToContractChange, reqKind, type PurchaseReq, type ReqSource } from "@/data/purchaseFlow";
 import { getContracts } from "@/data/purchase";
-import { SUPPLIERS, R1_ROWS } from "@/data/resources";
+import { SUPPLIERS, R1_ROWS, R4_ROWS } from "@/data/resources";
+import { getMaterials, MAT_DEF, type MaterialDef } from "@/data/products";
 import { DEMO_TODAY } from "@/data/settings";
 import ArcoShell from "@/components/ArcoShell";
 import CenterModal from "@/components/CenterModal";
@@ -111,21 +112,51 @@ function ContractChangeModal({ req, onClose }: { req: PurchaseReq; onClose: () =
 }
 
 function ReqForm({ onClose }: { onClose: () => void }) {
-  const [f, setF] = useState<{ source: ReqSource; type: ReqType; spec: string; qty: string; unit: string; room: string; expectDate: string; note: string }>({
-    source: "手工提报", type: "设备", spec: "", qty: "", unit: "台", room: "上海漕河泾", expectDate: "", note: "",
-  });
+  // 需求类型 = 资源目录主数据中带「采购口径」的启用物料（不写死）；规格按类型从对应档案主数据选择（不手填）
+  const mats = useMemo(() => {
+    const map = new Map<string, MaterialDef[]>();
+    getMaterials().filter((m) => m.status !== "停用" && m.purchase).forEach((m) => {
+      const g = m.group ?? "未分类";
+      if (!map.has(g)) map.set(g, []);
+      map.get(g)!.push(m);
+    });
+    return [...map.entries()];
+  }, []);
+  const [f, setF] = useState({ source: "手工提报" as ReqSource, matKey: mats[0]?.[1][0]?.key ?? "", qty: "", room: "上海漕河泾", expectDate: "", note: "" });
+  // 规格选择器状态（按类型联动，均为档案主数据选择）
+  const [poolId, setPoolId] = useState(R1_ROWS[0]?.id ?? "");
+  const [ipPrefix, setIpPrefix] = useState("/24");
+  const [devKey, setDevKey] = useState("");
+  const [contractId, setContractId] = useState("");
   const set = (k: string, v: string) => setF((x) => ({ ...x, [k]: v }));
+  const mat = MAT_DEF(f.matKey);
+  const kind = mat?.purchase?.kind ?? "采购入库";
+  const unit = mat?.purchase?.unit ?? "个";
+  const pool = R1_ROWS.find((r) => r.id === poolId);
+  const dev = R4_ROWS.find((r) => r.id === devKey);
+  const contract = getContracts().find((c) => c.id === contractId);
+  // 规格由选择器生成（禁止手填）
+  const spec = !mat ? "" :
+    f.matKey === "mat_exit" ? (pool ? `${pool.carrier} 出口池 ${pool.id} 扩容（现 ${pool.capacityM}M / ${pool.monthlyCost.toLocaleString("zh-CN")} 元·月，原合同 ${pool.contractNo}）` : "") :
+    f.matKey === "mat_ip" ? `新建 IP 段 ${ipPrefix}（${f.room.trim() || "未选机房"}）` :
+    f.matKey === "mat_dev" ? (dev ? `${dev.name}（与 ${dev.id} 在库档案同型号）` : "") :
+    (contract ? `${contract.subject} · ${contract.name}` : "");
+  const needRoom = f.matKey === "mat_ip" || f.matKey === "mat_dev";
+
   const save = () => {
-    if (!f.spec.trim()) return alert("请填写规格与数量说明");
+    if (!mat) return alert("请选择需求类型");
+    if (!spec) return alert("请从档案中选择规格");
     if (!(Number(f.qty) > 0)) return alert("请填写数量（> 0）");
-    if ((f.type === "带宽" || f.type === "IP 段") && !f.room.trim()) return alert("带宽 / IP 类需求必须填写目标机房");
+    if (needRoom && !f.room.trim()) return alert("IP 段 / 设备类需求必须选择目标机房");
     if (!f.expectDate) return alert("请填写期望到货日");
     if (f.expectDate <= DEMO_TODAY) return alert("期望到货日须晚于当日");
-    addReq({ source: f.source, type: f.type, spec: f.spec.trim(), qty: Number(f.qty), unit: f.unit, room: f.room, expectDate: f.expectDate, note: f.note || undefined });
+    addReq({ source: f.source, type: mat.name, matKey: mat.key, spec, qty: Number(f.qty), unit,
+      room: f.matKey === "mat_exit" ? (pool?.region ?? f.room) : f.room,
+      expectDate: f.expectDate, note: f.note || undefined });
     onClose();
   };
   return (
-    <CenterModal title="新建采购需求" sub="需求来源为「资源不足联动」时由系统自动生成（工单挂起触发），此处仅手工提报与业务规划" width={560} onClose={onClose}>
+    <CenterModal title="新建采购需求" sub="需求类型来自资源目录主数据（带采购口径的物料）；规格按类型从档案选择，不用手填。来源「资源不足联动」由系统自动生成" width={600} onClose={onClose}>
       <div className="space-y-3 text-xs">
         <div className="grid grid-cols-2 gap-3">
           <div>
@@ -135,18 +166,69 @@ function ReqForm({ onClose }: { onClose: () => void }) {
             </select>
           </div>
           <div>
-            <div className="mb-0.5 text-[#4E5969]">需求类型 <span className="text-[#F53F3F]">*</span></div>
-            <div className="flex rounded-[2px] border border-[#E5E6EB] p-0.5">
-              {(["带宽", "IP 段", "设备"] as ReqType[]).map((t) => (
-                <button key={t} type="button" onClick={() => setF((x) => ({ ...x, type: t, unit: t === "带宽" ? "M" : t === "IP 段" ? "段" : "台" }))}
-                  className={`flex-1 rounded-[2px] px-2 py-1.5 ${f.type === t ? "bg-[#165DFF] text-white" : "text-[#4E5969] hover:bg-[#F2F3F5]"}`}>{t}</button>
+            <div className="mb-0.5 text-[#4E5969]">需求类型 <span className="text-[#F53F3F]">*</span><span className="ml-1 text-[#86909C]">（资源目录主数据）</span></div>
+            <select className="w-full rounded-[2px] border border-[#E5E6EB] bg-white px-2 py-1.5 text-sm" value={f.matKey} onChange={(e) => { set("matKey", e.target.value); setDevKey(""); setContractId(""); }}>
+              {mats.map(([g, list]) => (
+                <optgroup key={g} label={g}>
+                  {list.map((m) => <option key={m.key} value={m.key}>{m.name}（{m.purchase!.kind} · {m.purchase!.unit}）</option>)}
+                </optgroup>
               ))}
-            </div>
+            </select>
           </div>
         </div>
+
+        {/* 规格选择器：按所选物料联动对应档案，全程选择不手填 */}
+        {f.matKey === "mat_exit" && (
+          <div>
+            <div className="mb-0.5 text-[#4E5969]">目标出口池 <span className="text-[#F53F3F]">*</span><span className="ml-1 text-[#86909C]">（R1 出口资源档案）</span></div>
+            <select className="w-full rounded-[2px] border border-[#E5E6EB] bg-white px-2 py-1.5 text-sm" value={poolId} onChange={(e) => setPoolId(e.target.value)}>
+              {R1_ROWS.map((r) => <option key={r.id} value={r.id}>{r.id} · {r.carrier} · {r.name}（现 {r.capacityM}M / {r.monthlyCost.toLocaleString("zh-CN")} 元·月 · 原合同 {r.contractNo}）</option>)}
+            </select>
+            <div className="mt-1.5 rounded-[2px] bg-[#E8F3FF] px-2.5 py-1.5 text-[11px] text-[#165DFF]">
+              带宽扩容口径：不新建采购单，提交后走「原采购合同补充协议」（成本口径连续）。
+            </div>
+          </div>
+        )}
+        {f.matKey === "mat_ip" && (
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <div className="mb-0.5 text-[#4E5969]">段前缀 <span className="text-[#F53F3F]">*</span></div>
+              <select className="w-full rounded-[2px] border border-[#E5E6EB] bg-white px-2 py-1.5 text-sm" value={ipPrefix} onChange={(e) => setIpPrefix(e.target.value)}>
+                {["/24", "/23", "/22", "/21", "/20"].map((p) => <option key={p}>{p}</option>)}
+              </select>
+            </div>
+            <div>
+              <div className="mb-0.5 text-[#4E5969]">目标机房 <span className="text-[#F53F3F]">*</span></div>
+              <Input list="req-rooms" value={f.room} onChange={(e) => set("room", e.target.value)} />
+              <datalist id="req-rooms">{["上海漕河泾", "临港智算中心", "北京亦庄"].map((r) => <option key={r} value={r} />)}</datalist>
+            </div>
+          </div>
+        )}
+        {f.matKey === "mat_dev" && (
+          <div>
+            <div className="mb-0.5 text-[#4E5969]">设备型号 <span className="text-[#F53F3F]">*</span><span className="ml-1 text-[#86909C]">（R4 设备库存档案中的型号）</span></div>
+            <select className="w-full rounded-[2px] border border-[#E5E6EB] bg-white px-2 py-1.5 text-sm" value={devKey} onChange={(e) => setDevKey(e.target.value)}>
+              <option value="">选择采购型号</option>
+              {R4_ROWS.map((r) => <option key={r.id} value={r.id}>{r.name}（{r.id} · 现库存 {r.dynamic?.stock ?? 0} · 参考价 {r.costPrice.toLocaleString("zh-CN")} 元）</option>)}
+            </select>
+            {!R4_ROWS.length && <div className="mt-1 text-[10px] text-[#F53F3F]">档案中暂无设备型号：请先在 资源中心 R4 建档后再提需求</div>}
+          </div>
+        )}
+        {mat && !["mat_exit", "mat_ip", "mat_dev"].includes(f.matKey) && (
+          <div>
+            <div className="mb-0.5 text-[#4E5969]">规格来源 <span className="text-[#F53F3F]">*</span><span className="ml-1 text-[#86909C]">（采购合同主数据：{mat.name} 按哪个合同采购）</span></div>
+            <select className="w-full rounded-[2px] border border-[#E5E6EB] bg-white px-2 py-1.5 text-sm" value={contractId} onChange={(e) => setContractId(e.target.value)}>
+              <option value="">选择采购合同</option>
+              {getContracts().map((c) => <option key={c.id} value={c.id}>{c.id} · {c.name}（{c.supplier} · {c.billing}）</option>)}
+            </select>
+          </div>
+        )}
+
         <div>
-          <div className="mb-0.5 text-[#4E5969]">规格与数量 <span className="text-[#F53F3F]">*</span></div>
-          <Input placeholder={f.type === "带宽" ? "如：联通 169 BGP 出口池扩容" : f.type === "IP 段" ? "如：漕河泾 /24 段 ×1" : "如：华为 AR6121 CPE"} value={f.spec} onChange={(e) => set("spec", e.target.value)} />
+          <div className="mb-0.5 text-[#4E5969]">规格（选择自动生成，不可手填）</div>
+          <div className={`rounded-[2px] border px-2.5 py-1.5 text-[11px] leading-5 ${spec ? "border-[#BEDAFF] bg-[#F2F7FF] text-[#1D2129]" : "border-dashed border-[#C9CDD4] text-[#86909C]"}`}>
+            {spec || "按上方选择器选择后自动生成"}
+          </div>
         </div>
         <div className="grid grid-cols-3 gap-3">
           <div>
@@ -155,12 +237,11 @@ function ReqForm({ onClose }: { onClose: () => void }) {
           </div>
           <div>
             <div className="mb-0.5 text-[#4E5969]">单位</div>
-            <Input value={f.unit} onChange={(e) => set("unit", e.target.value)} />
+            <Input value={unit} disabled title="单位由资源目录主数据的采购口径决定" />
           </div>
           <div>
-            <div className="mb-0.5 text-[#4E5969]">目标机房 {f.type !== "设备" && <span className="text-[#F53F3F]">*</span>}</div>
-            <Input list="req-rooms" value={f.room} onChange={(e) => set("room", e.target.value)} />
-            <datalist id="req-rooms">{["上海漕河泾", "临港智算中心", "北京亦庄"].map((r) => <option key={r} value={r} />)}</datalist>
+            <div className="mb-0.5 text-[#4E5969]">目标机房 {needRoom && <span className="text-[#F53F3F]">*</span>}</div>
+            <Input list="req-rooms" value={f.room} onChange={(e) => set("room", e.target.value)} disabled={f.matKey === "mat_exit"} title={f.matKey === "mat_exit" ? "带宽扩容的目标位置随出口池档案自动带出" : ""} />
           </div>
         </div>
         <div className="grid grid-cols-2 gap-3">
@@ -169,8 +250,8 @@ function ReqForm({ onClose }: { onClose: () => void }) {
             <Input type="date" value={f.expectDate} onChange={(e) => set("expectDate", e.target.value)} />
           </div>
           <div>
-            <div className="mb-0.5 text-[#4E5969]">提报人</div>
-            <Input defaultValue="孙工（运维）" disabled />
+            <div className="mb-0.5 text-[#4E5969]">处理口径</div>
+            <Input value={kind === "带宽扩容" ? "带宽扩容 → 原合同补充协议" : "采购入库 → 转采购单"} disabled />
           </div>
         </div>
         <div>
@@ -191,7 +272,9 @@ export default function PurchaseReqs() {
   const nav = useNavigate();
   const [kw, setKw] = useState("");
   const [source, setSource] = useState<"全部" | ReqSource>("全部");
-  const [type, setType] = useState<"全部" | ReqType>("全部");
+  // 类型筛选选项 = 台账中实际出现的类型（需求类型来自资源目录主数据，动态生成不写死）
+  const typeOptions = useMemo(() => [...new Set(getReqs().map((r) => r.type))], []);
+  const [type, setType] = useState<string>("全部");
   const [openForm, setOpenForm] = useState(false);
   const [ccReq, setCcReq] = useState<PurchaseReq | null>(null);
   const [toPoNos, setToPoNos] = useState<string[] | null>(null);
@@ -205,8 +288,8 @@ export default function PurchaseReqs() {
   const toPo = (reqNos?: string[]) => {
     const nos = reqNos ?? checked;
     if (!nos.length) return alert("请先勾选待处理的需求单");
-    const bw = nos.filter((n) => getReqs().find((r) => r.reqNo === n)?.type === "带宽");
-    if (bw.length) return alert(`带宽类需求（${bw.join("、")}）不走采购单：出口池扩容请用行内「转合同变更」（原合同补充协议，成本口径连续）`);
+    const bw = nos.filter((n) => { const r = getReqs().find((x) => x.reqNo === n); return r && reqKind(r) === "带宽扩容"; });
+    if (bw.length) return alert(`带宽扩容类需求（${bw.join("、")}）不走采购单：出口池扩容请用行内「转合同变更」（原合同补充协议，成本口径连续）`);
     setToPoNos(nos);
   };
 
@@ -223,7 +306,7 @@ export default function PurchaseReqs() {
               ))}
             </div>
             <div className="flex rounded-[2px] border border-[#E5E6EB] p-0.5">
-              {(["全部", "带宽", "IP 段", "设备"] as const).map((t) => (
+              {["全部", ...typeOptions].map((t) => (
                 <button key={t} onClick={() => setType(t)}
                   className={`rounded-[2px] px-2.5 py-1 text-xs ${type === t ? "bg-[#165DFF] text-white" : "text-[#4E5969] hover:bg-[#F2F3F5]"}`}>{t}</button>
               ))}
@@ -273,7 +356,7 @@ export default function PurchaseReqs() {
                   <td className="px-3 py-2.5 text-right">
                     {r.status === "待处理" ? (
                       <span className="flex justify-end gap-2">
-                        {r.type === "带宽"
+                        {reqKind(r) === "带宽扩容"
                           ? <button className="text-[#165DFF] hover:underline" onClick={() => setCcReq(r)}>转合同变更</button>
                           : <button className="text-[#165DFF] hover:underline" onClick={() => toPo([r.reqNo])}>转采购单</button>}
                         <button className="text-[#86909C] hover:underline" onClick={() => confirm(`关闭需求单 ${r.reqNo}？`) && closeReq(r.reqNo)}>关闭</button>

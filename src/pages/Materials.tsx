@@ -161,6 +161,7 @@ export default function Materials() {
       key: editing.key, name: editing.name.trim(), form: editing.form,
       group: editing.group || undefined, status: editing.status ?? "启用",
       remark: editing.remark || undefined, attrs: editing.attrs,
+      purchase: editing.purchase,
     });
     setEditing(null);
   };
@@ -277,6 +278,26 @@ export default function Materials() {
             <div>
               <div className="mb-0.5 text-[#4E5969]">备注（可空）</div>
               <Input placeholder="如：向运营商采购的出口，可多家客户共享" value={editing.remark ?? ""} onChange={(e) => setEditing({ ...editing, remark: e.target.value })} />
+            </div>
+            <div className="rounded-[2px] border border-[#E5E6EB] bg-[#FBFBFC] p-2.5">
+              <div className="mb-1.5 text-[#4E5969]">采购口径 <span className="ml-1 font-normal text-[#86909C]">（设置了该物料才会出现在「采购需求 → 需求类型」中）</span></div>
+              <div className="flex items-center gap-2">
+                <select className="flex-1 rounded-[2px] border border-[#E5E6EB] bg-white px-2 py-1.5 text-sm" value={editing.purchase?.kind ?? ""}
+                  onChange={(e) => {
+                    const kind = e.target.value as "" | "带宽扩容" | "采购入库";
+                    setEditing({ ...editing, purchase: kind ? { kind, unit: editing.purchase?.unit ?? "个" } : undefined });
+                  }}>
+                  <option value="">不参与采购（不在需求类型中）</option>
+                  <option value="带宽扩容">带宽扩容（出口池扩容 → 原合同补充协议，不建采购单）</option>
+                  <option value="采购入库">采购入库（走采购单 → 到货验收 → 入库）</option>
+                </select>
+                {editing.purchase && (
+                  <span className="flex items-center gap-1 text-[#4E5969]">
+                    单位
+                    <Input className="w-16" value={editing.purchase.unit} onChange={(e) => setEditing({ ...editing, purchase: { ...editing.purchase!, unit: e.target.value } })} />
+                  </span>
+                )}
+              </div>
             </div>
             <div className="flex justify-end gap-2 border-t border-[#F2F3F5] pt-3">
               <Button variant="outline" size="sm" onClick={() => setEditing(null)}>取消</Button>

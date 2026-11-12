@@ -9,14 +9,28 @@ import { notify } from "@/data/notices";
 import { persistable } from "@/data/persist";
 import { submitForApproval, registerDocWriteBack, ensureInstance, INSTANCE_OF_DOC } from "@/data/approvalFlow";
 import { currentUser } from "@/data/users";
+import { MAT_DEF } from "@/data/products";
+
+/** 需求处理口径（资源目录「采购口径」驱动；旧数据无 matKey 时按 type 值兼容）：
+ *  带宽扩容 → 不建采购单，走原采购合同补充协议；采购入库 → 转采购单 */
+export const reqKind = (r: Pick<PurchaseReq, "type" | "matKey">): "带宽扩容" | "采购入库" =>
+  r.matKey ? (MAT_DEF(r.matKey)?.purchase?.kind ?? "采购入库") : r.type === "带宽" ? "带宽扩容" : "采购入库";
+/** 需求 → 采购单明细类型（mat_ip → IP 段；mat_exit → 带宽容量；mat_dev → 设备；其余物料 → 其他资源；
+ *  旧数据无 matKey 时按 type 值兼容） */
+export const reqLineType = (r: Pick<PurchaseReq, "type" | "matKey">): POLineType =>
+  r.matKey === "mat_ip" || (!r.matKey && r.type === "IP 段") ? "IP 段" :
+  r.matKey === "mat_exit" || (!r.matKey && r.type === "带宽") ? "带宽容量" :
+  r.matKey === "mat_dev" || (!r.matKey && r.type === "设备") ? "设备" : "其他资源";
 
 // ---------- P08-1 采购需求单 ----------
 export type ReqSource = "手工提报" | "资源不足联动" | "业务规划";
-export type ReqType = "带宽" | "IP 段" | "设备";
+// 需求类型 = 资源目录主数据（matDefs 中带「采购口径」的物料），不写死在页面；旧数据 type 值为「带宽 / IP 段 / 设备」
+export type ReqType = string;
 export interface PurchaseReq {
   reqNo: string;            // PR-2026-xxxx，编号规则生成，只读
   source: ReqSource;
-  type: ReqType;
+  type: ReqType;            // 物料名（资源目录主数据驱动）
+  matKey?: string;          // 资源目录物料 key（新数据带；旧数据为空按 type 值兼容判断）
   spec: string;             // 规格与数量：带宽=目标池+容量；IP=机房+前缀；设备=品牌/型号
   qty: number; unit: string; // 数量与单位（台 / M / 段）
   room: string;             // 目标机房（带宽/IP 类必填）
@@ -30,7 +44,6 @@ export interface PurchaseReq {
 }
 
 // ---------- P08-2 采购单 ----------
-export type POLineType = "带宽容量" | "IP 段" | "设备";
 export interface POLine {
   lineType: POLineType;
   spec: string;             // 带宽：500M；IP：/24；设备：华为 AR6121
@@ -39,6 +52,7 @@ export interface POLine {
   acceptedQty: number;      // 累计验收合格
 }
 export type POStatus = "草稿" | "待审批" | "已下单" | "部分到货" | "验收完成";
+export type POLineType = "带宽容量" | "IP 段" | "设备" | "其他资源";
 export interface ReceiptItem { lineIdx: number; arrived: number; result: "合格" | "不合格"; rejectReason?: string }
 export interface ReceiptBatch { batchNo: number; at: string; operator: string; items: ReceiptItem[] }
 export interface InboundDevice { assetNo: string; sn: string; brand: string; model: string; warrantyEnd: string }
@@ -143,7 +157,7 @@ export function closeReq(reqNo: string) {
 export function reqToContractChange(reqNo: string, lineId: string, addM: number, addMonthly: number): string | null {
   const r = REQ_BY_NO(reqNo);
   const row = R1_ROWS.find((x) => x.id === lineId);
-  if (!r || r.status !== "待处理" || r.type !== "带宽" || !row) return "参数无效（需求单状态或出口线路不符）";
+  if (!r || r.status !== "待处理" || reqKind(r) !== "带宽扩容" || !row) return "参数无效（需求单状态或出口线路不符；仅「带宽扩容」口径的需求可转合同变更）";
   if (!(addM > 0) || !(addMonthly > 0)) return "请填写新增容量与新增月租（均须 > 0）";
   const before = `${row.capacityM}M / ${fmtMoney(row.monthlyCost)} 元·月`;
   row.capacityM += addM;
@@ -157,15 +171,15 @@ export function reqToContractChange(reqNo: string, lineId: string, addM: number,
 
 // P08-2：需求单转采购单（可多选汇总）；contractId = 关联的框架合同档案（自动带采购单价）；返回新采购单号
 export function createPoFromReqs(reqNos: string[], supplier: string, contractId?: string): string | null {
-  const reqs = PURCHASE_REQS.filter((r) => reqNos.includes(r.reqNo) && r.status === "待处理" && r.type !== "带宽"); // 带宽类不走采购单（→ 合同变更）
+  const reqs = PURCHASE_REQS.filter((r) => reqNos.includes(r.reqNo) && r.status === "待处理" && reqKind(r) !== "带宽扩容"); // 带宽扩容口径不走采购单（→ 合同变更）
   if (!reqs.length) return null;
   const poNo = `PO-2026-${poSeqBox.po++}`;
   // 框架合同带价：按单计价类合同单价自动填入设备明细行（仍可修改，留痕）
   const contract = contractId ? PURCHASE_CONTRACTS.find((c) => c.id === contractId) : undefined;
   const lines: POLine[] = reqs.map((r) => ({
-    lineType: r.type === "带宽" ? "带宽容量" : r.type === "IP 段" ? "IP 段" : "设备",
+    lineType: reqLineType(r),
     spec: r.spec,
-    unitPrice: r.type === "设备" && contract?.unitPrice ? contract.unitPrice : 0,
+    unitPrice: (r.matKey === "mat_dev" || (!r.matKey && r.type === "设备")) && contract?.unitPrice ? contract.unitPrice : 0,
     quantity: r.qty, receivedQty: 0, acceptedQty: 0,
   }));
   PURCHASE_ORDERS.unshift({

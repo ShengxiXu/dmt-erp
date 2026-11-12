@@ -18,6 +18,7 @@ const LINE_TYPE_CLS: Record<POLine["lineType"], string> = {
   带宽容量: "bg-[#E8F3FF] text-[#165DFF]",
   "IP 段": "bg-[#FEF0FF] text-[#722ED1]",
   设备: "bg-[#E8F8F2] text-[#00B42A]",
+  其他资源: "bg-[#F2F3F5] text-[#4E5969]",
 };
 
 // ---------- ① 采购审批（草稿编辑 + 提交 + 批准/驳回） ----------
@@ -73,7 +74,7 @@ function ApprovalStep({ po }: { po: PurchaseOrder }) {
                 <td className="px-3 py-2">
                   {locked ? <span className={`rounded-[2px] px-1.5 py-0.5 text-[10px] ${LINE_TYPE_CLS[l.lineType]}`}>{l.lineType}</span> : (
                     <select className="rounded-[2px] border border-[#E5E6EB] bg-white px-1.5 py-1" value={l.lineType} onChange={(e) => patch(i, "lineType", e.target.value)}>
-                      {["带宽容量", "IP 段", "设备"].map((t) => <option key={t}>{t}</option>)}
+                      {["带宽容量", "IP 段", "设备", "其他资源"].map((t) => <option key={t}>{t}</option>)}
                     </select>
                   )}
                 </td>
@@ -317,12 +318,19 @@ function InboundStep({ po }: { po: PurchaseOrder }) {
     <div className="rounded-[4px] border border-[#E5E6EB] bg-white p-4 text-xs">
       <div className="mb-1 text-[13px] font-semibold text-[#1D2129]">入库建档单</div>
       <div className="mb-3 text-[#86909C]">按明细类型分页签，均从验收合格明细带入；提交后资源正式可售（带宽池余量 / 空闲 IP 段 / 在库设备），并联动恢复挂起工单</div>
-      <div className="mb-3 flex gap-1 border-b border-[#F2F3F5] pb-2">
-        {tabs.map((t) => (
-          <button key={t} onClick={() => setTab(t)}
-            className={`rounded-[2px] px-3 py-1.5 ${tab === t ? "bg-[#165DFF] text-white" : "text-[#4E5969] hover:bg-[#F2F3F5]"}`}>{t}页签</button>
-        ))}
-      </div>
+      {tabs.length > 0 && (
+        <div className="mb-3 flex gap-1 border-b border-[#F2F3F5] pb-2">
+          {tabs.map((t) => (
+            <button key={t} onClick={() => setTab(t)}
+              className={`rounded-[2px] px-3 py-1.5 ${tab === t ? "bg-[#165DFF] text-white" : "text-[#4E5969] hover:bg-[#F2F3F5]"}`}>{t}页签</button>
+          ))}
+        </div>
+      )}
+      {tabs.length === 0 && (
+        <div className="mb-3 rounded-[2px] bg-[#F7F8FA] px-3 py-2 text-[11px] text-[#86909C]">
+          本单为「其他资源」类采购：无需逐台建档 / 池扩容 / 段入库，验收完成后直接提交完成入库（数量台账在验收环节已确认）。
+        </div>
+      )}
 
       {tab === "设备" && devLine && (
         <div>

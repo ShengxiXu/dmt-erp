@@ -45,6 +45,9 @@ export interface MaterialDef {
   group?: string;                     // 物料分类（行业标准归档，便于物料库长大后的归类管理）
   status?: "启用" | "停用";           // 主数据不物理删除：停用后不可被新产品选用，已引用的 BOM 不受影响
   remark?: string;
+  /** 采购口径：设置了该字段的物料会出现在「采购需求 → 需求类型」中（主数据驱动，不写死在页面）；
+   *  kind = 带宽扩容（出口池扩容 → 原采购合同补充协议，不新建采购单）｜采购入库（走采购单 → 到货验收 → 入库） */
+  purchase?: { kind: "带宽扩容" | "采购入库"; unit: string };
   /** 属性模板：本类实例档案（资源中心）的表单字段定义。类定义字段、实例填值；
    *  无档案的类可不定义（清单选用不受影响）。 */
   attrs?: FieldDef[];
@@ -273,18 +276,26 @@ export function useCatalog(): number {
 // ---------- 物料库（独立主数据：物料的通用定义，产品 BOM 引用之） ----------
 // 预置行业通用物料；用户可自行增改。删除已被引用的物料不会让 BOM 行消失，但行会标「物料库已删除」。
 const matDefs: MaterialDef[] = persistable("materialDefs", () => [
-  { key: "mat_exit", name: "出口线路", form: "服务化资源", group: "线路资源", status: "启用", remark: "向运营商采购的出口，可多家客户共享；BGP 调度平台、SLA 冗余池也算在这", attrs: ATTRS_EXIT },
-  { key: "mat_base", name: "基础线路", form: "服务化资源", group: "线路资源", status: "启用", remark: "接入端线路：单客户专用，可跨产品共用不重复采购", attrs: ATTRS_BASE },
-  { key: "mat_ip", name: "IP 地址段", form: "服务化资源", group: "IP 资源", status: "启用", remark: "随出口线路绑定的 IP 段", attrs: ATTRS_IP },
-  { key: "mat_dev", name: "网络设备与备件", form: "实物", group: "设备与备件", status: "启用", remark: "CPE / 交换机等待库存设备，含板卡光模块", attrs: ATTRS_DEV },
-  { key: "mat_rack", name: "机柜与电力", form: "服务化资源", group: "机房设施", status: "启用", remark: "IDC 托管的机柜、电力" },
-  { key: "mat_port", name: "网内端口资源", form: "服务化资源", group: "线路资源", status: "启用", remark: "核心网上联端口 / OTN OTU 端口" },
-  { key: "mat_plat", name: "平台服务", form: "服务化资源", group: "平台与外购服务", status: "启用", remark: "BGP 调度、监控运维等平台订阅服务" },
-  { key: "mat_cloud", name: "云资源", form: "服务化资源", group: "平台与外购服务", status: "启用", remark: "云主机 / 节点、云节点设备折旧与软件许可" },
+  { key: "mat_exit", name: "出口线路", form: "服务化资源", group: "线路资源", status: "启用", remark: "向运营商采购的出口，可多家客户共享；BGP 调度平台、SLA 冗余池也算在这", attrs: ATTRS_EXIT, purchase: { kind: "带宽扩容", unit: "M" } },
+  { key: "mat_base", name: "基础线路", form: "服务化资源", group: "线路资源", status: "启用", remark: "接入端线路：单客户专用，可跨产品共用不重复采购", attrs: ATTRS_BASE, purchase: { kind: "采购入库", unit: "条" } },
+  { key: "mat_ip", name: "IP 地址段", form: "服务化资源", group: "IP 资源", status: "启用", remark: "随出口线路绑定的 IP 段", attrs: ATTRS_IP, purchase: { kind: "采购入库", unit: "段" } },
+  { key: "mat_dev", name: "网络设备与备件", form: "实物", group: "设备与备件", status: "启用", remark: "CPE / 交换机等待库存设备，含板卡光模块", attrs: ATTRS_DEV, purchase: { kind: "采购入库", unit: "台" } },
+  { key: "mat_rack", name: "机柜与电力", form: "服务化资源", group: "机房设施", status: "启用", remark: "IDC 托管的机柜、电力", purchase: { kind: "采购入库", unit: "柜" } },
+  { key: "mat_port", name: "网内端口资源", form: "服务化资源", group: "线路资源", status: "启用", remark: "核心网上联端口 / OTN OTU 端口", purchase: { kind: "采购入库", unit: "个" } },
+  { key: "mat_plat", name: "平台服务", form: "服务化资源", group: "平台与外购服务", status: "启用", remark: "BGP 调度、监控运维等平台订阅服务", purchase: { kind: "采购入库", unit: "套" } },
+  { key: "mat_cloud", name: "云资源", form: "服务化资源", group: "平台与外购服务", status: "启用", remark: "云主机 / 节点、云节点设备折旧与软件许可", purchase: { kind: "采购入库", unit: "节点" } },
   { key: "mat_svc", name: "安装调测服务", form: "人工服务", group: "交付服务", status: "启用", remark: "交付实施人工投入；布线 / 物流 / 差旅等交付杂项也归这里" },
-  { key: "mat_3rdsvc", name: "第三方服务订阅", form: "服务化资源", group: "平台与外购服务", status: "启用", remark: "DDoS 清洗、WAF 等外购服务" },
-  { key: "mat_resale", name: "转售采购资源", form: "服务化资源", remark: "转售业务：运营商线路 / 裸光纤 / 设备批发采购" },
+  { key: "mat_3rdsvc", name: "第三方服务订阅", form: "服务化资源", group: "平台与外购服务", status: "启用", remark: "DDoS 清洗、WAF 等外购服务", purchase: { kind: "采购入库", unit: "套" } },
+  { key: "mat_resale", name: "转售采购资源", form: "服务化资源", remark: "转售业务：运营商线路 / 裸光纤 / 设备批发采购", purchase: { kind: "采购入库", unit: "条" } },
 ]);
+// 旧快照回填：资源目录加「采购口径」之前的快照没有 purchase 字段，按物料默认口径补齐
+const PURCHASE_DEFAULTS: Record<string, { kind: "带宽扩容" | "采购入库"; unit: string }> = {
+  mat_exit: { kind: "带宽扩容", unit: "M" }, mat_ip: { kind: "采购入库", unit: "段" }, mat_dev: { kind: "采购入库", unit: "台" },
+  mat_base: { kind: "采购入库", unit: "条" }, mat_rack: { kind: "采购入库", unit: "柜" }, mat_port: { kind: "采购入库", unit: "个" },
+  mat_plat: { kind: "采购入库", unit: "套" }, mat_cloud: { kind: "采购入库", unit: "节点" }, mat_3rdsvc: { kind: "采购入库", unit: "套" },
+  mat_resale: { kind: "采购入库", unit: "条" },
+};
+matDefs.forEach((m) => { if (!m.purchase && PURCHASE_DEFAULTS[m.key]) m.purchase = PURCHASE_DEFAULTS[m.key]; });
 
 export const getMaterials = () => matDefs;
 /** 按 libKey 取物料定义（BOM 行渲染用；引用已删除的物料返回 undefined） */
