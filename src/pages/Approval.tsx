@@ -135,7 +135,7 @@ export default function Approval() {
 
   /** 条目快照：优先该核算单提交时留存的填报数据；无快照的存量单（如演示单 CE-2026-1008）回退共享演示数据 */
   const recEntries = inst && sheet ? entriesOfSheet(sheet.id) : null;
-  const viewEntries: { dept: string; line: string; item: string; amount: number; note: string; pendingLink?: boolean }[] =
+  const viewEntries: { dept: string; line: string; item: string; amount: number; note: string; pendingLink?: boolean; spec?: string; costType?: string }[] =
     recEntries ?? (sheet?.id === "CE-2026-1008" ? SHEET_ENTRIES : []);
   const monthlyCost = viewEntries.reduce((s, e) => s + e.amount, 0);
   const opsSum = viewEntries.filter((e) => e.dept === "业务支撑部").reduce((s, e) => s + e.amount, 0);
@@ -225,48 +225,76 @@ export default function Approval() {
               <section className="space-y-3 lg:col-span-2">
                 <div className="rounded-[4px] border border-[#E5E6EB] bg-white ">
                   <div className="border-b px-4 py-2.5 text-sm font-semibold">两部门填报汇总（只读快照，进入审批即锁定不可改）</div>
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="border-b bg-[#F7F8FA] text-left text-[#4E5969]">
-                        <th className="px-3 py-2">填报部门</th><th className="px-3 py-2">订单行</th><th className="px-3 py-2">成本条目</th>
-                        <th className="px-3 py-2 text-right">金额(元)</th><th className="px-3 py-2">演算说明</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {viewEntries.map((e, i) => (
-                        <tr key={i} className="border-b last:border-0">
-                          <td className="px-3 py-2"><Badge className="bg-[#E8F3FF] text-[#165DFF] hover:bg-sky-100">{e.dept}</Badge></td>
-                          <td className="px-3 py-2 text-[#4E5969]">{e.line}</td>
-                          <td className="px-3 py-2 font-medium text-[#1D2129]">
-                            {e.item}
-                            {e.pendingLink && <Badge className="ml-1.5 border border-[#FFCF8B] bg-[#FFF7E8] text-[10px] font-normal text-[#FF7D00] hover:bg-[#FFF7E8]">待补关联</Badge>}
-                          </td>
-                          <td className="px-3 py-2 text-right font-mono">{fmt(e.amount)}</td>
-                          <td className="px-3 py-2 text-[#86909C]">{e.note}</td>
-                        </tr>
-                      ))}
-                      {!viewEntries.length && (
-                        <tr className="border-b last:border-0">
-                          <td className="px-3 py-6 text-center text-xs text-[#C9CDD4]" colSpan={5}>
-                            本单无填报条目快照（存量历史单据）：条目明细以核算录入页重新提交后留存的快照为准
-                          </td>
-                        </tr>
+                  {!viewEntries.length && (
+                    <div className="px-4 py-8 text-center text-xs text-[#C9CDD4]">
+                      本单无填报条目快照（存量历史单据）：条目明细以核算录入页重新提交后留存的快照为准
+                    </div>
+                  )}
+                  {viewEntries.length > 0 && (
+                    <div className="divide-y divide-[#F2F3F5]">
+                      {(["业务支撑部", "技术部"] as const).map((dept) => {
+                        const list = viewEntries.filter((e) => e.dept === dept);
+                        if (!list.length) return null;
+                        const deptSum = list.reduce((s, e) => s + e.amount, 0);
+                        return (
+                          <div key={dept}>
+                            <div className="flex items-center gap-2 bg-[#F7F8FA] px-4 py-2">
+                              <Badge className={`${dept === "业务支撑部" ? "bg-[#FFF7E8] text-[#FF7D00]" : "bg-[#E8FFFB] text-[#0FC6C2]"} hover:bg-inherit`}>{dept}</Badge>
+                              <span className="text-xs text-[#86909C]">{list.length} 个条目</span>
+                              <span className="ml-auto font-mono text-sm font-semibold text-[#1D2129]">¥ {fmt(deptSum)}</span>
+                            </div>
+                            <div className="divide-y divide-[#F7F8FA]">
+                              {list.map((e, i) => (
+                                <div key={i} className="px-4 py-2.5">
+                                  <div className="flex items-baseline gap-2">
+                                    <span className="shrink-0 rounded-[2px] bg-[#F2F3F5] px-1.5 py-0.5 font-mono text-[10px] text-[#86909C]">{e.line.split(" · ")[0]}</span>
+                                    <span className="text-sm font-medium text-[#1D2129]">{e.item}</span>
+                                    {e.costType === "一次性" && (
+                                      <span className="rounded-[2px] border border-[#E5E6EB] px-1.5 py-0.5 text-[10px] text-[#86909C]">一次性</span>
+                                    )}
+                                    {e.pendingLink && (
+                                      <span className="rounded-[2px] border border-[#FFCF8B] bg-[#FFF7E8] px-1.5 py-0.5 text-[10px] text-[#FF7D00]">待补关联</span>
+                                    )}
+                                    <span className="ml-auto shrink-0 font-mono text-sm font-semibold text-[#1D2129]">{fmt(e.amount)} 元</span>
+                                  </div>
+                                  {e.spec && (
+                                    <div className="mt-1 flex items-start gap-1.5 text-xs text-[#4E5969]">
+                                      <span className="mt-px shrink-0 rounded-[2px] bg-[#E8F3FF] px-1 py-px text-[10px] text-[#165DFF]">选用</span>
+                                      <span>{e.spec}</span>
+                                    </div>
+                                  )}
+                                  {e.note && (
+                                    <div className="mt-1 flex items-start gap-1.5 text-xs leading-5 text-[#86909C]">
+                                      <span className="mt-px shrink-0 rounded-[2px] bg-[#F2F3F5] px-1 py-px text-[10px] text-[#86909C]">演算</span>
+                                      <span>{e.note}</span>
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {viewEntries.some((e) => e.pendingLink) && (
+                    <div className="border-t bg-[#FFF7E8] px-4 py-2 text-xs leading-5 text-[#D25F00]">
+                      ⚠ 本单含 {viewEntries.filter((e) => e.pendingLink).length} 条手工填入「待补关联」（档案尚未录入的兜底口径，不拦截审批）：签订采购合同 / 资源建档后由填报人补关联真实档案并留痕；实际单价与手工价不一致时触发核算变更复核（P01-8）。
+                    </div>
+                  )}
+                  {viewEntries.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-x-6 gap-y-1 border-t bg-[#F7F8FA] px-4 py-2.5 text-xs">
+                      {viewEntries.some((e) => e.costType) ? (
+                        <>
+                          <span className="text-[#4E5969]">周期性月成本 <span className="font-mono font-semibold text-[#165DFF]">¥ {fmt(viewEntries.filter((e) => e.costType !== "一次性").reduce((s, e) => s + e.amount, 0))}</span></span>
+                          <span className="text-[#4E5969]">一次性投入 <span className="font-mono font-semibold text-[#1D2129]">¥ {fmt(viewEntries.filter((e) => e.costType === "一次性").reduce((s, e) => s + e.amount, 0))}</span></span>
+                        </>
+                      ) : (
+                        <span className="text-[#4E5969]">支撑部 ¥ {fmt(opsSum)} ＋ 技术部 ¥ {fmt(techSum)}</span>
                       )}
-                      {viewEntries.some((e) => e.pendingLink) && (
-                        <tr className="border-b bg-[#FFF7E8] last:border-0">
-                          <td className="px-3 py-2 text-xs leading-5 text-[#D25F00]" colSpan={5}>
-                            ⚠ 本单含 {viewEntries.filter((e) => e.pendingLink).length} 条手工填入「待补关联」（档案尚未录入的兜底口径，不拦截审批）：签订采购合同 / 资源建档后由填报人补关联真实档案并留痕；实际单价与手工价不一致时触发核算变更复核（P01-8）。
-                          </td>
-                        </tr>
-                      )}
-                      <tr className="bg-[#F7F8FA] font-semibold">
-                        <td className="px-3 py-2" colSpan={2}>合计（含一次性条目演示口径）</td>
-                        <td className="px-3 py-2 text-[#4E5969]">支撑部 {fmt(opsSum)} ＋ 技术部 {fmt(techSum)}</td>
-                        <td className="px-3 py-2 text-right font-mono text-[#165DFF]">{fmt(monthlyCost)}</td>
-                        <td className="px-3 py-2"></td>
-                      </tr>
-                    </tbody>
-                  </table>
+                      <span className="ml-auto text-[#4E5969]">合计 <span className="font-mono text-sm font-semibold text-[#165DFF]">¥ {fmt(monthlyCost)}</span></span>
+                    </div>
+                  )}
                 </div>
               </section>
 

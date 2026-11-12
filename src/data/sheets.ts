@@ -118,7 +118,18 @@ export function fillSheet(s: CostSheet, p: { lines: number; monthlyCost: number;
 
 // ---------- 按单留存的填报条目快照（提交审批时由填报页写入；审批详情只读展示） ----------
 /** 填报条目留痕：提交那一刻的条目 / 金额 / 演算说明，与演示汇总数据（SHEET_ENTRIES）互不影响 */
-export interface SheetEntryRec { dept: "业务支撑部" | "技术部"; line: string; item: string; amount: number; note: string }
+export interface SheetEntryRec {
+  dept: "业务支撑部" | "技术部";
+  line: string;
+  item: string;
+  amount: number;
+  /** 演算说明（公式口径，只读展示） */
+  note: string;
+  /** 选用资源/档案（如「华为 AR6121 CPE」「I-101 电信 CN2 GIA 出口线路」）：回答「到底用了什么」 */
+  spec?: string;
+  /** 费用类型：一次性（CAPEX）/ 周期性（OPEX），用于分组合计 */
+  costType?: string;
+}
 const ENTRY_RECS: Record<string, SheetEntryRec[]> = persistable("sheetEntryRecs", () => ({}));
 /** 提交审批时覆盖写入该核算单的条目快照（重新提交 = 最新快照） */
 export const recordSheetEntries = (sheetId: string, recs: SheetEntryRec[]) => { ENTRY_RECS[sheetId] = recs; };

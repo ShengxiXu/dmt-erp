@@ -122,7 +122,7 @@ const amountStore: Record<string, number | null > = {};
 /** 每行填报的数量（key = 行键，如 L1::op1b）：提交审批时锁存出口池预估快照用 */
 const bwStore: Record<string, number> = {};
 /** 每行条目的展示留痕（key = 行键）：提交审批时写入该核算单的条目快照，供审批详情按单展示 */
-const entryInfoStore: Record<string, { name: string; dept: "业务支撑部" | "技术部"; note: string }> = {};
+const entryInfoStore: Record<string, { name: string; dept: "业务支撑部" | "技术部"; note: string; spec?: string; costType?: string }> = {};
 
 /** 每行已选定的出口线路（key = 订单行 id，可多选）：作为「绑定 IP 地址」条目的查询条件（IP 与线路绑定） */
 const internetPickStore: Record<string, SourceRow[]> = {};
@@ -141,7 +141,7 @@ function EntryRow({
   /** 条目已停用（被装配但条目库中停用）：整行灰显留档，不参与有效填报 */
   stale?: boolean;
   onRemove?: () => void;
-  onAmount: (k: string, v: number | null, snap?: { name: string; dept: "业务支撑部" | "技术部"; note: string }) => void;
+  onAmount: (k: string, v: number | null, snap?: { name: string; dept: "业务支撑部" | "技术部"; note: string; spec?: string; costType?: string }) => void;
   /** 本行已选定的出口线路（可多选；IP 条目以此为查询条件，跨多条线路 OR 查询） */
   internetRows?: SourceRow[];
   /** 出口线路条目多选完成时上抛（按订单行记录，供 IP 条目查询） */
@@ -194,7 +194,11 @@ function EntryRow({
   // 同时上抛展示留痕（条目名 / 部门 / 演算说明），提交审批时汇总写入该核算单的条目快照
   const snapName = slotCarrier ? `${item.name}（${slotCarrier}）` : item.name;
   const snapDept = item.dept === "ops" ? "业务支撑部" : "技术部";
-  useEffect(() => { onAmount(rowKey, amount, { name: snapName, dept: snapDept, note: calc.text }); }, [rowKey, amount, onAmount, snapName, snapDept, calc.text]);
+  /** 选用资源/档案（回答「到底用了什么」）：多选档案并列，单选取档案标题 */
+  const pickText = pickedList.length
+    ? pickedList.map((r) => `${r.id} ${r.title}`).join("、")
+    : pickedRow ? `${pickedRow.id} ${pickedRow.title}` : "";
+  useEffect(() => { onAmount(rowKey, amount, { name: snapName, dept: snapDept, note: calc.text, spec: pickText || undefined, costType: item.costType }); }, [rowKey, amount, onAmount, snapName, snapDept, calc.text, pickText, item.costType]);
 
   return (
     <tr className={`border-b align-top last:border-0 hover:bg-[#F7F8FA] ${stale ? "opacity-50" : ""}`}>
@@ -613,7 +617,7 @@ export default function Home() {
   const [, bump] = useState(0);
   /** 条目金额上抛：写暂存并触发重算。引用必须稳定（useCallback）——EntryRow 的副作用依赖它，
    *  若每次渲染生成新函数引用，副作用会每轮重跑→再次 setState→无限渲染卡死页面 */
-  const reportAmount = useCallback((key: string, v: number | null, snap?: { name: string; dept: "业务支撑部" | "技术部"; note: string }) => {
+  const reportAmount = useCallback((key: string, v: number | null, snap?: { name: string; dept: "业务支撑部" | "技术部"; note: string; spec?: string; costType?: string }) => {
     amountStore[key] = v;
     if (snap) entryInfoStore[key] = snap;
     bump((x) => x + 1);
@@ -1104,6 +1108,8 @@ export default function Home() {
                         item: info?.name ?? k,
                         amount: v as number,
                         note: info?.note ?? "",
+                        spec: info?.spec,
+                        costType: info?.costType,
                       };
                     });
                   recordSheetEntries(sheet0.id, recs);
