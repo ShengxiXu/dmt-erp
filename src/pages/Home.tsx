@@ -187,7 +187,9 @@ function EntryRow({
     return meta > 0 ? calc.v : null;
   }, [item.demo, calc.v, meta, searchSrc, autoShare, pickedRow, pickedList]);
 
-  useEffect(() => { onAmount(rowKey, locked ? null : amount); }, [rowKey, amount, locked, onAmount]);
+  // 锁定（部门已提交）不清空金额：金额是真实成本，进度/合计/提交审批都依赖它；
+  // 锁定只禁用输入（见下方 disabled），金额继续上抛保持 100% 与合计正确
+  useEffect(() => { onAmount(rowKey, amount); }, [rowKey, amount, onAmount]);
 
   return (
     <tr className={`border-b align-top last:border-0 hover:bg-[#F7F8FA] ${stale ? "opacity-50" : ""}`}>
