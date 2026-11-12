@@ -69,9 +69,7 @@ export const EMBED_POINTS = [
 // ---------- 审批演示：核算单条目汇总（CE-2026-1008） ----------
 // 铁律一：每条核算行金额必须可溯源——来源单据类型 + 来源单据 ID（《制造业口径》第七章）
 export type SrcType = "库存出库单" | "账本耗用单" | "工单工时单" | "手工暂填";
-export interface SheetEntry { dept: "业务支撑部" | "技术部"; line: string; item: string; amount: number; note: string; srcType: SrcType; srcId: string; /** 手工填入且尚未关联真实档案（采购合同/资源），签订后补关联 */ pendingLink?: boolean }
-
-export const SHEET_ENTRIES: SheetEntry[] = persistable("sheetEntries", () => [
+export interface SheetEntry { dept: "业务支撑部" | "技术部"; line: string; item: string; amount: number; note: string; srcType: SrcType; srcId: string; /** 手工填入且尚未关联真实档案（采购合同/资源），签订后补关联 */ pendingLink?: boolean }export const SHEET_ENTRIES: SheetEntry[] = persistable("sheetEntries", () => [
   { dept: "业务支撑部", line: "L1 · BGP 三网互通 50M", item: "基础线路租用费", amount: 1000, note: "B-001 电信 CN2 GIA 整线月租 1,000 元（单客户专用）", srcType: "账本耗用单", srcId: "HY-2026-1013" },
   { dept: "业务支撑部", line: "L1 · BGP 三网互通 50M", item: "出口带宽租用费（BGP 三网出口池）", amount: 3424, note: "BGP 三网出口池：113,000÷(1,600+50)×50 = 3,424（三出口月租与已售合并为一个池，边际计价）", srcType: "账本耗用单", srcId: "HY-2026-1014" },
   { dept: "业务支撑部", line: "L2 · 数据专线 OTN（上海—北京）", item: "基础线路租用费（手工填入）", amount: 6000, note: "新运营商上海↔北京线路尚未签约：手工填入估算单价，签订采购合同后补关联，价差触发核算变更复核", srcType: "手工暂填", srcId: "—（待补关联）", pendingLink: true },
@@ -117,3 +115,12 @@ export function fillSheet(s: CostSheet, p: { lines: number; monthlyCost: number;
   s.margin = p.margin;
   s.updated = demoNow();
 }
+
+// ---------- 按单留存的填报条目快照（提交审批时由填报页写入；审批详情只读展示） ----------
+/** 填报条目留痕：提交那一刻的条目 / 金额 / 演算说明，与演示汇总数据（SHEET_ENTRIES）互不影响 */
+export interface SheetEntryRec { dept: "业务支撑部" | "技术部"; line: string; item: string; amount: number; note: string }
+const ENTRY_RECS: Record<string, SheetEntryRec[]> = persistable("sheetEntryRecs", () => ({}));
+/** 提交审批时覆盖写入该核算单的条目快照（重新提交 = 最新快照） */
+export const recordSheetEntries = (sheetId: string, recs: SheetEntryRec[]) => { ENTRY_RECS[sheetId] = recs; };
+/** 读取该核算单的条目快照；无快照返回 null（调用方自行兜底展示） */
+export const entriesOfSheet = (sheetId: string): SheetEntryRec[] | null => ENTRY_RECS[sheetId] ?? null;

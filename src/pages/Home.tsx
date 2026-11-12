@@ -12,7 +12,7 @@ import { getCostItems, useCostItems, SETTLE_RULE, uncoveredClasses, type CostIte
 import { GET_TYPE, MAT_DEF, useCatalog } from "@/data/products";
 import { CONTRACTS, type Contract } from "@/data/contracts";
 import { snapshotEsts, usePoolSettle, type PoolEst } from "@/data/poolSettle";
-import { SHEETS, SHEET_OF_CONTRACT, ensureSheetForContract, fillSheet } from "@/data/sheets";
+import { SHEETS, SHEET_OF_CONTRACT, ensureSheetForContract, fillSheet, recordSheetEntries } from "@/data/sheets";
 import { submitForApproval } from "@/data/approvalFlow";
 import { currentUser } from "@/data/users";
 import ArchivePicker from "@/components/SearchSelect";
@@ -121,6 +121,8 @@ function enumOptions(item: CatalogItem): string[] {
 const amountStore: Record<string, number | null > = {};
 /** 每行填报的数量（key = 行键，如 L1::op1b）：提交审批时锁存出口池预估快照用 */
 const bwStore: Record<string, number> = {};
+/** 每行条目的展示留痕（key = 行键）：提交审批时写入该核算单的条目快照，供审批详情按单展示 */
+const entryInfoStore: Record<string, { name: string; dept: "业务支撑部" | "技术部"; note: string }> = {};
 
 /** 每行已选定的出口线路（key = 订单行 id，可多选）：作为「绑定 IP 地址」条目的查询条件（IP 与线路绑定） */
 const internetPickStore: Record<string, SourceRow[]> = {};
@@ -139,7 +141,7 @@ function EntryRow({
   /** 条目已停用（被装配但条目库中停用）：整行灰显留档，不参与有效填报 */
   stale?: boolean;
   onRemove?: () => void;
-  onAmount: (k: string, v: number | null) => void;
+  onAmount: (k: string, v: number | null, snap?: { name: string; dept: "业务支撑部" | "技术部"; note: string }) => void;
   /** 本行已选定的出口线路（可多选；IP 条目以此为查询条件，跨多条线路 OR 查询） */
   internetRows?: SourceRow[];
   /** 出口线路条目多选完成时上抛（按订单行记录，供 IP 条目查询） */
@@ -189,7 +191,10 @@ function EntryRow({
 
   // 锁定（部门已提交）不清空金额：金额是真实成本，进度/合计/提交审批都依赖它；
   // 锁定只禁用输入（见下方 disabled），金额继续上抛保持 100% 与合计正确
-  useEffect(() => { onAmount(rowKey, amount); }, [rowKey, amount, onAmount]);
+  // 同时上抛展示留痕（条目名 / 部门 / 演算说明），提交审批时汇总写入该核算单的条目快照
+  const snapName = slotCarrier ? `${item.name}（${slotCarrier}）` : item.name;
+  const snapDept = item.dept === "ops" ? "业务支撑部" : "技术部";
+  useEffect(() => { onAmount(rowKey, amount, { name: snapName, dept: snapDept, note: calc.text }); }, [rowKey, amount, onAmount, snapName, snapDept, calc.text]);
 
   return (
     <tr className={`border-b align-top last:border-0 hover:bg-[#F7F8FA] ${stale ? "opacity-50" : ""}`}>
@@ -608,8 +613,9 @@ export default function Home() {
   const [, bump] = useState(0);
   /** 条目金额上抛：写暂存并触发重算。引用必须稳定（useCallback）——EntryRow 的副作用依赖它，
    *  若每次渲染生成新函数引用，副作用会每轮重跑→再次 setState→无限渲染卡死页面 */
-  const reportAmount = useCallback((key: string, v: number | null) => {
+  const reportAmount = useCallback((key: string, v: number | null, snap?: { name: string; dept: "业务支撑部" | "技术部"; note: string }) => {
     amountStore[key] = v;
+    if (snap) entryInfoStore[key] = snap;
     bump((x) => x + 1);
   }, []);
 
@@ -1085,6 +1091,22 @@ export default function Home() {
                       return s; })()
                   : SHEETS.find((s) => s.id === "CE-2026-1008");
                 if (sheet0) {
+                  // 按单留存填报条目快照：审批详情展示的是「这一单真实填入的内容」，不是演示汇总数据
+                  const recs = Object.entries(amountStore)
+                    .filter(([k, v]) => v != null && k.split("::")[0] && lines.some((l) => l.id === k.split("::")[0]))
+                    .map(([k, v]) => {
+                      const lid = k.split("::")[0];
+                      const line = lines.find((x) => x.id === lid);
+                      const info = entryInfoStore[k];
+                      return {
+                        dept: info?.dept ?? "业务支撑部",
+                        line: line ? `${line.id} · ${line.name}` : lid,
+                        item: info?.name ?? k,
+                        amount: v as number,
+                        note: info?.note ?? "",
+                      };
+                    });
+                  recordSheetEntries(sheet0.id, recs);
                   const r = submitForApproval("成本核算单 · 提交", sheet0.id, `${sheet0.customer} · ${sheet0.contract}`,
                     { monthlyCost: sheet0.monthlyCost, contractValue: sheet0.contractValue, margin: sheet0.margin, lines: sheet0.lines },
                     currentUser()?.name ?? "演示用户");

@@ -3,7 +3,7 @@
 // 通过 / 驳回统一走引擎 approveInstance / rejectInstance，结果经写回注册表真实写回业务单据。
 import { useState, type ReactNode } from "react";
 import { useNavigate, useSearchParams } from "react-router";
-import { SHEETS, SHEET_ENTRIES, fmt } from "@/data/sheets";
+import { SHEETS, SHEET_ENTRIES, entriesOfSheet, fmt } from "@/data/sheets";
 import { useApprovalFlow, getInstances, approveInstance, rejectInstance, nodeLabel, FIELD_DEFS, type ApprovalInstance } from "@/data/approvalFlow";
 import { currentUser } from "@/data/users";
 import ArcoShell from "@/components/ArcoShell";
@@ -133,9 +133,13 @@ export default function Approval() {
   const open = (id: string) => setSelId(id);
   const back = () => setSelId(null);
 
-  const monthlyCost = SHEET_ENTRIES.reduce((s, e) => s + e.amount, 0);
-  const opsSum = SHEET_ENTRIES.filter((e) => e.dept === "业务支撑部").reduce((s, e) => s + e.amount, 0);
-  const techSum = SHEET_ENTRIES.filter((e) => e.dept === "技术部").reduce((s, e) => s + e.amount, 0);
+  /** 条目快照：优先该核算单提交时留存的填报数据；无快照的存量单（如演示单 CE-2026-1008）回退共享演示数据 */
+  const recEntries = inst && sheet ? entriesOfSheet(sheet.id) : null;
+  const viewEntries: { dept: string; line: string; item: string; amount: number; note: string; pendingLink?: boolean }[] =
+    recEntries ?? (sheet?.id === "CE-2026-1008" ? SHEET_ENTRIES : []);
+  const monthlyCost = viewEntries.reduce((s, e) => s + e.amount, 0);
+  const opsSum = viewEntries.filter((e) => e.dept === "业务支撑部").reduce((s, e) => s + e.amount, 0);
+  const techSum = viewEntries.filter((e) => e.dept === "技术部").reduce((s, e) => s + e.amount, 0);
 
   return (
     <ArcoShell breadcrumb="审批中心">
@@ -229,7 +233,7 @@ export default function Approval() {
                       </tr>
                     </thead>
                     <tbody>
-                      {SHEET_ENTRIES.map((e, i) => (
+                      {viewEntries.map((e, i) => (
                         <tr key={i} className="border-b last:border-0">
                           <td className="px-3 py-2"><Badge className="bg-[#E8F3FF] text-[#165DFF] hover:bg-sky-100">{e.dept}</Badge></td>
                           <td className="px-3 py-2 text-[#4E5969]">{e.line}</td>
@@ -241,10 +245,17 @@ export default function Approval() {
                           <td className="px-3 py-2 text-[#86909C]">{e.note}</td>
                         </tr>
                       ))}
-                      {SHEET_ENTRIES.some((e) => e.pendingLink) && (
+                      {!viewEntries.length && (
+                        <tr className="border-b last:border-0">
+                          <td className="px-3 py-6 text-center text-xs text-[#C9CDD4]" colSpan={5}>
+                            本单无填报条目快照（存量历史单据）：条目明细以核算录入页重新提交后留存的快照为准
+                          </td>
+                        </tr>
+                      )}
+                      {viewEntries.some((e) => e.pendingLink) && (
                         <tr className="border-b bg-[#FFF7E8] last:border-0">
                           <td className="px-3 py-2 text-xs leading-5 text-[#D25F00]" colSpan={5}>
-                            ⚠ 本单含 {SHEET_ENTRIES.filter((e) => e.pendingLink).length} 条手工填入「待补关联」（档案尚未录入的兜底口径，不拦截审批）：签订采购合同 / 资源建档后由填报人补关联真实档案并留痕；实际单价与手工价不一致时触发核算变更复核（P01-8）。
+                            ⚠ 本单含 {viewEntries.filter((e) => e.pendingLink).length} 条手工填入「待补关联」（档案尚未录入的兜底口径，不拦截审批）：签订采购合同 / 资源建档后由填报人补关联真实档案并留痕；实际单价与手工价不一致时触发核算变更复核（P01-8）。
                           </td>
                         </tr>
                       )}
