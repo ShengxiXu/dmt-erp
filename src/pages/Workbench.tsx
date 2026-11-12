@@ -17,6 +17,7 @@ import { getOpps, OPP_STAGES } from "@/data/customers";
 import { getNotices, unreadCount, useNotices } from "@/data/notices";
 import { bills } from "@/data/bills";
 import { BILL_EMAILS } from "@/data/billEmails";
+import { overdueBills } from "@/data/payRequests";
 
 const ROLES = ["业务支撑部", "技术部", "财务", "管理层", "销售部", "系统管理员"] as const;
 type Role = (typeof ROLES)[number];
@@ -66,6 +67,9 @@ function buildTodos(role: Role): Todo[] {
         t.push({ title: `核算单 ${s.id} · ${s.customer}`, sub: `变更复核中 · ${s.curNode ?? ""}`, link: `/cost?status=变更中&kw=${s.id}`, cta: "查看" }));
       if (overdueInv.length)
         t.push({ title: `逾期应收 ${fmtWan(overdueSum)} 元`, sub: overdueInv.map((r) => `${r.customer} ${fmtWan(r.amount - r.received)}`).join("；"), link: "/finance?tab=collect", cta: "去催收" });
+      const odPay = overdueBills();
+      if (odPay.length)
+        t.push({ title: `超期未付账单 ${odPay.length} 笔 · ${fmtWan(odPay.reduce((s, b) => s + b.amount, 0))} 元`, sub: odPay.map((b) => `${b.supplier} ${b.id}（到期 ${b.payDueDate?.slice(5)}）`).join("；"), link: "/bills?overdue=1", cta: "去处理", hot: true });
       RECEIVABLES.filter((r) => promiseBroken(r)).forEach((r) =>
         t.push({ title: `${r.customer} 承诺付款日破约 ${promiseOverDays(r)} 天`, sub: `${r.invNo} · 承诺 ${r.promiseDate} 未付，需升级催收并登记跟进`, link: "/finance?tab=collect", cta: "去跟进", hot: true }));
       dueFollowUps().forEach((c) =>

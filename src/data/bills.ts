@@ -23,6 +23,7 @@ export interface SupplierBill {
   contractNo?: string;     // 关联采购合同号（周期性月租类；见「采购合同」主数据）
   resRef?: string;         // 关联资源（可空：账单归属哪个资源档案，便于按资源查账）
   status: BillStatus;
+  payDueDate?: string;     // 付款到期日（账期条款推算：录入/导入时填写；超期未付提醒的锚点）
   note?: string;
   createdAt: string;
   source?: "手工录入" | "邮件导入";  // 来源（邮件导入的账单可回溯到原始邮件）
@@ -38,11 +39,11 @@ export interface SupplierBill {
 
 // ---------- 预置账单（号段与核算单演示数据的来源单号一致，可直接被引用） ----------
 export const bills: SupplierBill[] = persistable("supplierBills", () => [
-  { id: "HY-2026-1013", supplier: "上海电信", period: "2026-10", costItemKey: "op1a", amount: 500, poNo: "PO-2026-028", resRef: "B-001", status: "已入账", createdAt: "2026-10-08" },
-  { id: "HY-2026-1014", supplier: "上海电信", period: "2026-10", costItemKey: "op1b", amount: 45000, contractNo: "CT-2026-018", resRef: "E-CT-1", status: "已入账", note: "BGP 电信出口（E-CT-1）月租，并入 BGP 三网出口池按已售带宽计收", createdAt: "2026-10-08" },
-  { id: "HY-2026-1015", supplier: "中国电信长途传输", period: "2026-10", costItemKey: "op1a", amount: 6800, poNo: "PO-2026-029", resRef: "B-201", status: "已入账", createdAt: "2026-10-09" },
-  { id: "HY-2026-1016", supplier: "APNIC 代管服务商", period: "2026-10", costItemKey: "op6", amount: 12480, resRef: "I-101", status: "已入账", note: "C 段地址年费摊月", createdAt: "2026-10-10" },
-  { id: "HY-2026-1017", supplier: "漕河泾机房物业", period: "2026-10", costItemKey: "t2", amount: 6400, resRef: "I-101", status: "已入账", note: "漕河泾机房 10G 上联端口月租", createdAt: "2026-10-10" },
+  { id: "HY-2026-1013", supplier: "上海电信", period: "2026-10", costItemKey: "op1a", amount: 500, poNo: "PO-2026-028", resRef: "B-001", status: "已入账", payDueDate: "2026-11-15", createdAt: "2026-10-08" },
+  { id: "HY-2026-1014", supplier: "上海电信", period: "2026-10", costItemKey: "op1b", amount: 45000, contractNo: "CT-2026-018", resRef: "E-CT-1", status: "已入账", payDueDate: "2026-11-10", note: "BGP 电信出口（E-CT-1）月租，并入 BGP 三网出口池按已售带宽计收", createdAt: "2026-10-08" },
+  { id: "HY-2026-1015", supplier: "中国电信长途传输", period: "2026-10", costItemKey: "op1a", amount: 6800, poNo: "PO-2026-029", resRef: "B-201", status: "已入账", payDueDate: "2026-10-28", createdAt: "2026-10-09" },
+  { id: "HY-2026-1016", supplier: "APNIC 代管服务商", period: "2026-10", costItemKey: "op6", amount: 12480, resRef: "I-101", status: "已入账", payDueDate: "2026-11-01", note: "C 段地址年费摊月", createdAt: "2026-10-10" },
+  { id: "HY-2026-1017", supplier: "漕河泾机房物业", period: "2026-10", costItemKey: "t2", amount: 6400, resRef: "I-101", status: "已入账", payDueDate: "2026-11-20", note: "漕河泾机房 10G 上联端口月租", createdAt: "2026-10-10" },
   { id: "HY-2026-1018", supplier: "漕河泾机房物业", period: "2026-10", costItemKey: "op5", amount: 12800, status: "待入账", note: "整柜电力月租，待核对", createdAt: "2026-10-27" },
 ]);
 

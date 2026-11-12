@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { bills, useBills, addBill, setBillStatus, billCenter, type SupplierBill, type BillStatus } from "@/data/bills";
+import { usePayRequests, overdueBills, overdueDays, billInFlight, billPaid } from "@/data/payRequests";
 import {
   BILL_EMAILS, useBillEmails, checkRow, rowProblem, importEmail, ignoreEmail, type BillEmail, type EmailBillRow,
 } from "@/data/billEmails";
@@ -53,7 +54,7 @@ export const TAG_COLOR: Record<NonNullable<SupplierBill["tag"]>, string> = {
   差异: "bg-[#FFF3E8] text-[#FF7D00]",
   争议: "bg-[#FFECE8] text-[#F53F3F]",
 };
-const FILTERS: ("全部" | BillStatus | "差异" | "争议")[] = ["全部", "待入账", "已入账", "已月结", "差异", "争议"];
+const FILTERS: ("全部" | BillStatus | "差异" | "争议" | "超期未付")[] = ["全部", "待入账", "已入账", "已月结", "超期未付", "差异", "争议"];
 
 /** 账单被哪些核算单引用（账本耗用单的来源单号 = 账单号） */
 export function billRefs(b: SupplierBill) {
@@ -67,27 +68,33 @@ export function billRefs(b: SupplierBill) {
 export default function Bills() {
   useBills();
   useBillEmails();
+  const payV = usePayRequests(); // 付款状态变化（在途/已付）联动超期口径与徽标
   const [sp] = useSearchParams();
   const [tab, setTab] = useState<"bills" | "emails">(sp.get("tab") === "emails" ? "emails" : "bills");
-  const [f, setF] = useState<(typeof FILTERS)[number]>("全部");
+  const [f, setF] = useState<(typeof FILTERS)[number]>(sp.get("overdue") === "1" ? "超期未付" : "全部");
   const [kw, setKw] = useState("");
   const [showAdd, setShowAdd] = useState(false);
   const [detail, setDetail] = useState<string | null>(null);
 
-  const rows = useMemo(() => bills.filter((b) => {
-    if (f !== "全部") {
-      if (f === "差异" || f === "争议") { if (b.tag !== f) return false; }
-      else if (b.status !== f) return false;
-    }
-    if (!kw) return true;
-    const item = getCostItems().find((i) => i.key === b.costItemKey);
-    return b.id.includes(kw) || b.supplier.includes(kw) || b.period.includes(kw) || (item?.name ?? "").includes(kw) || (b.poNo ?? "").includes(kw) || (b.contractNo ?? "").includes(kw);
-  }), [f, kw]);
+  const rows = useMemo(() => {
+    const odSet = new Set(overdueBills().map((b) => b.id));
+    return bills.filter((b) => {
+      if (f !== "全部") {
+        if (f === "超期未付") { if (!odSet.has(b.id)) return false; }
+        else if (f === "差异" || f === "争议") { if (b.tag !== f) return false; }
+        else if (b.status !== f) return false;
+      }
+      if (!kw) return true;
+      const item = getCostItems().find((i) => i.key === b.costItemKey);
+      return b.id.includes(kw) || b.supplier.includes(kw) || b.period.includes(kw) || (item?.name ?? "").includes(kw) || (b.poNo ?? "").includes(kw) || (b.contractNo ?? "").includes(kw);
+    });
+  }, [f, kw, payV]);
   const stats = useMemo(() => ({
     wait: bills.filter((b) => b.status === "待入账").length,
     inAmt: bills.filter((b) => b.status === "已入账" || b.status === "已月结").reduce((s, b) => s + b.amount, 0),
     settle: bills.filter((b) => b.status === "已月结").length,
-  }), []);
+    overdue: overdueBills(),
+  }), [payV]);
 
   const det = detail ? bills.find((b) => b.id === detail) : null;
 
@@ -116,16 +123,21 @@ export default function Bills() {
         {tab === "emails" ? (
           <EmailInbox />
         ) : (<>
-        <section className="grid gap-3 md:grid-cols-3">
+        <section className="grid gap-3 md:grid-cols-4">
           {[
             { t: "待入账", v: stats.wait, u: "张", c: "text-[#FF7D00]" },
             { t: "已入账金额（本期）", v: fmt(stats.inAmt), u: "元", c: "text-[#165DFF]" },
             { t: "已月结", v: stats.settle, u: "张", c: "text-[#00B42A]" },
+            {
+              t: "超期未付", u: `元 · ${stats.overdue.length} 笔`, c: "text-[#F53F3F]",
+              v: fmt(stats.overdue.reduce((s, b) => s + b.amount, 0)),
+            },
           ].map((k) => (
-            <div key={k.t} className="rounded-[4px] border border-[#E5E6EB] bg-white p-4">
+            <button key={k.t} className={`rounded-[4px] border bg-white p-4 text-left transition-shadow hover:shadow-md ${k.t === "超期未付" && stats.overdue.length ? "border-[#F53F3F]/40" : "border-[#E5E6EB]"}`}
+              onClick={() => k.t === "超期未付" && setF("超期未付")} title={k.t === "超期未付" && stats.overdue.length ? "点击筛选超期未付账单" : undefined}>
               <div className="text-xs text-[#86909C]">{k.t}</div>
               <div className={`mt-1 text-2xl font-bold ${k.c}`}>{k.v} <span className="text-xs font-normal text-[#86909C]">{k.u}</span></div>
-            </div>
+            </button>
           ))}
         </section>
 
@@ -135,8 +147,8 @@ export default function Bills() {
             <div className="ml-4 flex gap-1">
               {FILTERS.map((x) => (
                 <button key={x} onClick={() => setF(x)}
-                  className={`rounded-[2px] px-2.5 py-1 text-xs ${f === x ? "bg-[#165DFF] text-white" : "text-[#4E5969] hover:bg-[#F2F3F5]"}`}>
-                  {x}
+                  className={`rounded-[2px] px-2.5 py-1 text-xs ${f === x ? "bg-[#165DFF] text-white" : x === "超期未付" && stats.overdue.length ? "bg-[#FFECE8] text-[#F53F3F] hover:bg-[#FDCDC5]" : "text-[#4E5969] hover:bg-[#F2F3F5]"}`}>
+                  {x === "超期未付" && stats.overdue.length ? `${x} ${stats.overdue.length}` : x}
                 </button>
               ))}
             </div>
@@ -161,15 +173,21 @@ export default function Bills() {
               {rows.map((b) => {
                 const item = getCostItems().find((i) => i.key === b.costItemKey);
                 const refs = billRefs(b);
+                const od = overdueBills().some((x) => x.id === b.id);
+                const payState = billPaid(b.id) ? "已付" : billInFlight(b.id) ? "在途" : null;
                 return (
-                  <tr key={b.id} className="cursor-pointer border-b last:border-0 hover:bg-[#F7F8FA]" onClick={() => setDetail(b.id)}>
+                  <tr key={b.id} className={`cursor-pointer border-b last:border-0 hover:bg-[#F7F8FA] ${od ? "bg-[#FFFBF0]" : ""}`} onClick={() => setDetail(b.id)}>
                     <td className="px-3 py-2.5 font-mono font-medium"><Link to={`/bills/detail?id=${b.id}`} className="text-[#165DFF] hover:underline" onClick={(e) => e.stopPropagation()}>{b.id}</Link>{b.source === "邮件导入" && <span className="ml-1 rounded-[2px] bg-[#E8F3FF] px-1 py-0.5 text-[9px]">邮件</span>}</td>
                     <td className="px-3 py-2.5 font-medium text-[#1D2129]">{b.supplier}</td>
                     <td className="px-3 py-2.5 font-mono text-[#4E5969]">{b.period}</td>
                     <td className="px-3 py-2.5 text-[#4E5969]">{item?.name ?? b.costItemKey}{b.poNo && <div className="text-[10px] text-[#86909C]">采购单 {b.poNo}</div>}{b.contractNo && <div className="text-[10px] text-[#86909C]">合同 {b.contractNo}</div>}</td>
                     <td className="px-3 py-2.5"><span className="rounded-[2px] bg-[#F2F3F5] px-1.5 py-0.5 text-[10px] text-[#4E5969]">{billCenter(b.costItemKey)}</span></td>
                     <td className="px-3 py-2.5 text-right font-mono">{fmt(b.amount)}</td>
-                    <td className="px-3 py-2.5"><Badge className={`${STATUS_COLOR[b.status]} hover:bg-inherit`}>{b.status}</Badge>{b.tag && <Badge className={`ml-1 ${TAG_COLOR[b.tag]} hover:bg-inherit`}>{b.tag}</Badge>}</td>
+                    <td className="px-3 py-2.5">
+                      <Badge className={`${STATUS_COLOR[b.status]} hover:bg-inherit`}>{b.status}</Badge>{b.tag && <Badge className={`ml-1 ${TAG_COLOR[b.tag]} hover:bg-inherit`}>{b.tag}</Badge>}
+                      {od && <Badge className="ml-1 bg-[#FFECE8] text-[#F53F3F] hover:bg-inherit">超期 {overdueDays(b)} 天</Badge>}
+                      {payState && <Badge className="ml-1 bg-[#F2F3F5] text-[#4E5969] hover:bg-inherit">{payState}</Badge>}
+                    </td>
                     <td className="px-3 py-2.5 text-[#4E5969]">{refs.length ? `${refs.length} 条核算行` : "—"}</td>
                     <td className="px-3 py-2.5 text-[#C9CDD4]">详情 →</td>
                   </tr>
@@ -190,7 +208,7 @@ export default function Bills() {
 
 // ---------- 录入账单：必填只有 4 项，费用归类决定口径与归属 ----------
 function AddModal({ onClose }: { onClose: () => void }) {
-  const [f, setF] = useState({ supplier: "", period: "2026-10", costItemKey: "", amount: "", poNo: "", contractNo: "", resRef: "", note: "" });
+  const [f, setF] = useState({ supplier: "", period: "2026-10", costItemKey: "", amount: "", poNo: "", contractNo: "", resRef: "", payDueDate: "", note: "" });
   const items = getCostItems().filter((i) => i.category === "资源驱动" || i.settleType === "间接");
   const needRes = f.costItemKey ? resourceOptions(f.costItemKey) !== null : false;
   const ok = f.supplier.trim() && f.period && f.costItemKey && Number(f.amount) > 0 && (!needRes || !!f.resRef);
@@ -204,6 +222,7 @@ function AddModal({ onClose }: { onClose: () => void }) {
       poNo: f.poNo.trim() || undefined,
       contractNo: f.contractNo.trim() || undefined,
       resRef: f.resRef.trim() || undefined,
+      payDueDate: f.payDueDate || undefined,
       note: f.note.trim() || undefined,
     });
     onClose();
@@ -253,6 +272,11 @@ function AddModal({ onClose }: { onClose: () => void }) {
               ))}
             </select>
           </div>
+          <div>
+            <div className="mb-0.5 text-[#4E5969]">付款到期日（可空）</div>
+            <Input type="date" value={f.payDueDate} onChange={(e) => setF({ ...f, payDueDate: e.target.value })} />
+            <div className="mt-0.5 text-[10px] text-[#C9CDD4]">按账期条款推算（如月结 30 天）；到期未付将进「超期未付」提醒</div>
+          </div>
         </div>
         {(() => {
           const opts = f.costItemKey ? resourceOptions(f.costItemKey) : null;
@@ -291,6 +315,8 @@ function AddModal({ onClose }: { onClose: () => void }) {
 function DetailModal({ bill, onClose }: { bill: SupplierBill; onClose: () => void }) {
   const item = getCostItems().find((i) => i.key === bill.costItemKey);
   const refs = billRefs(bill);
+  const isOd = overdueBills().some((x) => x.id === bill.id);
+  const payState = billPaid(bill.id) ? "已付款" : billInFlight(bill.id) ? "付款在途（已申请未支付）" : (bill.status === "已入账" || bill.status === "已月结") ? "未付" : null;
   return (
     <CenterModal title={`账单 ${bill.id}`} sub={`${bill.supplier} · ${bill.period}`} onClose={onClose} width={620}>
       <div className="space-y-3 text-xs">
@@ -305,6 +331,16 @@ function DetailModal({ bill, onClose }: { bill: SupplierBill; onClose: () => voi
           {bill.poNo && <span>采购单号：{bill.poNo}</span>}
           {bill.contractNo && <span>采购合同：{bill.contractNo}</span>}
           {bill.resRef && <span>关联资源：{bill.resRef}</span>}
+          {bill.payDueDate && (
+            <span>付款到期日：<b className="font-mono text-[#1D2129]">{bill.payDueDate}</b>
+              {isOd && <Badge className="ml-1 bg-[#FFECE8] text-[#F53F3F] hover:bg-inherit">超期 {overdueDays(bill)} 天</Badge>}
+            </span>
+          )}
+          {payState && (
+            <span>付款状态：<b className={payState === "未付" && isOd ? "text-[#F53F3F]" : "text-[#1D2129]"}>{payState}</b>
+              {payState === "未付" && <Link to={`/pay-requests?kw=${bill.supplier}`} className="ml-1 text-[#165DFF] hover:underline" onClick={onClose}>去发起付款 ›</Link>}
+            </span>
+          )}
           {bill.note && <span className="col-span-2">备注：{bill.note}</span>}
           {bill.diff && (
             <div className="col-span-2 rounded-[2px] border border-[#FFECE8] bg-[#FFF7F5] px-2.5 py-1.5 leading-5">

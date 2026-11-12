@@ -6,7 +6,8 @@
 //   - 未命中启用审批流（停用 / 触发条件不满足）→ 申请直接生效为「待付款」，与核算 / 采购 / 坏账同口径
 import { useSyncExternalStore } from "react";
 import { persistable } from "@/data/persist";
-import { demoNow } from "@/data/settings";
+import { demoNow, DEMO_TODAY } from "@/data/settings";
+import { bills, type SupplierBill } from "@/data/bills";
 import { notify } from "@/data/notices";
 import { submitForApproval, registerDocWriteBack, ensureInstance, INSTANCE_OF_DOC } from "@/data/approvalFlow";
 import { currentUser } from "@/data/users";
@@ -76,6 +77,21 @@ export const fmtMoney = (n: number) => n.toLocaleString("zh-CN");
 // 该账单是否已有在途（审批中 / 待付款）付款申请 —— 防止同一账单重复申请付款
 export const billInFlight = (billId: string) =>
   PAY_REQUESTS.some((p) => (p.status === "待审批" || p.status === "待付款") && (p.sourceBillNos ?? []).includes(billId));
+
+/** 该账单是否已付清（有「已付款」的付款申请关联） */
+export const billPaid = (billId: string) =>
+  PAY_REQUESTS.some((p) => p.status === "已付款" && (p.sourceBillNos ?? []).includes(billId));
+
+/** 应付口径：已入账/已月结（应付已确认）且未付清、无在途付款申请的账单 */
+export const unpaidBills = (): SupplierBill[] =>
+  bills.filter((b) => (b.status === "已入账" || b.status === "已月结") && !billPaid(b.id) && !billInFlight(b.id));
+
+/** 超期未付：应付 + 付款到期日早于演示基准日（账期条款超期提醒的判定入口） */
+export const overdueBills = (): SupplierBill[] => unpaidBills().filter((b) => !!b.payDueDate && b.payDueDate < DEMO_TODAY);
+
+/** 超期天数（基于演示基准日） */
+export const overdueDays = (b: { payDueDate?: string }) =>
+  b.payDueDate ? Math.max(0, Math.round((Date.parse(DEMO_TODAY) - Date.parse(b.payDueDate)) / 86400000)) : 0;
 
 /** 申请占款合计（审批中 + 待付款）：付款排期参考 */
 export const inFlightAmount = () =>
