@@ -1,5 +1,6 @@
 // 特批申请 + 合同管理（蓝图 B3 批次）
 // 依据《特批与合同管理模块设计-v1.0》：合同+订单合二为一，合同生效即订单生效
+import { useSyncExternalStore } from "react";
 import { DEMO_TODAY } from "@/data/settings";
 import { persistable } from "@/data/persist";
 
@@ -56,6 +57,46 @@ export const SPECIALS: Special[] = persistable("specials", () => [
     flows: [L(1, "周敏（业务支撑部）"), L(2, "陈立（财务负责人）"), L(3, "赵启明（管理层）")],
   },
 ]);
+
+// ---------- 特批共享 store：发起 / 审批直接改 SPECIALS（原地修改保证快照引用稳定），跨页面（合同起草引用已通过特批）实时可见 ----------
+let spVersion = 0;
+const spListeners = new Set<() => void>();
+const spBump = () => { spVersion += 1; spListeners.forEach((fn) => fn()); };
+
+/** 组件订阅特批变更（返回版本号触发重渲染，数据用 SPECIALS 读） */
+export function useSpecials(): number {
+  return useSyncExternalStore(
+    (fn) => { spListeners.add(fn); return () => { spListeners.delete(fn); }; },
+    () => spVersion
+  );
+}
+
+/** 发起特批申请（三级审批流，默认模板，从一级开始） */
+export function addSpecial(patch: Omit<Special, "id" | "applicant" | "createdAt" | "status" | "current" | "flows">): string {
+  const id = `SA-2026-0${String(SPECIALS.length + 11).padStart(2, "0")}`;
+  SPECIALS.unshift({
+    ...patch, id,
+    applicant: "张弛（销售）", createdAt: DEMO_TODAY, status: "审批中", current: 1,
+    flows: [
+      { level: 1, role: SPECIAL_LEVELS[0], name: "周敏（业务支撑部）" },
+      { level: 2, role: SPECIAL_LEVELS[1], name: "陈立（财务负责人）" },
+      { level: 3, role: SPECIAL_LEVELS[2], name: "赵启明（管理层）" },
+    ],
+  });
+  spBump();
+  return id;
+}
+
+/** 审批决定：通过自动流转下一级，三级全过 → 已通过（合同可引用）；驳回 → 已驳回 */
+export function decideSpecial(id: string, level: number, result: "通过" | "驳回", comment: string) {
+  const s = SPECIALS.find((x) => x.id === id);
+  if (!s || s.status !== "审批中" || s.current !== level) return;
+  s.flows = s.flows.map((f) => (f.level === level ? { ...f, result, comment, time: DEMO_TODAY } : f));
+  if (result === "驳回") { s.status = "已驳回"; }
+  else if (level >= 3) { s.status = "已通过"; s.current = 4; }
+  else { s.current = level + 1; }
+  spBump();
+}
 
 // ---------- 合同（含订单行，合二为一） ----------
 export type SealChannel = "online" | "offline";

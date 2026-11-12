@@ -3,7 +3,7 @@
 // 特批必须挂在「商机」上（客户 → 商机 → 特批 → 合同），发起时先选客户再选该客户的商机
 import { useState } from "react";
 import { useNavigate } from "react-router";
-import { SPECIALS, SPECIAL_LEVELS, type Special } from "@/data/contracts";
+import { SPECIALS, useSpecials, addSpecial, decideSpecial, SPECIAL_LEVELS, type Special } from "@/data/contracts";
 import { CUSTOMERS, useOpps, getOpps, GET_OPP, type Opportunity } from "@/data/customers";
 import { inDataScope, scopeBanner } from "@/data/users";
 import { ownerOfDeal } from "@/data/ownership";
@@ -77,9 +77,10 @@ function SpecialDetail({ sp, onClose, onDecide }: { sp: Special; onClose: () => 
 
 export default function Special() {
   useOpps();
+  useSpecials(); // 订阅共享特批台账：审批结果实时反映，且合同起草页可引用同一份数据
   const navigate = useNavigate();
   const [tab, setTab] = useState<"mine" | "todo">("mine");
-  const [list, setList] = useState<Special[]>(SPECIALS);
+  const list = SPECIALS; // 直接读共享台账（发起 / 审批原地修改，刷新不丢）
   const [sel, setSel] = useState<Special | null>(null);
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState({ customer: "", dealId: "", discount: "", terms: "", reason: "" });
@@ -99,29 +100,14 @@ export default function Special() {
   const pickCustomer = (name: string) => setForm({ ...form, customer: name, dealId: "" });
 
   const decide = (id: string, level: number, result: "通过" | "驳回", comment: string) => {
-    setList((ls) => ls.map((s) => {
-      if (s.id !== id) return s;
-      const flows = s.flows.map((f) => (f.level === level ? { ...f, result, comment, time: "2026-10-26 10:30" } : f));
-      if (result === "驳回") return { ...s, status: "已驳回" as const, flows };
-      if (level >= 3) return { ...s, status: "已通过" as const, current: 4, flows };
-      return { ...s, current: level + 1, flows };
-    }));
+    decideSpecial(id, level, result, comment); // 写共享台账：合同起草页立即能搜到「已通过」的特批单
     setSel(null);
   };
 
   const submitNew = () => {
     if (!form.customer || !form.dealId) return alert("请选择客户及其商机（特批必须针对具体机会发起）");
     if (!form.discount || !form.terms) return alert("请填写折扣率、特殊条款");
-    const id = `SA-2026-0${30 + list.length}`;
-    setList((ls) => [{
-      id, customer: form.customer, dealId: form.dealId, discount: Number(form.discount), terms: form.terms, reason: form.reason,
-      applicant: "张弛（销售）", createdAt: "2026-10-26", status: "审批中", current: 1,
-      flows: [
-        { level: 1, role: SPECIAL_LEVELS[0], name: "周敏（业务支撑部）" },
-        { level: 2, role: SPECIAL_LEVELS[1], name: "陈立（财务负责人）" },
-        { level: 3, role: SPECIAL_LEVELS[2], name: "赵启明（管理层）" },
-      ],
-    }, ...ls]);
+    addSpecial({ customer: form.customer, dealId: form.dealId, discount: Number(form.discount), terms: form.terms, reason: form.reason });
     setCreating(false);
     setForm({ customer: "", dealId: "", discount: "", terms: "", reason: "" });
   };
