@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { Download } from "lucide-react";
 import { useOpps, getOpps, addOpp, updateOpp, CUSTOMERS, OPP_STAGES, OPP_SOURCES, type Opportunity, type OppProduct, type OppStage } from "@/data/customers";
+import { useFollowups, pendingFollowups, confirmWithOpp, closeWithoutOpp, type ExpireFollowup } from "@/data/followups";
 import { CONTRACTS } from "@/data/contracts";
 import { inDataScope, scopeBanner, currentUser } from "@/data/users";
 import { useCatalog, CATS, PTYPES } from "@/data/products";
@@ -26,19 +27,25 @@ const STAGE_CLS: Record<OppStage, string> = {
 const CUSTOMER_NAME = (id: string) => CUSTOMERS.find((c) => c.id === id)?.name ?? id;
 const fmt = (n: number) => n.toLocaleString("zh-CN");
 
-/** 商机新建 / 编辑表单：意向产品来自产品定义（类别 → 类型两级选择，可关联多个，不可自由输入） */
-function OppForm({ initial, presetCustomer, onClose }: { initial?: Opportunity | null; presetCustomer?: string | null; onClose: () => void }) {
+/** 商机新建 / 编辑表单：意向产品来自产品定义（类别 → 类型两级选择，可关联多个，不可自由输入）
+ *  preset：外部带入预填（到期拆机确认等场景：客户 + 来源 + 建议名称）；onSaved：新建成功后回执商机编号 */
+function OppForm({ initial, presetCustomer, preset, onSaved, onClose }: {
+  initial?: Opportunity | null; presetCustomer?: string | null;
+  preset?: { customerId?: string; source?: string; name?: string };
+  onSaved?: (id: string) => void;
+  onClose: () => void;
+}) {
   useCatalog();
-  const [customerName, setCustomerName] = useState(initial ? CUSTOMER_NAME(initial.customerId) : presetCustomer ? CUSTOMER_NAME(presetCustomer) : "");
+  const [customerName, setCustomerName] = useState(initial ? CUSTOMER_NAME(initial.customerId) : preset?.customerId ? CUSTOMER_NAME(preset.customerId) : presetCustomer ? CUSTOMER_NAME(presetCustomer) : "");
   const [products, setProducts] = useState<OppProduct[]>(initial?.products?.length ? initial.products.map((p) => ({ ...p })) : [{ cat: CATS()[0] ?? "", ptype: "" }]);
   const [form, setForm] = useState({
-    name: initial?.name ?? "",
+    name: initial?.name ?? preset?.name ?? "",
     expectAmount: initial ? String(initial.expectAmount) : "",
     expectMonths: initial?.expectMonths ? String(initial.expectMonths) : "",
     expectedCloseAt: initial?.expectedCloseAt ?? "",
     stage: initial?.stage ?? "跟进中" as OppStage,
-    source: initial?.source ?? OPP_SOURCES[0],
-    sales: initial?.sales ?? CUSTOMERS.find((c) => c.name === (presetCustomer ? CUSTOMER_NAME(presetCustomer) : ""))?.sales ?? currentUser()?.name ?? "张弛",
+    source: initial?.source ?? preset?.source ?? OPP_SOURCES[0],
+    sales: initial?.sales ?? CUSTOMERS.find((c) => c.id === preset?.customerId)?.sales ?? CUSTOMERS.find((c) => c.name === (presetCustomer ? CUSTOMER_NAME(presetCustomer) : ""))?.sales ?? currentUser()?.name ?? "张弛",
     remark: initial?.remark ?? "",
   });
   const customer = CUSTOMERS.find((c) => c.name === customerName);
@@ -64,7 +71,7 @@ function OppForm({ initial, presetCustomer, onClose }: { initial?: Opportunity |
       stage: form.stage, source: form.source, sales: form.sales, remark: form.remark || undefined,
     };
     if (initial) updateOpp(initial.id, patch);
-    else addOpp(patch);
+    else onSaved?.(addOpp(patch));
     onClose();
   };
 
@@ -159,6 +166,7 @@ function OppForm({ initial, presetCustomer, onClose }: { initial?: Opportunity |
 
 export default function Opportunities() {
   useOpps();
+  useFollowups();
   const [sp] = useSearchParams();
   const navigate = useNavigate();
   const customerFilter = sp.get("customer"); // 从客户档案带入
@@ -166,6 +174,12 @@ export default function Opportunities() {
   const [kw, setKw] = useState("");
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<Opportunity | null>(null);
+  // 到期拆机商机确认：拆机完工自动生成的待办，销售在此一条动作完成「录商机 / 登记无后续」
+  const [followOpp, setFollowOpp] = useState<ExpireFollowup | null>(null); // 录商机：打开表单预填
+  const [noFollow, setNoFollow] = useState<ExpireFollowup | null>(null);   // 无后续：原因登记
+  const [noReason, setNoReason] = useState("");
+  const [noNote, setNoNote] = useState("");
+  const pendFu = pendingFollowups();
 
   const all = getOpps().filter((d) => !customerFilter || d.customerId === customerFilter);
   const scoped = all.filter((d) => inDataScope(d.sales));
@@ -204,6 +218,29 @@ export default function Opportunities() {
 
         {banner && (
           <div className="rounded-[4px] border border-[#FFECE8] bg-[#FFF7F5] px-4 py-2 text-[11px] text-[#F53F3F]">🔒 {banner}</div>
+        )}
+
+        {/* 到期拆机商机确认：合同到期拆机完工 → 自动生成的销售待办（lifecycle.executeRecover 触发） */}
+        {!!pendFu.length && (
+          <section className="rounded-[4px] border border-[#FF7D00]/40 bg-[#FFFDF5]">
+            <div className="flex items-center gap-2 border-b border-[#FFE8C8] px-4 py-2.5">
+              <span className="text-sm font-semibold text-[#1D2129]">到期拆机 · 商机确认</span>
+              <span className="rounded-[2px] bg-[#FFF3E8] px-1.5 py-0.5 text-[10px] text-[#FF7D00]">{pendFu.length} 家待确认</span>
+              <span className="text-[11px] text-[#86909C]">客户合同到期拆机后，请确认是否有后续合作商机：录商机（自动关联本任务）或登记无后续原因（留痕）</span>
+            </div>
+            {pendFu.map((fu) => (
+              <div key={fu.fuNo} className="flex flex-wrap items-center gap-3 border-b border-[#FFF3E8] px-4 py-2.5 text-xs last:border-0">
+                <span className="font-medium text-[#1D2129]">{fu.customer}</span>
+                <span className="text-[#86909C]">{fu.contractNo}（原 {fu.originLine}）</span>
+                <span className="text-[#86909C]">拆机 {fu.rcNo} 已完工 · {fu.createdAt.slice(5, 10)}</span>
+                <span className="rounded-[2px] bg-[#F2F3F5] px-1.5 py-0.5 text-[10px] text-[#4E5969]">归属销售 {fu.sales}</span>
+                <span className="ml-auto flex gap-2">
+                  <Button size="sm" onClick={() => setFollowOpp(fu)}>有后续 · 录商机</Button>
+                  <Button size="sm" variant="outline" onClick={() => { setNoFollow(fu); setNoReason(""); setNoNote(""); }}>无后续 · 登记原因</Button>
+                </span>
+              </div>
+            ))}
+          </section>
         )}
 
         <div className="overflow-x-auto rounded-[4px] border border-[#E5E6EB] bg-white">
@@ -254,6 +291,38 @@ export default function Opportunities() {
 
       {creating && <OppForm presetCustomer={customerFilter} onClose={() => setCreating(false)} />}
       {editing && <OppForm initial={editing} onClose={() => setEditing(null)} />}
+      {followOpp && (
+        <OppForm
+          preset={{ customerId: followOpp.customerId, source: "到期拆机延续", name: `${followOpp.customer} · 到期后续合作` }}
+          onSaved={(oppId) => confirmWithOpp(followOpp.fuNo, oppId)}
+          onClose={() => setFollowOpp(null)}
+        />
+      )}
+      {noFollow && (
+        <CenterModal title={`无后续登记 · ${noFollow.customer}`} sub={`${noFollow.contractNo}（原 ${noFollow.originLine}）到期拆机后无后续合作，原因留痕关闭确认任务`} width={460} onClose={() => setNoFollow(null)}>
+          <div className="space-y-3">
+            <div>
+              <div className="mb-0.5 text-xs text-[#4E5969]">原因分类 <span className="text-[#F53F3F]">*</span></div>
+              <select className="w-full rounded-[2px] border border-[#E5E6EB] bg-white px-2 py-1.5 text-sm" value={noReason} onChange={(e) => setNoReason(e.target.value)}>
+                <option value="">选择客户流失原因</option>
+                {["客户搬迁/退出本地", "转向竞争对手", "预算收缩/业务收缩", "改用其他方案（自建/云）", "其他"].map((r) => <option key={r}>{r}</option>)}
+              </select>
+            </div>
+            <div>
+              <div className="mb-0.5 text-xs text-[#4E5969]">补充说明（可空）</div>
+              <Input placeholder="如：客户总部统一迁到深圳机房" value={noNote} onChange={(e) => setNoNote(e.target.value)} />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={() => setNoFollow(null)}>取消</Button>
+              <Button size="sm" variant="destructive" disabled={!noReason} onClick={() => {
+                const err = closeWithoutOpp(noFollow.fuNo, noReason, noNote);
+                if (err) return alert(err);
+                setNoFollow(null);
+              }}>确认无后续（留痕）</Button>
+            </div>
+          </div>
+        </CenterModal>
+      )}
     </ArcoShell>
   );
 }

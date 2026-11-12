@@ -20,7 +20,7 @@ export interface Customer {
 // 形成 客户 → 商机 → 特批 → 合同 的完整链路；合同生效后商机自动「赢单」关闭并转生成订单。
 export type OppStage = "跟进中" | "已报价" | "赢单" | "输单";
 export const OPP_STAGES: OppStage[] = ["跟进中", "已报价", "赢单", "输单"];
-export const OPP_SOURCES = ["老客户续扩", "转介绍", "市场活动", "招标", "陌拜", "其他"];
+export const OPP_SOURCES = ["老客户续扩", "到期拆机延续", "转介绍", "市场活动", "招标", "陌拜", "其他"];
 
 export interface OppProduct {
   cat: string;           // 意向产品类别（来自产品定义）

@@ -18,6 +18,7 @@ import { getNotices, unreadCount, useNotices } from "@/data/notices";
 import { bills } from "@/data/bills";
 import { BILL_EMAILS } from "@/data/billEmails";
 import { overdueBills } from "@/data/payRequests";
+import { pendingFollowups } from "@/data/followups";
 
 const ROLES = ["业务支撑部", "技术部", "财务", "管理层", "销售部", "系统管理员"] as const;
 type Role = (typeof ROLES)[number];
@@ -95,6 +96,8 @@ function buildTodos(role: Role): Todo[] {
       const t: Todo[] = [];
       const un = unreadCount();
       if (un) t.push({ title: `${un} 条未读通知`, sub: "商机动态、审批结果实时推送", link: "/notifications", cta: "去查看", hot: true });
+      pendingFollowups().forEach((fu) =>
+        t.push({ title: `到期拆机客户待确认商机：${fu.customer}`, sub: `${fu.contractNo}（原 ${fu.originLine}）已到期拆机 · 回收 ${fu.rcNo} 已完工，请确认是否有后续合作`, link: "/opportunity", cta: "去确认", hot: true }));
       getOpps().filter((o) => o.stage === "跟进中" || o.stage === "已报价").slice(0, 5).forEach((o) =>
         t.push({ title: `商机 ${o.id} · ${o.name}`, sub: `阶段：${o.stage} · 预计 ${fmtWan(o.expectAmount)} 元 / ${o.expectMonths} 个月 · 负责销售 ${o.sales}`, link: "/opportunity", cta: "去跟进" }));
       return t;

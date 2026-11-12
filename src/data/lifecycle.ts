@@ -9,6 +9,8 @@ import { stockIn } from "@/data/resources";
 import { persistable } from "@/data/persist";
 import { cfgNum, cfgRate, demoNow } from "@/data/settings";
 import { bomMonthlyCost, ptypeOfLine, poolMarginal, ipOfLine } from "@/data/bomEstimate";
+import { CUSTOMERS } from "@/data/customers";
+import { spawnFollowup } from "@/data/followups";
 
 // ---------- P05 变更单 ----------
 export type ChangeType = "套餐变更" | "带宽升级" | "带宽降级" | "增加 IP" | "减少 IP" | "地址迁移";
@@ -257,6 +259,17 @@ export function executeRecover(rcNo: string, note: string): string | null {
   const cpe = r.items.find((i) => i.action === "库存回库");
   if (cpe) stockIn("EQ-AR6121", 1, 0, r.tmNo, "回收入库");
   r.status = "已完工"; r.executedAt = now(); r.note = note || undefined;
+  // 拆机完工联动：合同到期口径 → 给归属销售生成「到期拆机商机确认」任务（欠费坏账/客户申请退订不触发）
+  const tm = TERMINATE_ORDERS.find((t) => t.tmNo === r.tmNo);
+  if (tm?.reason === "合同到期") {
+    const sub = SUBSCRIPTIONS.find((s) => s.subNo === r.subNo);
+    const cust = CUSTOMERS.find((c) => c.name === r.customer);
+    spawnFollowup({
+      rcNo: r.rcNo, tmNo: r.tmNo, subNo: r.subNo,
+      customerId: cust?.id ?? "", customer: r.customer, contractNo: tm.contractNo,
+      originLine: sub?.line ?? "原订阅", sales: cust?.sales ?? "未分配",
+    });
+  }
   bump();
   return null;
 }

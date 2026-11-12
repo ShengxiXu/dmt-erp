@@ -6,6 +6,7 @@ import { useLifecycle, getChanges, getTerminates, getRecovers, submitChange, app
 import { getSubscriptions, getBills, useBilling, type Subscription } from "@/data/billing";
 import { getInvoices, useReceivables } from "@/data/receivables";
 import { CONTRACTS } from "@/data/contracts";
+import { FOLLOW_OF_RC, useFollowups } from "@/data/followups";
 import ArcoShell from "@/components/ArcoShell";
 import CenterModal from "@/components/CenterModal";
 import { RegionCascader } from "@/components/RegionCascader";
@@ -24,6 +25,7 @@ export default function Lifecycle() {
   useLifecycle();
   useBilling();
   useReceivables();
+  useFollowups();
   const [tab, setTab] = useState<"订阅变更" | "退订与回收">("订阅变更");
   const [kw, setKw] = useState("");
   const [chStatus, setChStatus] = useState<"全部" | ChangeStatus>("全部");
@@ -213,7 +215,20 @@ export default function Lifecycle() {
                           </div>
                         ))}
                       </td>
-                      <td className="px-3 py-2.5"><span className={`rounded-[2px] px-1.5 py-0.5 text-[10px] ${RC_CLS[r.status]}`}>{r.status}</span></td>
+                      <td className="px-3 py-2.5">
+                        <span className={`rounded-[2px] px-1.5 py-0.5 text-[10px] ${RC_CLS[r.status]}`}>{r.status}</span>
+                        {(() => {
+                          const fu = FOLLOW_OF_RC(r.rcNo); // 合同到期拆机 → 商机确认任务状态
+                          if (!fu) return null;
+                          const cls = fu.status === "待确认" ? "bg-[#FFF3E8] text-[#FF7D00]" : fu.status === "已录商机" ? "bg-[#E8F8F2] text-[#00B42A]" : "bg-[#F2F3F5] text-[#86909C]";
+                          return (
+                            <Link to="/opportunity" title={`确认任务 ${fu.fuNo} · 归属销售 ${fu.sales}`}
+                              className={`ml-1 inline-block rounded-[2px] px-1.5 py-0.5 text-[10px] hover:underline ${cls}`}>
+                              商机确认{fu.status === "已录商机" ? ` · ${fu.oppId}` : fu.status === "无后续" ? " · 无后续" : " · 待确认"}
+                            </Link>
+                          );
+                        })()}
+                      </td>
                       <td className="px-3 py-2.5 text-[#86909C]">{r.executedAt ? `${r.executedAt}${r.note ? ` · ${r.note}` : ""}` : "—"}</td>
                       <td className="px-3 py-2.5 text-right">
                         {r.status === "待执行" && <button className="text-[#165DFF] hover:underline" onClick={() => { setRecoverNote(r.rcNo); setNote(""); }}>执行回收</button>}
