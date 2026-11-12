@@ -12,7 +12,7 @@ import { getCostItems, useCostItems, SETTLE_RULE, uncoveredClasses, type CostIte
 import { GET_TYPE, MAT_DEF, useCatalog } from "@/data/products";
 import { CONTRACTS, type Contract } from "@/data/contracts";
 import { snapshotEsts, usePoolSettle, type PoolEst } from "@/data/poolSettle";
-import { SHEETS } from "@/data/sheets";
+import { SHEETS, SHEET_OF_CONTRACT, ensureSheetForContract, fillSheet } from "@/data/sheets";
 import { submitForApproval } from "@/data/approvalFlow";
 import { currentUser } from "@/data/users";
 import ArchivePicker from "@/components/SearchSelect";
@@ -568,6 +568,11 @@ export default function Home() {
   const addAnchorRef = useRef<HTMLDivElement | null>(null); // 增补弹层锚点（触发按钮容器）
   const [submitted, setSubmitted] = useState<Record<string, boolean>>({ ops: false, tech: false });
   const [sent, setSent] = useState(false);
+  /** 合同带入：进入即为本合同建档核算单（单号即时可见，台账同步可查；金额提交时回填） */
+  useEffect(() => {
+    if (contract) ensureSheetForContract(contract.id, contract.customer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contract?.id]);
   usePoolSettle(); // 出口池月结数据变更时重渲染
   /** 提交审批那一刻：锁存出口池预估快照（当时的池状态 + 每单预估，事后池子变化不改这张核算单） */
   const lockPoolEsts = () => {
@@ -957,7 +962,7 @@ export default function Home() {
     <ArcoShell breadcrumb="核算单录入">
       {/* 单号 + 状态条 */}
       <div className="flex items-center gap-4 border-b border-[#E5E6EB] bg-white px-6 py-2.5">
-        <span className="font-mono text-[14px] text-[#1D2129]">CE-2026-1008</span>
+        <span className="font-mono text-[14px] text-[#1D2129]">{contract ? (SHEET_OF_CONTRACT(contract.id)?.id ?? "—") : "CE-2026-1008"}</span>
         <span className={`rounded-[2px] px-2 py-0.5 text-[12px] ${sent ? "bg-[#E8F3FF] text-[#165DFF]" : "bg-[#FFF3E8] text-[#FF7D00]"}`}>
           {sent ? "审批中（已锁定）" : "待填写"}
         </span>
@@ -1073,7 +1078,12 @@ export default function Home() {
                 )) return;
                 lockPoolEsts(); setSent(true);
                 // 接入统一审批引擎：提交即匹配审批点/链并生成实例；未命中则直接生效并说明原因
-                const sheet0 = SHEETS.find((s) => s.id === "CE-2026-1008");
+                // 合同带入：按当前合同建档/取核算单并回填真实测算；演示路径沿用默认单 CE-2026-1008
+                const sheet0 = contract
+                  ? (() => { const s = ensureSheetForContract(contract.id, contract.customer);
+                      fillSheet(s, { lines: lines.length, monthlyCost: Math.round(opexGrand), contractValue: totalPrice, margin: marginTotal != null ? Number(marginTotal) : 0 });
+                      return s; })()
+                  : SHEETS.find((s) => s.id === "CE-2026-1008");
                 if (sheet0) {
                   const r = submitForApproval("成本核算单 · 提交", sheet0.id, `${sheet0.customer} · ${sheet0.contract}`,
                     { monthlyCost: sheet0.monthlyCost, contractValue: sheet0.contractValue, margin: sheet0.margin, lines: sheet0.lines },

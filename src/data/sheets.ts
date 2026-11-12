@@ -1,5 +1,6 @@
 // 成本核算单台账 + 审批流配置（演示数据）
 import { persistable } from "@/data/persist";
+import { demoNow } from "@/data/settings";
 
 export type SheetStatus = "待填写" | "待对方提交" | "审批中" | "已通过" | "已驳回" | "变更中";
 
@@ -85,3 +86,34 @@ export const SHEET_ENTRIES: SheetEntry[] = persistable("sheetEntries", () => [
 ]);
 
 export const fmt = (n: number) => n.toLocaleString("zh-CN", { maximumFractionDigits: 1 });
+
+// ---------- 合同带入核算：按合同建档 / 回填 ----------
+/** 按合同号查找核算单（合同详情「进入成本核算」的上下文） */
+export const SHEET_OF_CONTRACT = (contractId: string) => SHEETS.find((s) => s.contract.includes(contractId));
+
+/**
+ * 合同首次进入核算时自动建档（原地修改，快照引用稳定）。
+ * 建档金额为占位值，提交审批时由 fillSheet 回填真实测算结果。
+ */
+export function ensureSheetForContract(contractId: string, customer: string): CostSheet {
+  const exist = SHEET_OF_CONTRACT(contractId);
+  if (exist) return exist;
+  const max = SHEETS.reduce((m, s) => Math.max(m, Number(s.id.replace("CE-2026-", "")) || 0), 1008);
+  const sheet: CostSheet = {
+    id: `CE-2026-${max + 1}`, customer,
+    contract: `${contractId} · 核算单`,
+    lines: 0, monthlyCost: 0, contractValue: 0, margin: 0,
+    opsDone: false, techDone: false, status: "待填写", updated: demoNow(),
+  };
+  SHEETS.unshift(sheet);
+  return sheet;
+}
+
+/** 提交审批前回填核算单的真实测算结果（金额 / 行数 / 时间） */
+export function fillSheet(s: CostSheet, p: { lines: number; monthlyCost: number; contractValue: number; margin: number }) {
+  s.lines = p.lines;
+  s.monthlyCost = p.monthlyCost;
+  s.contractValue = p.contractValue;
+  s.margin = p.margin;
+  s.updated = demoNow();
+}
