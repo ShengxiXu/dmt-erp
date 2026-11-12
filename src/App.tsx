@@ -29,6 +29,7 @@ import PurchaseContracts from './pages/PurchaseContracts'
 import PurchaseReqs from './pages/PurchaseReqs'
 import PurchaseOrders from './pages/PurchaseOrders'
 import PurchaseOrderDetail from './pages/PurchaseOrderDetail'
+import PayRequests from './pages/PayRequests'
 import ApprovalConfig from './pages/ApprovalConfig'
 import SettingsPage from './pages/Settings'
 import Payments from './pages/Payments'
@@ -73,6 +74,7 @@ export default function App() {
       <Route path="/cost-items" element={<CostItems />} />
       <Route path="/bills" element={<Bills />} />
       <Route path="/bills/detail" element={<BillDetail />} />
+      <Route path="/pay-requests" element={<PayRequests />} />
       <Route path="/purchase/contracts" element={<PurchaseContracts />} />
       <Route path="/purchase/reqs" element={<PurchaseReqs />} />
       <Route path="/purchase/orders" element={<PurchaseOrders />} />

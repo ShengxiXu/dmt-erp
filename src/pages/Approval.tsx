@@ -21,6 +21,7 @@ const DOC_COLOR: Record<string, string> = {
   "成本核算单 · 提交": "bg-[#E8F3FF] text-[#165DFF]",
   "采购单 · 提交": "bg-[#E8F8F2] text-[#00B42A]",
   "坏账申请单 · 提交": "bg-[#FFECE8] text-[#F53F3F]",
+  "付款申请单 · 提交": "bg-[#FEF0FF] text-[#722ED1]",
 };
 
 /** 审批链时间线 + 审批操作 + 流转记录（核算单专属详情与通用实例详情共用） */

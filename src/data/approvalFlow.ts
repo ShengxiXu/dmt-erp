@@ -32,6 +32,8 @@ export const FIELD_DEFS: Record<string, { key: string; label: string; kind: "num
     { key: "lines", label: "订单行数", kind: "number" },
   ],
   "采购单 · 提交": [{ key: "amount", label: "采购金额(元)", kind: "number" }],
+  "付款申请单 · 提交": [{ key: "amount", label: "申请金额(元)", kind: "number" }],
+  "坏账申请单 · 提交": [{ key: "amount", label: "申请金额(元)", kind: "number" }],
   "合同/订单建档 · 提交": [
     { key: "amount", label: "合同月租合计(元)", kind: "number" },
     { key: "discount", label: "折扣率(%)", kind: "number" },

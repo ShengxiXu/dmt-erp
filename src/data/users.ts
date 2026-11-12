@@ -103,7 +103,8 @@ const backfill = (roleName: string, paths: string[]) => {
 backfill("系统管理员", ALL_PATHS);
 backfill("业务支撑部", ALL_PATHS.filter((p) => p !== "/system/users"));
 backfill("管理层", ALL_PATHS.filter((p) => p !== "/system/users"));
-backfill("财务", ["/finance/claims"]);
+backfill("财务", ["/finance/claims", "/pay-requests"]);
+backfill("技术部", ["/pay-requests"]);
 
 // ---------- 数据权限（旧快照回填：销售部默认仅本人，其余默认全部） ----------
 ROLES.forEach((r) => {

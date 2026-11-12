@@ -4,7 +4,7 @@ import {
   LayoutGrid, FileText, Calculator, CheckSquare, Wrench, FolderOpen, ReceiptText,
   Users, Lightbulb, Package, ListChecks, Boxes, Coins, Layers, Warehouse,
   FileSignature, ShoppingCart, ClipboardList, RefreshCcw, CalendarCheck,
-  Settings2, Building2, TrendingUp, Wallet, ShieldCheck, Banknote,
+  Settings2, Building2, TrendingUp, Wallet, ShieldCheck, Banknote, CreditCard,
 } from "lucide-react";
 
 export interface NavChild { to: string; label: string }
@@ -54,6 +54,7 @@ export const NAV_GROUPS: { group: string; items: NavItem[] }[] = [
       { to: "/purchase/orders", label: "采购单", icon: ShoppingCart },
       { to: "/purchase/contracts", label: "采购合同", icon: FileText },
       { to: "/bills", label: "供应商账单", icon: ReceiptText },
+      { to: "/pay-requests", label: "付款申请", icon: CreditCard },
     ],
   },
   {
