@@ -833,7 +833,7 @@ export default function Home() {
                 locked={submitted[dept]}
                 stale={itemByKey[base].status === "停用"}
                 onRemove={() => removeRow(l.id, rk)}
-                onAmount={(key, v) => { amountStore[key] = v; }}
+                onAmount={(key, v) => { amountStore[key] = v; bump((x) => x + 1); }}
                 internetRows={internetPickStore[l.id] ?? []}
                 onPickInternets={(rs) => { internetPickStore[l.id] = rs; bump((x) => x + 1); }}
                 ipFreeSearch={!rows.ops.some((k) => k.split("|")[0] === "op1b")}
