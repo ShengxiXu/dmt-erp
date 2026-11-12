@@ -46,6 +46,12 @@ export const bills: SupplierBill[] = persistable("supplierBills", () => [
   { id: "HY-2026-1017", supplier: "漕河泾机房物业", period: "2026-10", costItemKey: "t2", amount: 6400, resRef: "I-101", status: "已入账", payDueDate: "2026-11-20", note: "漕河泾机房 10G 上联端口月租", createdAt: "2026-10-10" },
   { id: "HY-2026-1018", supplier: "漕河泾机房物业", period: "2026-10", costItemKey: "op5", amount: 12800, status: "待入账", note: "整柜电力月租，待核对", createdAt: "2026-10-27" },
 ]);
+// 旧快照回填：「超期未付提醒」功能（2026-11-12）之前的快照账单没有付款到期日，按种子补锚点，保证老用户也能看到完整演示
+const PAY_DUE_BACKFILL: Record<string, string> = {
+  "HY-2026-1013": "2026-11-15", "HY-2026-1014": "2026-11-10", "HY-2026-1015": "2026-10-28",
+  "HY-2026-1016": "2026-11-01", "HY-2026-1017": "2026-11-20",
+};
+bills.forEach((b) => { const d = PAY_DUE_BACKFILL[b.id]; if (d && !b.payDueDate) b.payDueDate = d; });
 
 // ---------- 轻量 store ----------
 let version = 0;
