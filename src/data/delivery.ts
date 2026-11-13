@@ -1,5 +1,8 @@
 // P02 服务开通与资源分配 —— 工单台账
 import { persistable } from "@/data/persist";
+import { demoNow, DEMO_TODAY } from "@/data/settings";
+import { notify } from "@/data/notices";
+import { SHEETS, entriesOfSheet, LINE_META_OF, type CostSheet } from "@/data/sheets";
 
 export type WoStep = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 export const STEP_NAMES = ["资源可用性检查", "资源分配申请", "资源分配审批", "资源绑定与扣减", "开通实施", "开通确认", "激活计费"];
@@ -143,3 +146,31 @@ export const IP_OCCUPIED: Record<string, OccupiedRange[]> = {
   "IP-58.42.0": [{ start: "58.42.0.10", end: "58.42.0.109", customer: "中海贸易（100 个）" }],
   "IP-58.44.0": [{ start: "58.44.0.10", end: "58.44.0.159", customer: "正大物流（150 个）" }],
 };
+
+// ---------- 审批通过 → 开通工单自动生成（P02；由审批引擎 finishSheet 调用，幂等） ----------
+const parseBwM = (name: string) => Number(name.match(/(\d+(?:\.\d+)?)\s*M/)?.[1] ?? 0);
+const woDeadline = () => { const d = new Date(DEMO_TODAY); d.setDate(d.getDate() + 7); return d.toISOString().slice(0, 10); };
+/** 按订单行为核算单生成开通工单；优先用提交时的订单行快照，无快照的老单从条目快照的行名解析（已有工单不重复生成） */
+export function spawnWorkOrdersForSheet(sheet: CostSheet) {
+  if (WORK_ORDERS.some((w) => w.sheetId === sheet.id)) return;
+  const metas = LINE_META_OF(sheet.id);
+  const lines: { line: string; bwM: number; cat: string }[] = metas?.length
+    ? metas.map((m) => ({ line: `${m.id} · ${m.name}`, bwM: parseBwM(m.name), cat: m.ptype || m.cat }))
+    : [...new Set((entriesOfSheet(sheet.id) ?? []).map((e) => e.line))]
+        .filter((l) => l.includes(" · "))
+        .map((l) => ({ line: l, bwM: parseBwM(l), cat: l.match(/（([^（）]*)）\s*$/)?.[1] ?? "—" }));
+  if (!lines.length) return;
+  const max = WORK_ORDERS.reduce((m, w) => Math.max(m, Number(w.id.replace("WO-2026-", "")) || 0), 52);
+  const ids = lines.map((l, i) => {
+    const id = `WO-2026-${String(max + 1 + i).padStart(3, "0")}`;
+    WORK_ORDERS.unshift({
+      id, sheetId: sheet.id, customer: sheet.customer, contract: sheet.contract,
+      line: l.line, bwM: l.bwM, cat: l.cat, step: 0, assignee: "待分配", deadline: woDeadline(), updated: demoNow(),
+    });
+    return id;
+  });
+  notify({ level: "green", group: "交付", title: `开通工单已生成：${sheet.id}`, text: `${sheet.customer} · ${sheet.contract} → ${ids.join("、")}（${lines.length} 行，待分配运维负责人）`, to: "/delivery" });
+}
+
+// 存量补齐：已通过但无工单的核算单（「审批通过 → 自动生成」上线前的历史数据，幂等）
+SHEETS.filter((s) => s.status === "已通过" && !WORK_ORDERS.some((w) => w.sheetId === s.id)).forEach((s) => spawnWorkOrdersForSheet(s));

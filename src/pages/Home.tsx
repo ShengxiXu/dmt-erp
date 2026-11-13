@@ -12,7 +12,7 @@ import { getCostItems, useCostItems, SETTLE_RULE, uncoveredClasses, type CostIte
 import { GET_TYPE, MAT_DEF, useCatalog } from "@/data/products";
 import { CONTRACTS, type Contract } from "@/data/contracts";
 import { snapshotEsts, usePoolSettle, type PoolEst } from "@/data/poolSettle";
-import { SHEETS, SHEET_OF_CONTRACT, ensureSheetForContract, fillSheet, recordSheetEntries } from "@/data/sheets";
+import { SHEETS, SHEET_OF_CONTRACT, ensureSheetForContract, fillSheet, recordSheetEntries, recordSheetLines } from "@/data/sheets";
 import { submitForApproval } from "@/data/approvalFlow";
 import { currentUser } from "@/data/users";
 import ArchivePicker from "@/components/SearchSelect";
@@ -1113,6 +1113,8 @@ export default function Home() {
                       };
                     });
                   recordSheetEntries(sheet0.id, recs);
+                  // 订单行快照：审批通过生成开通工单（P02）时按行取数
+                  recordSheetLines(sheet0.id, lines.map((l) => ({ id: l.id, name: l.name, cat: l.cat, ptype: l.ptype, price: l.price })));
                   const r = submitForApproval("成本核算单 · 提交", sheet0.id, `${sheet0.customer} · ${sheet0.contract}`,
                     { monthlyCost: sheet0.monthlyCost, contractValue: sheet0.contractValue, margin: sheet0.margin, lines: sheet0.lines },
                     currentUser()?.name ?? "演示用户",

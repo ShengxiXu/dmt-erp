@@ -7,6 +7,7 @@ import { persistable, hasSnapshot } from "@/data/persist";
 import { notify } from "@/data/notices";
 import { demoNow } from "@/data/settings";
 import { SHEETS } from "@/data/sheets";
+import { spawnWorkOrdersForSheet } from "@/data/delivery";
 import { USERS } from "@/data/users";
 import { resolveDeptLeader } from "@/data/departments";
 
@@ -380,6 +381,8 @@ function finishSheet(inst: ApprovalInstance, status: "已通过" | "已驳回", 
     s.status = status;
     s.curNode = undefined;
     s.updated = demoNow();
+    // 核算单审批通过 → 自动进入交付：按订单行生成开通工单（P02，幂等；实现在 delivery 模块）
+    if (status === "已通过" && inst.docType.includes("核算单")) spawnWorkOrdersForSheet(s);
   }
   writeBacks[inst.docType]?.(inst.docId, status, comment);
 }

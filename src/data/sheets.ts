@@ -135,3 +135,9 @@ const ENTRY_RECS: Record<string, SheetEntryRec[]> = persistable("sheetEntryRecs"
 export const recordSheetEntries = (sheetId: string, recs: SheetEntryRec[]) => { ENTRY_RECS[sheetId] = recs; };
 /** 读取该核算单的条目快照；无快照返回 null（调用方自行兜底展示） */
 export const entriesOfSheet = (sheetId: string): SheetEntryRec[] | null => ENTRY_RECS[sheetId] ?? null;
+
+// ---------- 按单留存的订单行快照（提交审批时写入；审批通过生成开通工单时取数） ----------
+export interface SheetLineRec { id: string; name: string; cat: string; ptype?: string; price: number }
+const LINE_RECS: Record<string, SheetLineRec[]> = persistable("sheetLineRecs", () => ({}));
+export const recordSheetLines = (sheetId: string, ls: SheetLineRec[]) => { LINE_RECS[sheetId] = ls; };
+export const LINE_META_OF = (sheetId: string): SheetLineRec[] | null => LINE_RECS[sheetId] ?? null;
