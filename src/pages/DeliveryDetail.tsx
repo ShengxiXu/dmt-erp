@@ -58,6 +58,8 @@ export default function DeliveryDetail() {
   const [devices, setDevices] = useState<DevRow[]>([{ id: "EQ-AR6121", mode: STOCK_MODE, n: 2 }]);
   /** 出口负载评估结论（工程师人工），按线路号记录 */
   const [verdicts, setVerdicts] = useState<Record<string, "" | "ok" | "full">>({});
+  /** 出口承载客户明细的展开状态（默认折叠，避免平铺太乱） */
+  const [custOpen, setCustOpen] = useState<Record<string, boolean>>({});
   const [poReq, setPoReq] = useState<{ id: string; name: string; qty: number; price: number; supplier: string } | null>(null);
   const [altCpe, setAltCpe] = useState("");
   const [cat, setCat] = useState(wo.cat);
@@ -519,18 +521,31 @@ export default function DeliveryDetail() {
                             <div className="mt-2 grid items-start gap-3 md:grid-cols-[1fr_auto]">
                               <div>
                                 <div className="mb-1 flex justify-between text-[11px] text-[#86909C]">
-                                  <span>当前覆盖客户业务 {p.dynamic.orders.length} 家 · 近 30 日峰值 {fmt(p.dynamic.peakM ?? 0)}M / 容量 {fmt(p.capacityM)}M（{ut}%）</span>
+                                  <span>近 30 日峰值 {fmt(p.dynamic.peakM ?? 0)}M / 容量 {fmt(p.capacityM)}M（峰值利用率 {ut}%）</span>
                                 </div>
                                 <div className="h-2 overflow-hidden rounded-[2px] bg-[#F2F3F5]">
                                   <div className="h-full bg-[#165DFF] transition-all" style={{ width: `${Math.min(ut, 100)}%` }} />
                                 </div>
-                                <div className="mt-1.5 flex flex-wrap gap-1">
-                                  {p.dynamic.orders.length > 0 ? p.dynamic.orders.map((o, oi) => (
-                                    <span key={oi} className="rounded-[2px] bg-[#F7F8FA] px-1.5 py-0.5 text-[11px] text-[#4E5969]">
-                                      {o.customer} · <span className="font-mono">{fmt(o.bw)}M</span> · {o.since}
-                                    </span>
-                                  )) : <span className="text-[11px] text-[#C9CDD4]">尚未承载客户业务</span>}
+                                <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px]">
+                                  {p.dynamic.orders.length > 0 ? (
+                                    <>
+                                      <span className="text-[#4E5969]">当前覆盖 <span className="font-mono font-medium text-[#1D2129]">{p.dynamic.orders.length}</span> 家客户业务 · 合计带宽 <span className="font-mono font-medium text-[#1D2129]">{fmt(p.dynamic.orders.reduce((s, o) => s + o.bw, 0))}M</span></span>
+                                      <button type="button" className="text-[#165DFF] hover:underline"
+                                        onClick={() => setCustOpen((m) => ({ ...m, [e.line]: !m[e.line] }))}>
+                                        {custOpen[e.line] ? "▲ 收起明细" : "▼ 承载明细"}
+                                      </button>
+                                    </>
+                                  ) : <span className="text-[#C9CDD4]">尚未承载客户业务</span>}
                                 </div>
+                                {custOpen[e.line] && p.dynamic.orders.length > 0 && (
+                                  <div className="mt-1.5 flex flex-wrap gap-1">
+                                    {p.dynamic.orders.map((o, oi) => (
+                                      <span key={oi} className="rounded-[2px] bg-[#F7F8FA] px-1.5 py-0.5 text-[11px] text-[#4E5969]">
+                                        {o.customer} · <span className="font-mono">{fmt(o.bw)}M</span> · {o.since}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
                               </div>
                               <div className="flex items-center gap-1.5">
                                 <span className="whitespace-nowrap text-xs text-[#4E5969]">本单占用带宽</span>
