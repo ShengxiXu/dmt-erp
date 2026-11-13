@@ -29,10 +29,11 @@ function calcAmount(item: CatalogItem, qty: number, meta: number, picked?: Sourc
   switch (item.demo) {
     case "bwbase": {
       if (!pickedList?.length) return { text: "选择基础线路后自动计算（可多选，数量不限）", v: 0 };
+      // 单客户专用：整条线租给本单一家，月租是固定值，用多少带宽都是全额计本单 —— 不按带宽乘
       const parts = pickedList.map((r) =>
         sharedIds?.includes(r.id)
           ? { t: `${r.id} 共用（成本计于他行）`, v: 0 }
-          : { t: `${r.id} ${qty} 条 × 整线月租 ${fmt(Number(r.meta || 0))}`, v: qty * Number(r.meta || 0) });
+          : { t: `${r.id} 整线月租 ${fmt(Number(r.meta || 0))} 元/月（单客户专用，全额计本单）`, v: Number(r.meta || 0) });
       return { text: parts.map((pp) => pp.t).join(" + "), v: parts.reduce((a2, pp) => a2 + pp.v, 0) };
     }
     case "bwinternet": {
@@ -89,7 +90,6 @@ const DEFAULT_QTY: Record<string, number > = {
 
 function qtyField(item: CatalogItem): { label: string; unit: string } | null {
   const m: Record<string, { label: string; unit: string }> = {
-    bwbase: { label: "订单带宽", unit: "M" },
     bwinternet: { label: "订单带宽", unit: "M" },
     resale: { label: "采购数量", unit: "M / 对" },
     device: { label: "设备数量", unit: "台" },
@@ -309,7 +309,7 @@ function EntryRow({
                           : "border-[#E5E6EB] bg-[#F7F8FA] text-[#4E5969]"
                       }`}>
                       {r.id}
-                      {sharedIds.includes(r.id) ? " · 共用（成本计于他行）" : ` · ${fmt(Number(r.meta || 0))} 元/M`}
+                      {sharedIds.includes(r.id) ? " · 共用（成本计于他行）" : ` · 整线月租 ${fmt(Number(r.meta || 0))} 元/月`}
                       <button type="button" className="text-[#165DFF] hover:underline"
                         onClick={() => setSharedIds((ls) => (ls.includes(r.id) ? ls.filter((x) => x !== r.id) : [...ls, r.id]))}>
                         {sharedIds.includes(r.id) ? "取消共用" : "标记共用"}
