@@ -44,7 +44,16 @@ export interface PoolOrder {
   customer: string;
   bw: number;          // 该客户订单占用带宽（M）
   since: string;       // 开通时间
+  until?: string;      // 合同到期月（YYYY-MM）
 }
+/** 已承载订单到期月取数（按客户名去括号备注匹配；数据缺 until 字段时兜底） */
+export const CAT_ORDER_UNTIL: Record<string, string> = {
+  云启数据科技: "2027-03", 恒信证券: "2027-01", 跃游网络: "2026-12", 博彦软件: "2027-06",
+  中海贸易: "2027-09", 凯瑞传媒: "2027-02", 朗润教育: "2027-05", 正大物流: "2027-04",
+  美格电商: "2027-08", 跨境电商云集市: "2027-12", 游戏出海星海互娱: "2026-12",
+  智慧园区接入: "2028-06", 酒店集团客房宽带: "2027-11",
+};
+export const catUntilOf = (o: PoolOrder): string => o.until ?? CAT_ORDER_UNTIL[o.customer.split("（")[0]] ?? "—";
 export interface SourceRow {
   id: string;
   title: string;

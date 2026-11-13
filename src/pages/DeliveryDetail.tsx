@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { WORK_ORDERS, STEP_NAMES, TECH_PARAMS, CATS, IP_OCCUPIED, CAT_DESC } from "@/data/delivery";
-import { R1_ROWS, R2_ROWS, R3_ROWS, R4_ROWS } from "@/data/resources";
+import { R1_ROWS, R2_ROWS, R3_ROWS, R4_ROWS, untilOf } from "@/data/resources";
+import { DEMO_TODAY } from "@/data/settings";
 import { usePurchaseFlow, woResumedByPurchase, addReq, getReqs } from "@/data/purchaseFlow";
 import ArcoShell from "@/components/ArcoShell";
 import { Button } from "@/components/ui/button";
@@ -9,6 +10,8 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 
 const fmt = (n: number) => n.toLocaleString("zh-CN", { maximumFractionDigits: 1 });
+/** 到期临期阈值：今天 + 90 天内的算临期（橙色提醒） */
+const EXPIRE_SOON = (() => { const d = new Date(DEMO_TODAY); d.setDate(d.getDate() + 90); return d; })();
 /** 账期按开通日滚动（月结口径）：首账期 = 开通日 ~ 次月对应日前一日；月中开通按整月收 */
 const periodEnd = (ymd: string) => {
   const [y, m, d] = ymd.split("-").map(Number);
@@ -526,26 +529,6 @@ export default function DeliveryDetail() {
                                 <div className="h-2 overflow-hidden rounded-[2px] bg-[#F2F3F5]">
                                   <div className="h-full bg-[#165DFF] transition-all" style={{ width: `${Math.min(ut, 100)}%` }} />
                                 </div>
-                                <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px]">
-                                  {p.dynamic.orders.length > 0 ? (
-                                    <>
-                                      <span className="text-[#4E5969]">当前覆盖 <span className="font-mono font-medium text-[#1D2129]">{p.dynamic.orders.length}</span> 家客户业务 · 合计带宽 <span className="font-mono font-medium text-[#1D2129]">{fmt(p.dynamic.orders.reduce((s, o) => s + o.bw, 0))}M</span></span>
-                                      <button type="button" className="text-[#165DFF] hover:underline"
-                                        onClick={() => setCustOpen((m) => ({ ...m, [e.line]: !m[e.line] }))}>
-                                        {custOpen[e.line] ? "▲ 收起明细" : "▼ 承载明细"}
-                                      </button>
-                                    </>
-                                  ) : <span className="text-[#C9CDD4]">尚未承载客户业务</span>}
-                                </div>
-                                {custOpen[e.line] && p.dynamic.orders.length > 0 && (
-                                  <div className="mt-1.5 flex flex-wrap gap-1">
-                                    {p.dynamic.orders.map((o, oi) => (
-                                      <span key={oi} className="rounded-[2px] bg-[#F7F8FA] px-1.5 py-0.5 text-[11px] text-[#4E5969]">
-                                        {o.customer} · <span className="font-mono">{fmt(o.bw)}M</span> · {o.since}
-                                      </span>
-                                    ))}
-                                  </div>
-                                )}
                               </div>
                               <div className="flex items-center gap-1.5">
                                 <span className="whitespace-nowrap text-xs text-[#4E5969]">本单占用带宽</span>
@@ -554,6 +537,45 @@ export default function DeliveryDetail() {
                                 <span className="text-xs text-[#86909C]">M</span>
                               </div>
                             </div>
+                            <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px]">
+                              {p.dynamic.orders.length > 0 ? (
+                                <>
+                                  <span className="text-[#4E5969]">当前覆盖 <span className="font-mono font-medium text-[#1D2129]">{p.dynamic.orders.length}</span> 家客户业务 · 合计带宽 <span className="font-mono font-medium text-[#1D2129]">{fmt(p.dynamic.orders.reduce((s, o) => s + o.bw, 0))}M</span></span>
+                                  <button type="button" className="text-[#165DFF] hover:underline"
+                                    onClick={() => setCustOpen((m) => ({ ...m, [e.line]: !m[e.line] }))}>
+                                    {custOpen[e.line] ? "▲ 收起明细" : "▼ 承载明细"}
+                                  </button>
+                                </>
+                              ) : <span className="text-[#C9CDD4]">尚未承载客户业务</span>}
+                            </div>
+                            {custOpen[e.line] && p.dynamic.orders.length > 0 && (
+                              <div className="mt-1.5 overflow-hidden rounded-[2px] border border-[#F2F3F5]">
+                                <table className="w-full text-[11px]">
+                                  <thead>
+                                    <tr className="bg-[#F7F8FA] text-left text-[#86909C]">
+                                      <th className="px-2 py-1 font-normal">客户</th>
+                                      <th className="px-2 py-1 font-normal">带宽</th>
+                                      <th className="px-2 py-1 font-normal">开通时间</th>
+                                      <th className="px-2 py-1 font-normal">到期时间</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {p.dynamic.orders.map((o, oi) => {
+                                      const until = untilOf(o);
+                                      const near = until !== "—" && !until.includes("回填") && new Date(`${until}-01`) <= EXPIRE_SOON;
+                                      return (
+                                        <tr key={oi} className="border-t border-[#F2F3F5] text-[#4E5969]">
+                                          <td className="px-2 py-1">{o.customer}</td>
+                                          <td className="px-2 py-1 font-mono">{fmt(o.bw)}M</td>
+                                          <td className="px-2 py-1 font-mono">{o.since}</td>
+                                          <td className={`px-2 py-1 font-mono ${near ? "font-medium text-[#FF7D00]" : ""}`}>{until}{near ? "（临期）" : ""}</td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
                           </div>
                         );
                       })}

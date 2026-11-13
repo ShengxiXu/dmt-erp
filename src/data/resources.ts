@@ -45,8 +45,18 @@ export interface R1Row {
   sharedWith: string;     // 可共享产品类型（、分隔；空 = 专属，仅一家使用）
   carrier: string; region: string; contractNo: string;
   capacityM: number; monthlyCost: number; effect: string; status: string;
-  dynamic: { usedM: number; peakM?: number; orders: { customer: string; bw: number; since: string }[] };
+  dynamic: { usedM: number; peakM?: number; orders: PoolOrder[] };
 }
+
+/** 出口承载的客户业务（until = 合同到期月，YYYY-MM） */
+export interface PoolOrder { customer: string; bw: number; since: string; until?: string }
+/** 已持久化数据缺少 until 时的取数兜底（按客户名，去掉括号备注匹配） */
+export const ORDER_UNTIL: Record<string, string> = {
+  中海贸易: "2027-09", 凯瑞传媒: "2027-02", 云启数据: "2027-03", 跃游网络: "2026-12",
+  恒信证券: "2027-01", 博彦软件: "2027-06", 澜石金融: "2027-08", 云途物流: "2027-02",
+  某跨境电商: "2027-01", 某出海游戏厂商: "2026-12",
+};
+export const untilOf = (o: PoolOrder): string => o.until ?? ORDER_UNTIL[o.customer.split("（")[0]] ?? "—";
 
 // 采购合同候选统一出自「采购合同」一等主数据（purchase.ts）——此处仅留兼容适配，真实维护入口在 /purchase/contracts
 import { getContracts } from "./purchase";

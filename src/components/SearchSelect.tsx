@@ -1,5 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { SOURCES, type PoolOrder, type SourceRow } from "@/data/catalog";
+import { SOURCES, catUntilOf, type PoolOrder, type SourceRow } from "@/data/catalog";
+import { DEMO_TODAY } from "@/data/settings";
+
+/** 到期临期阈值：今天 + 90 天内的算临期 */
+const EXPIRE_SOON = (() => { const d = new Date(DEMO_TODAY); d.setDate(d.getDate() + 90); return d; })();
 import { Input } from "@/components/ui/input";
 
 interface Props {
@@ -45,18 +49,24 @@ function OrderTable({ orders, capacityM }: { orders: PoolOrder[]; capacityM: num
           <th className="py-0.5 pr-4 font-normal">客户</th>
           <th className="py-0.5 pr-4 font-normal">带宽需求</th>
           <th className="py-0.5 pr-4 font-normal">占容量比</th>
-          <th className="py-0.5 font-normal">开通时间</th>
+          <th className="py-0.5 pr-4 font-normal">开通时间</th>
+          <th className="py-0.5 font-normal">到期时间</th>
         </tr>
       </thead>
       <tbody>
-        {orders.map((o, i) => (
-          <tr key={i} className="border-t border-[#F2F3F5] text-[#4E5969]">
-            <td className="py-0.5 pr-4">{o.customer}</td>
-            <td className="py-0.5 pr-4 font-mono">{o.bw}M</td>
-            <td className="py-0.5 pr-4 font-mono">{Math.round((o.bw / capacityM) * 100)}%</td>
-            <td className="py-0.5">{o.since}</td>
-          </tr>
-        ))}
+        {orders.map((o, i) => {
+          const until = catUntilOf(o);
+          const near = until !== "—" && new Date(`${until}-01`) <= EXPIRE_SOON;
+          return (
+            <tr key={i} className="border-t border-[#F2F3F5] text-[#4E5969]">
+              <td className="py-0.5 pr-4">{o.customer}</td>
+              <td className="py-0.5 pr-4 font-mono">{o.bw}M</td>
+              <td className="py-0.5 pr-4 font-mono">{Math.round((o.bw / capacityM) * 100)}%</td>
+              <td className="py-0.5 pr-4">{o.since}</td>
+              <td className={`py-0.5 font-mono ${near ? "font-medium text-[#FF7D00]" : ""}`}>{until}{near ? "（临期）" : ""}</td>
+            </tr>
+          );
+        })}
       </tbody>
     </table>
   );
