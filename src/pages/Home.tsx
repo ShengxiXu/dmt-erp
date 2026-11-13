@@ -11,6 +11,7 @@ import {
 import { getCostItems, useCostItems, SETTLE_RULE, uncoveredClasses, type CostItem } from "@/data/costItems";
 import { GET_TYPE, MAT_DEF, useCatalog } from "@/data/products";
 import { CONTRACTS, type Contract } from "@/data/contracts";
+import { ownerOfDeal } from "@/data/ownership";
 import { snapshotEsts, usePoolSettle, type PoolEst } from "@/data/poolSettle";
 import { SHEETS, SHEET_OF_CONTRACT, ensureSheetForContract, fillSheet, recordSheetEntries, recordSheetLines } from "@/data/sheets";
 import { submitForApproval } from "@/data/approvalFlow";
@@ -969,6 +970,10 @@ export default function Home() {
   };
 
   const navigate = useNavigate();
+  /** 启动页筛选：搜索词 / 核算单状态分组 / 归属销售 */
+  const [pickKw, setPickKw] = useState("");
+  const [pickStatus, setPickStatus] = useState<"全部" | "待处理" | "进行中" | "已通过" | "未建档">("全部");
+  const [pickSales, setPickSales] = useState("");
 
   // ---------- 未指定合同：先选合同，再进入录入 ----------
   // 核算单必须基于「已生效」合同建立（合同详情「进入成本核算」可带 ?contract= 直达本页）；
@@ -984,10 +989,18 @@ export default function Home() {
       未建档: "bg-[#F2F3F5] text-[#86909C]",
     };
     const rank = (s?: string) => (s === "待填写" || s === "待对方提交" || s === "已驳回" ? 0 : s === "审批中" || s === "变更中" ? 1 : 2);
-    const actives = CONTRACTS.filter((c) => c.status === "已生效")
-      .map((c) => ({ c, sheet: SHEET_OF_CONTRACT(c.id) }))
+    const groupOf = (s?: string) => (!s ? "未建档" : rank(s) === 0 ? "待处理" : rank(s) === 1 ? "进行中" : "已通过");
+    const activesAll = CONTRACTS.filter((c) => c.status === "已生效")
+      .map((c) => ({ c, sheet: SHEET_OF_CONTRACT(c.id), sales: ownerOfDeal(c.dealId, c.customer) ?? "—" }));
+    const salesOptions = [...new Set(activesAll.map((a) => a.sales))];
+    const actives = activesAll
+      .filter((a) => !pickKw || a.c.id.includes(pickKw) || a.c.customer.includes(pickKw))
+      .filter((a) => pickStatus === "全部" || groupOf(a.sheet?.status) === pickStatus)
+      .filter((a) => !pickSales || a.sales === pickSales)
       .sort((a, b) => rank(a.sheet?.status) - rank(b.sheet?.status));
-    const todoN = actives.filter((a) => rank(a.sheet?.status) === 0).length;
+    const todoN = activesAll.filter((a) => rank(a.sheet?.status) === 0).length;
+    const STATUS_GROUPS = ["全部", "待处理", "进行中", "已通过", "未建档"] as const;
+    const countOf = (g: (typeof STATUS_GROUPS)[number]) => g === "全部" ? activesAll.length : activesAll.filter((a) => groupOf(a.sheet?.status) === g).length;
     return (
       <ArcoShell breadcrumb="核算单录入">
         <main className="space-y-4 p-6">
@@ -1000,6 +1013,24 @@ export default function Home() {
               </div>
             </div>
             {todoN > 0 && <span className="rounded-[2px] bg-[#FFF7E8] px-2 py-1 text-xs text-[#B25E00]">⏳ {todoN} 份核算单待处理</span>}
+          </div>
+
+          {/* 筛选：状态分组 / 归属销售 / 搜索 */}
+          <div className="flex flex-wrap items-center gap-2 rounded-[4px] border border-[#E5E6EB] bg-white px-4 py-2.5">
+            <div className="flex rounded-[2px] border border-[#E5E6EB] p-0.5">
+              {STATUS_GROUPS.map((g) => (
+                <button key={g} onClick={() => setPickStatus(g)}
+                  className={`rounded-[2px] px-2.5 py-1 text-xs ${pickStatus === g ? "bg-[#165DFF] text-white" : "text-[#4E5969] hover:bg-[#F2F3F5]"}`}>
+                  {g}{g !== "全部" ? `（${countOf(g)}）` : ""}
+                </button>
+              ))}
+            </div>
+            <select className="rounded-[2px] border border-[#E5E6EB] bg-white px-2 py-1.5 text-xs" value={pickSales} onChange={(e) => setPickSales(e.target.value)}>
+              <option value="">全部归属销售</option>
+              {salesOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+            <Input className="w-56" placeholder="搜索合同号 / 客户" value={pickKw} onChange={(e) => setPickKw(e.target.value)} />
+            <span className="ml-auto text-[11px] text-[#86909C]">共 {actives.length} 份已生效合同</span>
           </div>
           <div className="overflow-x-auto rounded-[4px] border border-[#E5E6EB] bg-white">
             <table className="w-full text-xs">
