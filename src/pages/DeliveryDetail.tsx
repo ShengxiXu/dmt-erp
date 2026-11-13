@@ -20,11 +20,18 @@ const periodEnd = (ymd: string) => {
   return `${end.getFullYear()}-${p2(end.getMonth() + 1)}-${p2(end.getDate())}`;
 };
 
-/** 一对「出口线路 + 绑定 IP 段」：一单可含多对（如 BGP 三网互通 = 电信/联通/移动各一对） */
-interface Pair { line: string; ip: string; ipStart: string; ipN: number }
+/** 出口资源：多选，每条记录本单占用带宽（M） */
+interface ExitRes { line: string; bw: number }
+/** IP 分配：多选，绑定到已选出口（R3 档案 boundLines 字段限定可选项） */
+interface IpAsg { line: string; ip: string; ipStart: string; ipN: number }
+/** 设备申领行：多选 */
+interface DevRow { id: string; mode: string; n: number }
 const segPrefix = (seg: string) => seg.split("/")[0].split(".").slice(0, 3).join(".");
 /** 出口线路绑定的 IP 段（R3 档案 boundLines 字段） */
 const segOfLine = (lineId: string) => R3_ROWS.find((r) => (r.boundLines ?? []).includes(lineId));
+/** 出口可绑定的全部 IP 段 */
+const segsOfLine = (lineId: string) => R3_ROWS.filter((r) => (r.boundLines ?? []).includes(lineId));
+const STOCK_MODE = "库存直绑（P02）";
 
 export default function DeliveryDetail() {
   usePurchaseFlow();
@@ -32,8 +39,12 @@ export default function DeliveryDetail() {
   const id = sp.get("id") ?? "WO-2026-052";
   const wo = WORK_ORDERS.find((w) => w.id === id) ?? WORK_ORDERS[0];
   const [step, setStep] = useState(wo.step);
-  /** 多出口对：BGP 三网互通默认三对（电信 E-CT-1 / 联通 I-102 / 移动 I-103，各绑自带 IP 段） */
-  const initPairs = (): Pair[] =>
+  /** 出口资源：BGP 三网互通默认三条（电信 E-CT-1 / 联通 I-102 / 移动 I-103，各 50M） */
+  const initExits = (): ExitRes[] =>
+    wo.cat === "BGP 三网互通"
+      ? [{ line: "E-CT-1", bw: 50 }, { line: "I-102", bw: 50 }, { line: "I-103", bw: 50 }]
+      : [{ line: "I-101", bw: 50 }];
+  const initIpAsgs = (): IpAsg[] =>
     wo.cat === "BGP 三网互通"
       ? [
           { line: "E-CT-1", ip: "IP-58.41.0", ipStart: "58.41.0.200", ipN: 4 },
@@ -41,12 +52,14 @@ export default function DeliveryDetail() {
           { line: "I-103", ip: "IP-58.43.0", ipStart: "58.43.0.200", ipN: 4 },
         ]
       : [{ line: "I-101", ip: "IP-58.40.0", ipStart: "58.40.0.200", ipN: 4 }];
-  const [pairs, setPairs] = useState<Pair[]>(initPairs);
+  const [exits, setExits] = useState<ExitRes[]>(initExits);
+  const [ipAsgs, setIpAsgs] = useState<IpAsg[]>(initIpAsgs);
+  const [bases, setBases] = useState<string[]>(["B-001"]);
+  const [devices, setDevices] = useState<DevRow[]>([{ id: "EQ-AR6121", mode: STOCK_MODE, n: 2 }]);
   /** 出口负载评估结论（工程师人工），按线路号记录 */
   const [verdicts, setVerdicts] = useState<Record<string, "" | "ok" | "full">>({});
   const [poReq, setPoReq] = useState<{ id: string; name: string; qty: number; price: number; supplier: string } | null>(null);
   const [altCpe, setAltCpe] = useState("");
-  const [form, setForm] = useState({ base: "B-001", cpeMode: "库存直绑（P02）", cpe: "EQ-AR6121", cpeN: 2 });
   const [cat, setCat] = useState(wo.cat);
   const [techVals, setTechVals] = useState<Record<string, string>>({});
   const [approved, setApproved] = useState(false);
@@ -63,36 +76,38 @@ export default function DeliveryDetail() {
 
   const lineOf = (lineId: string) => r1.find((r) => r.id === lineId) ?? r1[0];
   const ipOf = (ipId: string) => r3.find((r) => r.id === ipId) ?? r3[0];
-  const cpe = useMemo(() => r4.find((r) => r.id === form.cpe) ?? r4[0], [r4, form.cpe]);
-  const usedLines = [...new Set(pairs.map((p) => p.line))];
+  const devOf = (devId: string) => r4.find((r) => r.id === devId) ?? r4[0];
+  /** 本单占用的全部出口线路号 */
+  const usedLines = [...new Set(exits.map((e) => e.line))];
   const utilOf = (lid: string) => {
     const p = lineOf(lid);
     return p.capacityM > 0 ? Math.round(((p.dynamic.peakM ?? 0) / p.capacityM) * 100) : 0;
   };
 
   // 每对「出口 + IP 段」的地址级校验（前缀归属 / 可用范围 / 与②层已占用区间冲突）
-  const pairCalc = (p: Pair) => {
-    const row = ipOf(p.ip);
+  const ipCalc = (a: IpAsg) => {
+    const row = ipOf(a.ip);
     const prefix = segPrefix(row.segment);
     const lastOct = (ip: string) => Number(ip.split(".")[3] ?? NaN);
-    const occupied = IP_OCCUPIED[p.ip] ?? [];
-    const startValid = p.ipStart.startsWith(`${prefix}.`);
-    const startN = startValid ? lastOct(p.ipStart) : NaN;
-    const endN = startN + p.ipN - 1;
-    const rangeText = startValid && !Number.isNaN(startN) ? `${prefix}.${startN} – ${prefix}.${endN}（${p.ipN} 个）` : "—";
+    const occupied = IP_OCCUPIED[a.ip] ?? [];
+    const startValid = a.ipStart.startsWith(`${prefix}.`);
+    const startN = startValid ? lastOct(a.ipStart) : NaN;
+    const endN = startN + a.ipN - 1;
+    const rangeText = startValid && !Number.isNaN(startN) ? `${prefix}.${startN} – ${prefix}.${endN}（${a.ipN} 个）` : "—";
     const conflict = startValid && !Number.isNaN(startN) && !Number.isNaN(endN)
       ? occupied.find((o) => startN <= lastOct(o.end) && endN >= lastOct(o.start))
       : undefined;
-    const valid = startValid && !Number.isNaN(startN) && p.ipN >= 1 && startN >= 1 && endN <= 254 && !conflict;
-    const over = p.ipN > row.total - row.dynamic.allocated;
+    const valid = startValid && !Number.isNaN(startN) && a.ipN >= 1 && startN >= 1 && endN <= 254 && !conflict;
+    const over = a.ipN > row.total - row.dynamic.allocated;
     return { row, prefix, startValid, startN, endN, rangeText, conflict, valid, over };
   };
-  const calcs = pairs.map(pairCalc);
+  const calcs = ipAsgs.map(ipCalc);
   const ipAllValid = calcs.every((c) => c.valid);
   const ipOverAny = calcs.some((c) => c.over);
   // 步骤②实时重校验：此处可换型号/改数量，提交前必须重新过余量（步骤①的检查结论不覆盖此处改动）
-  const cpeOver = form.cpeMode === "库存直绑（P02）" && form.cpeN > cpe.dynamic.stock - cpe.dynamic.locked;
-  const altCpes = r4.filter((r) => r.category === "CPE" && r.id !== form.cpe && r.dynamic.stock - r.dynamic.locked >= form.cpeN);
+  const devOver = (d: DevRow) => d.mode === STOCK_MODE && d.n > devOf(d.id).dynamic.stock - devOf(d.id).dynamic.locked;
+  const devicesOver = devices.some(devOver);
+  const altCpesFor = (d: DevRow) => r4.filter((r) => r.category === "CPE" && r.id !== d.id && r.dynamic.stock - r.dynamic.locked >= d.n);
 
   // ---------- 步骤 0：资源检查（P02-2 口径） ----------
   type CheckRow = { key: string; type: "manual" | "auto"; name: string; rule: string; dataText?: string; free?: number; need?: number; freeNote?: string; unit?: string };
@@ -108,23 +123,31 @@ export default function DeliveryDetail() {
       };
     }),
     // IP 余量：每一对「出口 + IP 段」一行，系统自动定量校验
-    ...pairs.map((p, i) => ({
+    ...ipAsgs.map((a, i) => ({
       key: `ip${i}`, type: "auto" as const,
-      name: `绑定 IP 余量（${ipOf(p.ip).segment.split("（")[0]}）`,
+      name: `绑定 IP 余量（${ipOf(a.ip).segment.split("（")[0]}）`,
       rule: "段内可用地址数 ≥ 需求数量",
-      free: ipOf(p.ip).total - ipOf(p.ip).dynamic.allocated,
-      need: p.ipN,
-      freeNote: `${ipOf(p.ip).total} − 已分配 ${ipOf(p.ip).dynamic.allocated}`,
+      free: ipOf(a.ip).total - ipOf(a.ip).dynamic.allocated,
+      need: a.ipN,
+      freeNote: `${ipOf(a.ip).total} − 已分配 ${ipOf(a.ip).dynamic.allocated}`,
       unit: "个",
     })),
-    { key: "cpe", type: "auto", name: `CPE 可用库存（${cpe.name}）`, rule: "在库 − 锁定 ≥ 需求台数（按单采购不校验库存）", free: form.cpeMode === "按单采购（P08）" ? form.cpeN : cpe.dynamic.stock - cpe.dynamic.locked, need: form.cpeN, freeNote: form.cpeMode === "按单采购（P08）" ? "按单采购，到货直发现场" : `在库 ${cpe.dynamic.stock} − 锁定 ${cpe.dynamic.locked}`, unit: "台" },
+    ...devices.map((d, i) => ({
+      key: `dev${i}`, type: "auto" as const,
+      name: `${devOf(d.id).name} 可用库存`,
+      rule: "在库 − 锁定 ≥ 需求台数（按单采购不校验库存）",
+      free: d.mode === "按单采购（P08）" ? d.n : devOf(d.id).dynamic.stock - devOf(d.id).dynamic.locked,
+      need: d.n,
+      freeNote: d.mode === "按单采购（P08）" ? "按单采购，到货直发现场" : `在库 ${devOf(d.id).dynamic.stock} − 锁定 ${devOf(d.id).dynamic.locked}`,
+      unit: "台",
+    })),
   ];
   const failed = checks.filter((c) => c.type === "auto" && (c.free ?? 0) < (c.need ?? 0));
   const fullLines = usedLines.filter((l) => verdicts[l] === "full");
   const lineBlocked = usedLines.some((l) => verdicts[l] !== "ok");
   const allPass = failed.length === 0 && !lineBlocked;
-  /** IP 余量不足的对（索引 + 校验结果） */
-  const failedPairs = pairs.map((p, i) => ({ p, i })).filter(({ i }) => calcs[i].over);
+  /** IP 余量不足的分配（索引 + 校验结果） */
+  const failedIpAsgs = ipAsgs.map((a, i) => ({ a, i })).filter(({ i }) => calcs[i].over);
 
   // ---------- 未满足项处理 ----------
   const [expandM, setExpandM] = useState(500);
@@ -141,21 +164,24 @@ export default function DeliveryDetail() {
     setExpandApproved(true);
     setExpanded(true);
   };
-  /** 某对「出口 + IP 段」的更换候选：未被本单其他对占用、且绑定的 IP 段余量满足需求 */
+  /** 某条 IP 分配的更换候选出口：本单未占用的其他线路，且其绑定 IP 段余量满足需求 */
   const altCandidates = (idx: number) =>
-    r1.filter((l) => l.id !== pairs[idx].line && !usedLines.includes(l.id))
+    r1.filter((l) => l.id !== ipAsgs[idx].line && !usedLines.includes(l.id))
       .map((l) => {
         const seg = segOfLine(l.id);
         if (!seg) return null;
         const free = seg.total - seg.dynamic.allocated;
-        if (free < pairs[idx].ipN) return null;
+        if (free < ipAsgs[idx].ipN) return null;
         return { line: l, seg, free };
       })
       .filter(Boolean) as { line: (typeof r1)[number]; seg: (typeof r3)[number]; free: number }[];
+  /** 更换出口：出口资源列表中的旧线替换为新线（本单占用带宽随之转移），IP 分配指向新线的绑定段 */
   const applyAlt = (idx: number, lineId: string) => {
     const seg = segOfLine(lineId);
     if (!seg) return;
-    setPairs((ps) => ps.map((x, j) => (j === idx ? { ...x, line: lineId, ip: seg.id, ipStart: `${segPrefix(seg.segment)}.200` } : x)));
+    const oldLine = ipAsgs[idx].line;
+    setExits((es) => es.map((e) => (e.line === oldLine ? { ...e, line: lineId } : e)));
+    setIpAsgs((as) => as.map((x, j) => (j === idx ? { ...x, line: lineId, ip: seg.id, ipStart: `${segPrefix(seg.segment)}.200` } : x)));
     setAltPick(null);
   };
 
@@ -163,24 +189,31 @@ export default function DeliveryDetail() {
   const checkSummary = [
     ...usedLines.map((l) => `出口 ${l} 负载${verdicts[l] === "ok" ? "正常" : verdicts[l] === "full" ? "饱和" : "待评估"}（利用率 ${utilOf(l)}%）`),
     expanded ? `I-101 已扩容 ${fmt(expandM)}M（500M → ${fmt(pool101.capacityM)}M，月租 ${fmt(newMonthly)} 元）` : "",
-    form.cpeMode === "按单采购（P08）" ? `CPE 改按单采购（${poReq?.id ?? "采购申请"}，到货后恢复）` : "",
+    ...devices.filter((d) => d.mode === "按单采购（P08）").map((d) => `${devOf(d.id).name} 改按单采购（${poReq?.id ?? "采购申请"}，到货后恢复）`),
     suspended ? "不满足项已挂起并生成采购需求（P08-1）" : "",
   ].filter(Boolean).join("；");
 
   const bind = () => {
+    // 出口：已售带宽 += 本单占用（按线汇总，同线多条分配只加一次）
     setR1((rows) => rows.map((r) => {
-      const n = pairs.filter((p) => p.line === r.id).length;
-      if (!n) return r;
-      return { ...r, dynamic: { ...r.dynamic, usedM: r.dynamic.usedM + 50 * n, orders: [...r.dynamic.orders.filter((o) => !o.customer.includes("核算中")), ...Array.from({ length: n }, () => ({ customer: "上海某科技公司", bw: 50, since: "开通后回填" }))] } };
+      const es = exits.filter((e) => e.line === r.id);
+      if (!es.length) return r;
+      const add = es.reduce((s, e) => s + e.bw, 0);
+      return { ...r, dynamic: { ...r.dynamic, usedM: r.dynamic.usedM + add, orders: [...r.dynamic.orders.filter((o) => !o.customer.includes("核算中")), { customer: "上海某科技公司", bw: add, since: "开通后回填" }] } };
     }));
     setR3((rows) => rows.map((r) => {
-      const ps = pairs.filter((p) => p.ip === r.id);
-      if (!ps.length) return r;
-      const add = ps.reduce((s, p) => s + p.ipN, 0);
-      return { ...r, dynamic: { ...r.dynamic, allocated: r.dynamic.allocated + add, orders: [...r.dynamic.orders.filter((o) => !o.customer.includes("核算中")), ...ps.map((p) => ({ customer: "上海某科技公司", n: p.ipN }))] } };
+      const as = ipAsgs.filter((a) => a.ip === r.id);
+      if (!as.length) return r;
+      const add = as.reduce((s, a) => s + a.ipN, 0);
+      return { ...r, dynamic: { ...r.dynamic, allocated: r.dynamic.allocated + add, orders: [...r.dynamic.orders.filter((o) => !o.customer.includes("核算中")), ...as.map((a) => ({ customer: "上海某科技公司", n: a.ipN }))] } };
     }));
     // 库存直绑才扣减库存；按单采购不占库存（到货直发客户现场）
-    if (form.cpeMode === "库存直绑（P02）") setR4((rows) => rows.map((r) => (r.id === form.cpe ? { ...r, dynamic: { stock: r.dynamic.stock - form.cpeN, locked: r.dynamic.locked - form.cpeN } } : r)));
+    setR4((rows) => rows.map((r) => {
+      const ds = devices.filter((d) => d.id === r.id && d.mode === STOCK_MODE);
+      if (!ds.length) return r;
+      const n = ds.reduce((s, d) => s + d.n, 0);
+      return { ...r, dynamic: { stock: r.dynamic.stock - n, locked: r.dynamic.locked - n } };
+    }));
     setBound(true);
   };
 
@@ -190,35 +223,42 @@ export default function DeliveryDetail() {
   const techDone = techFields.length > 0 && techFields.every((f) => (techVals[f.label] ?? "").toString().trim() !== "");
   const setTech = (label: string, v: string) => setTechVals((s) => ({ ...s, [label]: v }));
 
-  // ---------- 步骤①资源分配：增删「出口 + IP 段」对 ----------
-  const addPair = () => {
-    const rest = r1.filter((l) => !usedLines.includes(l.id) && segOfLine(l.id));
-    const l = rest[0];
-    if (!l) return;
-    const seg = segOfLine(l.id)!;
-    setPairs((ps) => [...ps, { line: l.id, ip: seg.id, ipStart: `${segPrefix(seg.segment)}.200`, ipN: 4 }]);
+  // ---------- 步骤①资源分配：出口 / IP / 基础线路 / 设备 四类资源各自独立增删 ----------
+  const addExit = (lineId: string) => setExits((es) => (es.some((e) => e.line === lineId) ? es : [...es, { line: lineId, bw: 50 }]));
+  /** 移除出口：其下 IP 分配一并移除 */
+  const removeExit = (lineId: string) => {
+    setExits((es) => es.filter((e) => e.line !== lineId));
+    setIpAsgs((as) => as.filter((a) => a.line !== lineId));
   };
-  const changePairLine = (idx: number, lineId: string) => {
-    const seg = segOfLine(lineId);
-    setPairs((ps) => ps.map((x, j) => (j === idx ? { ...x, line: lineId, ip: seg?.id ?? x.ip, ipStart: seg ? `${segPrefix(seg.segment)}.200` : x.ipStart } : x)));
+  const addIpAsg = (lineId: string) => {
+    const seg = segsOfLine(lineId)[0];
+    if (seg) setIpAsgs((as) => [...as, { line: lineId, ip: seg.id, ipStart: `${segPrefix(seg.segment)}.200`, ipN: 4 }]);
   };
+  const changeIpAsgLine = (idx: number, lineId: string) => {
+    const seg = segsOfLine(lineId)[0];
+    setIpAsgs((as) => as.map((x, j) => (j === idx ? { ...x, line: lineId, ip: seg?.id ?? x.ip, ipStart: seg ? `${segPrefix(seg.segment)}.200` : x.ipStart } : x)));
+  };
+  const toggleBase = (bid: string) => setBases((bs) => (bs.includes(bid) ? bs.filter((x) => x !== bid) : [...bs, bid]));
+  const addDevice = () => {
+    const firstCpe = r4.find((r) => r.category === "CPE")?.id ?? r4[0].id;
+    setDevices((ds) => [...ds, { id: firstCpe, mode: STOCK_MODE, n: 1 }]);
+  };
+  const setDevice = (i: number, patch: Partial<DevRow>) => setDevices((ds) => ds.map((d, j) => (j === i ? { ...d, ...patch } : d)));
 
   const logs = useMemo(() => {
     if (!bound) return [];
     return [
       ...(expanded ? [`②层写入 · 扩容生效：I-101 池容量 500M → ${fmt(pool101.capacityM)}M，月租 75,000 → ${fmt(pool101.monthlyCost)} 元`] : []),
-      ...pairs.flatMap((p, i) => [
-        `②层写入 · 出口池 ${p.line} 已售带宽 +50M（现 ${fmt(lineOf(p.line).dynamic.usedM)}M / ${fmt(lineOf(p.line).capacityM)}M）`,
-        `②层写入 · IP 精确分配：本单 ${calcs[i].rangeText}，已记入 ${ipOf(p.ip).segment.split("（")[0]} 占用区间`,
-      ]),
-      ...(form.cpeMode === "库存直绑（P02）"
-        ? [`②层写入 · CPE ${cpe.name}：锁定 ${form.cpeN} 台 → 出库（现存量 ${cpe.dynamic.stock + form.cpeN} → ${cpe.dynamic.stock} 台）`]
-        : [`采购执行 · CPE ${cpe.name} × ${form.cpeN} 台按单采购，到货后直发客户现场（不占库存，一次性成本计入本单核算）`]),
+      ...exits.map((e) => `②层写入 · 出口池 ${e.line} 已售带宽 +${fmt(e.bw)}M（现 ${fmt(lineOf(e.line).dynamic.usedM)}M / ${fmt(lineOf(e.line).capacityM)}M）`),
+      ...ipAsgs.map((a, i) => `②层写入 · IP 精确分配：本单 ${calcs[i].rangeText}，已记入 ${ipOf(a.ip).segment.split("（")[0]} 占用区间`),
+      ...devices.map((d) => d.mode === STOCK_MODE
+        ? `②层写入 · ${devOf(d.id).name}：锁定 ${d.n} 台 → 出库（现存量 ${devOf(d.id).dynamic.stock + d.n} → ${devOf(d.id).dynamic.stock} 台）`
+        : `采购执行 · ${devOf(d.id).name} × ${d.n} 台按单采购，到货后直发客户现场（不占库存，一次性成本计入本单核算）`),
       `②层写入 · 上联端口 #3 已用 3,200M → 3,250M`,
       `档案页 R1/R3/R4 的蓝色实时区已同步更新（只读展示，无人工写入口）`,
     ];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bound, r1, r3, pairs, form.cpeN, form.cpeMode, expanded]);
+  }, [bound, r1, r3, r4, exits, ipAsgs, devices, expanded]);
 
   return (
     <ArcoShell breadcrumb="开通工单详情">
@@ -302,40 +342,40 @@ export default function DeliveryDetail() {
                   <div className="space-y-3 border-t px-4 py-3">
                     <div className="text-xs font-semibold text-[#4E5969]">未满足项处理</div>
 
-                    {failed.some((c) => c.key === "cpe") && (
-                      <div className="space-y-2 rounded-[2px] border border-[#FFCF8B] bg-[#FFF7E8] p-3 text-xs">
-                        <div className="font-semibold text-[#D25F00]">CPE 库存不足：{cpe.name} 可用 {cpe.dynamic.stock - cpe.dynamic.locked} 台，需求 {form.cpeN} 台。处理方式：</div>
+                    {devices.map((d, di) => devOver(d) && (
+                      <div key={di} className="space-y-2 rounded-[2px] border border-[#FFCF8B] bg-[#FFF7E8] p-3 text-xs">
+                        <div className="font-semibold text-[#D25F00]">{devOf(d.id).name} 库存不足：可用 {devOf(d.id).dynamic.stock - devOf(d.id).dynamic.locked} 台，需求 {d.n} 台。处理方式：</div>
                         <div className="flex flex-wrap items-center gap-2">
                           <Button size="sm" variant="outline" onClick={() => {
-                            setForm((v) => ({ ...v, cpeMode: "按单采购（P08）" }));
+                            setDevice(di, { mode: "按单采购（P08）" });
                             // 同步生成 P08-1 采购需求（资源不足联动）：已存在本工单的联动需求则复用
                             const exist = getReqs().find((r) => r.linkedWo === wo.id);
                             const req = exist ?? addReq({
-                              source: "资源不足联动", type: "设备", spec: cpe.name, qty: form.cpeN, unit: "台",
+                              source: "资源不足联动", type: "设备", spec: devOf(d.id).name, qty: d.n, unit: "台",
                               room: "上海漕河泾", expectDate: new Date(Date.now() + 7 * 864e5).toISOString().slice(0, 10),
-                              note: "工单可用性检查：CPE 在库不足，改按单采购", linkedWo: wo.id, createdBy: "系统（工单挂起联动）",
+                              note: "工单可用性检查：设备在库不足，改按单采购", linkedWo: wo.id, createdBy: "系统（工单挂起联动）",
                             });
-                            setPoReq({ id: req.reqNo, name: cpe.name, qty: form.cpeN, price: cpe.costPrice, supplier: cpe.supplier });
+                            setPoReq({ id: req.reqNo, name: devOf(d.id).name, qty: d.n, price: devOf(d.id).costPrice, supplier: devOf(d.id).supplier });
                           }}>① 改为按单采购（自动生成采购申请 → P08-1，不占库存）</Button>
-                          {altCpes.length > 0 && (
+                          {altCpesFor(d).length > 0 && (
                             <>
                               <span>② 更换有库存型号：</span>
                               <select className="rounded-[2px] border border-[#E5E6EB] bg-white px-2 py-1" value={altCpe} onChange={(e) => setAltCpe(e.target.value)}>
                                 <option value="">请选择…</option>
-                                {altCpes.map((r) => <option key={r.id} value={r.id}>{r.id} {r.name}（可用 {r.dynamic.stock - r.dynamic.locked} 台）</option>)}
+                                {altCpesFor(d).map((r) => <option key={r.id} value={r.id}>{r.id} {r.name}（可用 {r.dynamic.stock - r.dynamic.locked} 台）</option>)}
                               </select>
-                              <Button size="sm" variant="outline" disabled={!altCpe} onClick={() => setForm((v) => ({ ...v, cpe: altCpe }))}>更换</Button>
+                              <Button size="sm" variant="outline" disabled={!altCpe} onClick={() => { setDevice(di, { id: altCpe }); setAltCpe(""); }}>更换</Button>
                             </>
                           )}
                         </div>
                       </div>
-                    )}
+                    ))}
 
                     {fullLines.map((lid) => {
                       const pool = lineOf(lid);
                       const peakM = pool.dynamic.peakM ?? 0;
                       const ut = utilOf(lid);
-                      const idx = pairs.findIndex((p) => p.line === lid);
+                      const idx = ipAsgs.findIndex((a) => a.line === lid);
                       const cands = idx >= 0 ? altCandidates(idx) : [];
                       return (
                         <div key={lid} className="space-y-2 rounded-[2px] border border-[#FFCF8B] bg-[#FFF7E8] p-3 text-xs">
@@ -386,11 +426,11 @@ export default function DeliveryDetail() {
                       );
                     })}
 
-                    {failedPairs.map(({ p, i }) => {
+                    {failedIpAsgs.map(({ a, i }) => {
                       const cands = altCandidates(i);
                       return (
                         <div key={`ip-${i}`} className="space-y-2 rounded-[2px] border border-[#FFCF8B] bg-[#FFF7E8] p-3 text-xs">
-                          <div className="font-semibold text-[#D25F00]">IP 段余量不足：{ipOf(p.ip).segment.split("（")[0]}（出口 {p.line}）余 {ipOf(p.ip).total - ipOf(p.ip).dynamic.allocated} 个，需求 {p.ipN} 个。处理方式：</div>
+                          <div className="font-semibold text-[#D25F00]">IP 段余量不足：{ipOf(a.ip).segment.split("（")[0]}（出口 {a.line}）余 {ipOf(a.ip).total - ipOf(a.ip).dynamic.allocated} 个，需求 {a.ipN} 个。处理方式：</div>
                           <div className="flex flex-wrap items-center gap-2">
                             <span>① 调整本单数量（至步骤②修改）；② 更换出口池（随绑 IP 段一起切换）：</span>
                             {cands.length > 0 ? (
@@ -439,42 +479,109 @@ export default function DeliveryDetail() {
             {/* 步骤 1：资源分配申请 */}
             {step === 1 && (
               <section className="rounded-[4px] border border-[#E5E6EB] bg-white ">
-                <div className="border-b px-4 py-2.5 text-sm font-semibold">② 资源分配申请（从资源中心档案选择，实时校验余量）</div>
-                <div className="space-y-4 p-4">
-                  {/* 线路资源：多对「出口 + IP 段」 */}
+                <div className="border-b px-4 py-2.5 text-sm font-semibold">② 资源分配申请（四类资源各自独立选择与校验，数据取自资源中心②层实时档案）</div>
+                <div className="space-y-5 p-4">
+                  {/* ① 出口资源（可多选）：选中即见当前负载与本单占用 */}
                   <div>
-                    <div className="mb-1.5 flex items-center gap-2">
-                      <span className="text-[11px] font-semibold text-[#86909C]">出口线路与绑定 IP 段（本单 {pairs.length} 对，可增删）</span>
+                    <div className="mb-1.5 flex flex-wrap items-center gap-2">
+                      <span className="text-[11px] font-semibold text-[#4E5969]">① 出口资源</span>
+                      <span className="rounded-[2px] bg-[#F2F3F5] px-1.5 py-0.5 text-[11px] text-[#86909C]">已选 {exits.length} 条 · 可多选</span>
+                      <span className="ml-auto flex items-center gap-1.5">
+                        <select id="add-exit-sel" className="rounded-[2px] border border-[#E5E6EB] bg-white px-2 py-1 text-xs" defaultValue=""
+                          onChange={(e) => e.target.value && addExit(e.target.value)}>
+                          <option value="">＋ 添加出口…</option>
+                          {r1.filter((l) => !usedLines.includes(l.id)).map((l) => <option key={l.id} value={l.id}>{l.id} {l.name.split("（")[0]}（余 {fmt(l.capacityM - l.dynamic.usedM)}M）</option>)}
+                        </select>
+                      </span>
                     </div>
                     <div className="space-y-2">
-                      {pairs.map((p, i) => {
+                      {exits.length === 0 && <div className="rounded-[2px] border border-dashed border-[#E5E6EB] px-3 py-2 text-xs text-[#86909C]">尚未选择出口资源</div>}
+                      {exits.map((e) => {
+                        const p = lineOf(e.line);
+                        const ut = p.capacityM > 0 ? Math.round((p.dynamic.usedM / p.capacityM) * 100) : 0;
+                        const after = p.capacityM > 0 ? Math.round(((p.dynamic.usedM + e.bw) / p.capacityM) * 100) : 0;
+                        const hasIp = ipAsgs.some((a) => a.line === e.line);
+                        return (
+                          <div key={e.line} className="rounded-[2px] border border-[#E5E6EB] p-3">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="font-mono text-xs font-semibold text-[#1D2129]">{e.line}</span>
+                              <span className="text-xs text-[#4E5969]">{p.name}</span>
+                              <span className={`rounded-[2px] px-1.5 py-0.5 text-[11px] ${ut >= 90 ? "bg-[#FFECE8] text-[#F53F3F]" : ut >= 70 ? "bg-[#FFF7E8] text-[#FF7D00]" : "bg-[#E8F8F2] text-[#00B42A]"}`}>
+                                当前负载 {ut}%
+                              </span>
+                              <span className="ml-auto">
+                                <Button size="sm" variant="ghost" className="text-[#F53F3F]" disabled={hasIp}
+                                  title={hasIp ? "该出口下存在 IP 分配，请先移除对应 IP 分配" : ""}
+                                  onClick={() => removeExit(e.line)}>✕ 移除</Button>
+                              </span>
+                            </div>
+                            <div className="mt-2 grid items-center gap-3 md:grid-cols-[1fr_auto]">
+                              <div>
+                                <div className="mb-1 flex justify-between text-[11px] text-[#86909C]">
+                                  <span>已售 {fmt(p.dynamic.usedM)}M / 容量 {fmt(p.capacityM)}M · 近 30 日峰值 {fmt(p.dynamic.peakM ?? 0)}M（利用率 {utilOf(e.line)}%）</span>
+                                  <span>本单占用 {fmt(e.bw)}M → 占用后 {after}%</span>
+                                </div>
+                                <div className="h-2 overflow-hidden rounded-[2px] bg-[#F2F3F5]">
+                                  <div className="h-full bg-[#165DFF] transition-all" style={{ width: `${Math.min(ut, 100)}%` }} />
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1.5">
+                                <span className="whitespace-nowrap text-xs text-[#4E5969]">本单占用带宽</span>
+                                <Input type="number" min={1} className="h-8 w-24 text-xs" value={e.bw}
+                                  onChange={(ev) => setExits((es) => es.map((x) => (x.line === e.line ? { ...x, bw: Math.max(1, Number(ev.target.value)) } : x)))} />
+                                <span className="text-xs text-[#86909C]">M</span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* ② IP 地址（可多选，绑定到所选出口） */}
+                  <div>
+                    <div className="mb-1.5 flex flex-wrap items-center gap-2">
+                      <span className="text-[11px] font-semibold text-[#4E5969]">② IP 地址</span>
+                      <span className="rounded-[2px] bg-[#F2F3F5] px-1.5 py-0.5 text-[11px] text-[#86909C]">已选 {ipAsgs.length} 段 · 可多选 · 候选段随所选出口联动</span>
+                      <span className="ml-auto">
+                        <select className="rounded-[2px] border border-[#E5E6EB] bg-white px-2 py-1 text-xs" defaultValue=""
+                          onChange={(e) => e.target.value && addIpAsg(e.target.value)}>
+                          <option value="">＋ 添加 IP 分配…</option>
+                          {usedLines.map((lid) => <option key={lid} value={lid}>{lid}（{segsOfLine(lid).map((s) => s.id).join(" / ")}）</option>)}
+                        </select>
+                      </span>
+                    </div>
+                    <div className="space-y-2">
+                      {ipAsgs.length === 0 && <div className="rounded-[2px] border border-dashed border-[#E5E6EB] px-3 py-2 text-xs text-[#86909C]">尚未分配 IP（先在「出口资源」中选择出口）</div>}
+                      {ipAsgs.map((a, i) => {
                         const c = calcs[i];
                         return (
                           <div key={i} className="rounded-[2px] border border-[#E5E6EB] p-3">
-                            <div className="grid gap-3 md:grid-cols-[1.2fr_1.2fr_1fr_0.6fr_auto]">
+                            <div className="grid gap-3 md:grid-cols-[1fr_1.3fr_1fr_0.5fr_auto]">
                               <div>
-                                <div className="mb-0.5 text-xs text-[#4E5969]">出口线路（R1 档案）</div>
-                                <select className="w-full rounded-[2px] border border-[#E5E6EB] bg-white px-2 py-1.5 text-xs" value={p.line} onChange={(e) => changePairLine(i, e.target.value)}>
-                                  {r1.map((r) => <option key={r.id} value={r.id}>{r.id} {r.name.split("（")[0]}（余 {fmt(r.capacityM - r.dynamic.usedM)}M）</option>)}
+                                <div className="mb-0.5 text-xs text-[#4E5969]">所属出口</div>
+                                <select className="w-full rounded-[2px] border border-[#E5E6EB] bg-white px-2 py-1.5 text-xs" value={a.line}
+                                  onChange={(e) => changeIpAsgLine(i, e.target.value)}>
+                                  {usedLines.map((lid) => <option key={lid} value={lid}>{lid}</option>)}
                                 </select>
                               </div>
                               <div>
-                                <div className="mb-0.5 text-xs text-[#4E5969]">绑定 IP 段（R3，随出口联动）</div>
-                                <select className="w-full rounded-[2px] border border-[#E5E6EB] bg-white px-2 py-1.5 text-xs" value={p.ip}
-                                  onChange={(e) => { const seg = ipOf(e.target.value); setPairs((ps) => ps.map((x, j) => (j === i ? { ...x, ip: e.target.value, ipStart: `${segPrefix(seg.segment)}.200` } : x))); }}>
-                                  {r3.filter((r) => (r.boundLines ?? []).includes(p.line)).map((r) => <option key={r.id} value={r.id}>{r.id} {r.segment}（余 {r.total - r.dynamic.allocated} 个）</option>)}
+                                <div className="mb-0.5 text-xs text-[#4E5969]">IP 段（R3，随出口联动）</div>
+                                <select className="w-full rounded-[2px] border border-[#E5E6EB] bg-white px-2 py-1.5 text-xs" value={a.ip}
+                                  onChange={(e) => { const seg = ipOf(e.target.value); setIpAsgs((as) => as.map((x, j) => (j === i ? { ...x, ip: e.target.value, ipStart: `${segPrefix(seg.segment)}.200` } : x))); }}>
+                                  {segsOfLine(a.line).map((r) => <option key={r.id} value={r.id}>{r.id} {r.segment}（余 {r.total - r.dynamic.allocated} 个）</option>)}
                                 </select>
                               </div>
                               <div>
                                 <div className="mb-0.5 text-xs text-[#4E5969]">本单起始地址</div>
-                                <Input className="h-8 font-mono text-xs" value={p.ipStart} onChange={(e) => setPairs((ps) => ps.map((x, j) => (j === i ? { ...x, ipStart: e.target.value.trim() } : x)))} />
+                                <Input className="h-8 font-mono text-xs" value={a.ipStart} onChange={(e) => setIpAsgs((as) => as.map((x, j) => (j === i ? { ...x, ipStart: e.target.value.trim() } : x)))} />
                               </div>
                               <div>
-                                <div className="mb-0.5 text-xs text-[#4E5969]">数量（默认 = 订单需求）</div>
-                                <Input type="number" min={1} className="h-8 text-xs" value={p.ipN} onChange={(e) => setPairs((ps) => ps.map((x, j) => (j === i ? { ...x, ipN: Math.max(1, Number(e.target.value)) } : x)))} />
+                                <div className="mb-0.5 text-xs text-[#4E5969]">数量</div>
+                                <Input type="number" min={1} className="h-8 text-xs" value={a.ipN} onChange={(e) => setIpAsgs((as) => as.map((x, j) => (j === i ? { ...x, ipN: Math.max(1, Number(e.target.value)) } : x)))} />
                               </div>
                               <div className="flex items-end">
-                                <Button size="sm" variant="ghost" className="text-[#F53F3F]" disabled={pairs.length <= 1} onClick={() => setPairs((ps) => ps.filter((_, j) => j !== i))}>✕ 删除</Button>
+                                <Button size="sm" variant="ghost" className="text-[#F53F3F]" onClick={() => setIpAsgs((as) => as.filter((_, j) => j !== i))}>✕ 删除</Button>
                               </div>
                             </div>
                             <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
@@ -488,37 +595,72 @@ export default function DeliveryDetail() {
                           </div>
                         );
                       })}
-                      <Button size="sm" variant="outline" onClick={addPair} disabled={!r1.some((l) => !usedLines.includes(l.id) && segOfLine(l.id))}>＋ 添加出口线路（一对出口 + IP 段）</Button>
                     </div>
                   </div>
-                  {/* 基础线路与 CPE */}
+
+                  {/* ③ 基础线路（可多选） */}
                   <div>
-                    <div className="mb-1.5 text-[11px] font-semibold text-[#86909C]">基础线路与 CPE</div>
-                    <div className="grid gap-3 md:grid-cols-4">
-                      <div>
-                        <div className="mb-0.5 text-xs text-[#4E5969]">基础线路（R2 档案，可多选）</div>
-                        <select className="w-full rounded-[2px] border border-[#E5E6EB] bg-white px-2 py-1.5 text-xs" value={form.base} onChange={(e) => setForm((v) => ({ ...v, base: e.target.value }))}>
-                          {R2_ROWS.map((r) => <option key={r.id} value={r.id}>{r.id} {r.name}</option>)}
-                        </select>
-                      </div>
-                      <div>
-                        <div className="mb-0.5 text-xs text-[#4E5969]">CPE 设备型号（R4 库存）</div>
-                        <select className="w-full rounded-[2px] border border-[#E5E6EB] bg-white px-2 py-1.5 text-xs" value={form.cpe} onChange={(e) => setForm((v) => ({ ...v, cpe: e.target.value }))}>
-                          {r4.map((r) => <option key={r.id} value={r.id}>{r.id} {r.name}（可用 {r.dynamic.stock - r.dynamic.locked} 台）</option>)}
-                        </select>
-                      </div>
-                      <div>
-                        <div className="mb-0.5 text-xs text-[#4E5969]">供给方式</div>
-                        <select className="w-full rounded-[2px] border border-[#E5E6EB] bg-white px-2 py-1.5 text-xs" value={form.cpeMode} onChange={(e) => setForm((v) => ({ ...v, cpeMode: e.target.value }))}>
-                          {["库存直绑（P02）", "按单采购（P08）"].map((o) => <option key={o}>{o}</option>)}
-                        </select>
-                      </div>
-                      <div>
-                        <div className="mb-0.5 text-xs text-[#4E5969]">CPE 数量（默认 = 订单需求）</div>
-                        <Input type="number" min={1} className="h-8 text-xs" value={form.cpeN} onChange={(e) => setForm((v) => ({ ...v, cpeN: Math.max(1, Number(e.target.value)) }))} />
-                      </div>
+                    <div className="mb-1.5 flex flex-wrap items-center gap-2">
+                      <span className="text-[11px] font-semibold text-[#4E5969]">③ 基础线路</span>
+                      <span className="rounded-[2px] bg-[#F2F3F5] px-1.5 py-0.5 text-[11px] text-[#86909C]">已选 {bases.length} 条 · 点击切换多选 · 整线月租计价</span>
                     </div>
-                    {form.cpeMode === "按单采购（P08）" && <div className="mt-1.5 text-[11px] text-[#FF7D00]">按单采购不占库存：提交后生成采购需求（P08-1），到货直发客户现场</div>}
+                    <div className="flex flex-wrap gap-1.5">
+                      {R2_ROWS.map((r) => {
+                        const on = bases.includes(r.id);
+                        return (
+                          <button key={r.id} type="button" onClick={() => toggleBase(r.id)}
+                            className={`rounded-[2px] border px-2.5 py-1.5 text-left text-xs transition-colors ${on ? "border-[#165DFF] bg-[#E8F3FF] text-[#165DFF]" : "border-[#E5E6EB] bg-white text-[#4E5969] hover:border-[#BEDAFF]"}`}>
+                            <span className="font-mono font-semibold">{r.id}</span>
+                            <span className="ml-1">{r.name.split("-").slice(1).join("-")}</span>
+                            <span className="ml-1 text-[#86909C]">{fmt(r.price)} 元/月 · {fmt(r.bwM)}M</span>
+                            {on && <span className="ml-1">✓</span>}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* ④ 设备（可多选） */}
+                  <div>
+                    <div className="mb-1.5 flex flex-wrap items-center gap-2">
+                      <span className="text-[11px] font-semibold text-[#4E5969]">④ 设备</span>
+                      <span className="rounded-[2px] bg-[#F2F3F5] px-1.5 py-0.5 text-[11px] text-[#86909C]">已选 {devices.length} 行 · 可多选</span>
+                      <span className="ml-auto"><Button size="sm" variant="outline" onClick={addDevice}>＋ 添加设备</Button></span>
+                    </div>
+                    <div className="space-y-2">
+                      {devices.map((d, i) => {
+                        const dev = devOf(d.id);
+                        const free = dev.dynamic.stock - dev.dynamic.locked;
+                        return (
+                          <div key={i} className="grid items-end gap-3 rounded-[2px] border border-[#E5E6EB] p-3 md:grid-cols-[1.4fr_1fr_0.5fr_1fr_auto]">
+                            <div>
+                              <div className="mb-0.5 text-xs text-[#4E5969]">设备型号（R4 库存档案）</div>
+                              <select className="w-full rounded-[2px] border border-[#E5E6EB] bg-white px-2 py-1.5 text-xs" value={d.id} onChange={(e) => setDevice(i, { id: e.target.value })}>
+                                {r4.map((r) => <option key={r.id} value={r.id}>{r.id} {r.name}（可用 {r.dynamic.stock - r.dynamic.locked} 台）</option>)}
+                              </select>
+                            </div>
+                            <div>
+                              <div className="mb-0.5 text-xs text-[#4E5969]">供给方式</div>
+                              <select className="w-full rounded-[2px] border border-[#E5E6EB] bg-white px-2 py-1.5 text-xs" value={d.mode} onChange={(e) => setDevice(i, { mode: e.target.value })}>
+                                {["库存直绑（P02）", "按单采购（P08）"].map((o) => <option key={o}>{o}</option>)}
+                              </select>
+                            </div>
+                            <div>
+                              <div className="mb-0.5 text-xs text-[#4E5969]">数量</div>
+                              <Input type="number" min={1} className="h-8 text-xs" value={d.n} onChange={(e) => setDevice(i, { n: Math.max(1, Number(e.target.value)) })} />
+                            </div>
+                            <div className="text-[11px] leading-4 text-[#86909C]">
+                              {d.mode === "按单采购（P08）" ? "按单采购不占库存：提交后生成采购需求（P08-1），到货直发客户现场" : (
+                                devOver(d) ? <span className="font-medium text-[#F53F3F]">可用 {free} 台，需求 {d.n} 台（不足）</span> : <span>可用 {free} 台（库存直绑，提交时锁定并出库）</span>
+                              )}
+                            </div>
+                            <div className="flex items-end">
+                              <Button size="sm" variant="ghost" className="text-[#F53F3F]" disabled={devices.length <= 1} onClick={() => setDevices((ds) => ds.filter((_, j) => j !== i))}>✕ 删除</Button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
                 <div className="border-t px-4 py-3">
@@ -553,9 +695,9 @@ export default function DeliveryDetail() {
                 </div>
                 <div className="flex items-center gap-3 border-t px-4 py-3">
                   <Button size="sm" variant="outline" onClick={() => setStep(0)}>← 返回可用性检查</Button>
-                  <Button size="sm" disabled={ipOverAny || cpeOver || !techDone || !ipAllValid} onClick={() => setStep(2)}>提交分配申请</Button>
+                  <Button size="sm" disabled={ipOverAny || devicesOver || !techDone || !ipAllValid} onClick={() => setStep(2)}>提交分配申请</Button>
                   {ipOverAny && <span className="text-xs text-[#F53F3F]">存在 IP 分配数量超段内余量，禁止提交</span>}
-                  {cpeOver && <span className="text-xs text-[#F53F3F]">{cpe.name} 库存可用 {cpe.dynamic.stock - cpe.dynamic.locked} 台，需求 {form.cpeN} 台：请调整数量、更换型号，或改按单采购</span>}
+                  {devicesOver && <span className="text-xs text-[#F53F3F]">存在设备库存不足：请调整数量、更换型号，或改按单采购</span>}
                   {!ipAllValid && !ipOverAny && <span className="text-xs text-[#F53F3F]">存在未通过校验的 IP 地址区间</span>}
                   {!techDone && <span className="text-xs text-[#FF7D00]">技术参数未填全（{techFields.filter((f) => (techVals[f.label] ?? "").trim()).length}/{techFields.length}），暂不可提交</span>}
                   <span className="text-xs text-[#86909C]">与成本核算已选资源不一致时触发异常校验（P01-8）</span>
@@ -568,7 +710,7 @@ export default function DeliveryDetail() {
               <section className="rounded-[4px] border border-[#E5E6EB] bg-white p-4 ">
                 <div className="mb-2 text-sm font-semibold">③ 资源分配审批（审批流可配置：当前 = 资源主管）</div>
                 <div className="rounded-[2px] bg-[#F7F8FA] p-3 text-xs leading-5 text-[#4E5969]">
-                  申请内容：出口 {usedLines.join(" + ")}（各 50M）· IP {pairs.map((p, i) => `${ipOf(p.ip).segment.split("（")[0]} ${calcs[i].rangeText}`).join("；")} · 基础线路 {form.base} · CPE {form.cpe} × {form.cpeN} 台（{form.cpeMode}）<br />
+                  申请内容：出口 {exits.map((e) => `${e.line}（本单占用 ${fmt(e.bw)}M）`).join(" + ")} · IP {ipAsgs.map((a, i) => `${ipOf(a.ip).segment.split("（")[0]} ${calcs[i].rangeText}`).join("；")} · 基础线路 {bases.join("、") || "无"} · 设备 {devices.map((d) => `${devOf(d.id).name} × ${d.n} 台（${d.mode}）`).join("；")}<br />
                   技术参数（{cat}）：{techFields.length} 项已填全 · 申请人：{wo.assignee} · 可用性检查：{checkSummary ? checkSummary : "系统预检通过"}
                   {expanded && <><br />关联记录：本单前置触发 I-101 扩容 {fmt(expandM)}M（500M → {fmt(pool101.capacityM)}M），扩容后成本核算口径不变、池维度月报按新月租归集</>}
                 </div>
@@ -656,22 +798,28 @@ export default function DeliveryDetail() {
               <div className="space-y-3 text-xs">
                 {usedLines.map((lid) => {
                   const p = lineOf(lid);
+                  const bw = exits.filter((e) => e.line === lid).reduce((s, e) => s + e.bw, 0);
                   return (
                     <div key={lid}>
-                      <div className="mb-1 flex justify-between text-[#4E5969]"><span>{lid} 已售带宽（池 {fmt(p.capacityM)}M）</span><span className="font-mono">{fmt(p.dynamic.usedM)} / {fmt(p.capacityM)} M</span></div>
+                      <div className="mb-1 flex justify-between text-[#4E5969]"><span>{lid} 已售带宽（池 {fmt(p.capacityM)}M，本单 +{fmt(bw)}M）</span><span className="font-mono">{fmt(p.dynamic.usedM)} / {fmt(p.capacityM)} M</span></div>
                       <div className="h-2 overflow-hidden rounded-[2px] bg-[#F2F3F5]"><div className="h-full bg-[#165DFF] transition-all" style={{ width: `${(p.dynamic.usedM / p.capacityM) * 100}%` }} /></div>
                     </div>
                   );
                 })}
                 <div className="space-y-1">
-                  {pairs.map((p, i) => (
-                    <div key={i} className="flex justify-between text-[#4E5969]"><span>{ipOf(p.ip).segment.split("（")[0]} 已分配（本单 {calcs[i].rangeText}）</span><span className="font-mono">{ipOf(p.ip).dynamic.allocated} / {ipOf(p.ip).total} 个</span></div>
+                  {ipAsgs.map((a, i) => (
+                    <div key={i} className="flex justify-between text-[#4E5969]"><span>{ipOf(a.ip).segment.split("（")[0]} 已分配（本单 {calcs[i].rangeText}）</span><span className="font-mono">{ipOf(a.ip).dynamic.allocated} / {ipOf(a.ip).total} 个</span></div>
                   ))}
                 </div>
-                <div>
-                  <div className="mb-1 flex justify-between text-[#4E5969]"><span>{cpe.name} 现存量</span><span className="font-mono">{cpe.dynamic.stock} 台（锁定 {cpe.dynamic.locked}）</span></div>
-                  <div className="h-2 overflow-hidden rounded-[2px] bg-[#F2F3F5]"><div className="h-full bg-[#FF7D00] transition-all" style={{ width: `${(cpe.dynamic.stock / 5) * 100}%` }} /></div>
-                </div>
+                {[...new Set(devices.map((d) => d.id))].map((devId) => {
+                  const dev = devOf(devId);
+                  return (
+                    <div key={devId}>
+                      <div className="mb-1 flex justify-between text-[#4E5969]"><span>{dev.name} 现存量</span><span className="font-mono">{dev.dynamic.stock} 台（锁定 {dev.dynamic.locked}）</span></div>
+                      <div className="h-2 overflow-hidden rounded-[2px] bg-[#F2F3F5]"><div className="h-full bg-[#FF7D00] transition-all" style={{ width: `${Math.min((dev.dynamic.stock / 5) * 100, 100)}%` }} /></div>
+                    </div>
+                  );
+                })}
                 <div className="rounded-[2px] bg-[#E8F3FF] px-2 py-1.5 leading-4 text-[#165DFF]">
                   审批通过（P01-6）起资源预选锁定；本页"绑定扣减"完成后正式占用。任何页面不可手工改这些数字。
                 </div>
