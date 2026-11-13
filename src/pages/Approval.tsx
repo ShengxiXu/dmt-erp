@@ -28,17 +28,30 @@ const DOC_COLOR: Record<string, string> = {
 
 /** 列表业务字段：核算单走「核算单 → 合同 → 商机」链路取数（老合同无 dealId 时经关联特批单回溯商机）；
  *  坏账取摘要中的客户；采购/付款为供应商侧业务，无客户商机 */
-function bizOf(i: ApprovalInstance): { customer: string; opp: string } {
+function bizOf(i: ApprovalInstance): { customer: string; opp: string; contractNo: string } {
   if (i.docType.includes("核算单")) {
     const sheet = SHEETS.find((s) => s.id === i.docId);
     const contract = sheet ? CONTRACTS.find((c) => sheet.contract.includes(c.id)) : undefined;
     const dealId = contract?.dealId
       ?? (contract?.specialId ? SPECIALS.find((s) => s.id === contract.specialId)?.dealId : undefined);
     const opp = dealId ? GET_OPP(dealId) : undefined;
-    return { customer: sheet?.customer ?? "—", opp: opp?.name ?? "—" };
+    return {
+      customer: sheet?.customer ?? "—",
+      opp: opp?.name ?? "—",
+      contractNo: contract?.id ?? (sheet?.contract.match(/HT-\d+-\d+/)?.[0] ?? "—"),
+    };
   }
-  if (i.docType.includes("坏账")) return { customer: i.summary.split(" · ")[0], opp: "—" };
-  return { customer: "—", opp: "—" };
+  if (i.docType.includes("坏账")) return { customer: i.summary.split(" · ")[0], opp: "—", contractNo: "—" };
+  return { customer: "—", opp: "—", contractNo: "—" };
+}
+
+/** 列表「摘要」（业务内容）：核算单 → 订单行产品构成（不带客户名）；其他单据 → 摘要原文 */
+function contentOf(i: ApprovalInstance): string {
+  if (!i.docType.includes("核算单")) return i.summary;
+  const sheet = SHEETS.find((s) => s.id === i.docId);
+  let t = titleOf(i);
+  if (sheet?.customer && t.startsWith(sheet.customer)) t = t.slice(sheet.customer.length).replace(/^\s*·\s*/, "");
+  return t.replace(/\s*·\s*成本核算(单)?$/, "") || i.summary;
 }
 
 /** 列表「名称」：优先实例自带标题（提交时写入，对应正式库表 subject 字段）；存量无标题实例按单据类型兼容推导 */
@@ -158,7 +171,7 @@ export default function Approval() {
   const rows = getInstances().filter((i) =>
     (st === "全部" || i.status === st) &&
     (!kw || i.docId.includes(kw) || i.summary.includes(kw) || titleOf(i).includes(kw) || i.flowName.includes(kw) || i.docType.includes(kw)
-      || bizOf(i).customer.includes(kw) || bizOf(i).opp.includes(kw)));
+      || bizOf(i).customer.includes(kw) || bizOf(i).opp.includes(kw) || bizOf(i).contractNo.includes(kw)));
 
   const open = (id: string) => setSelId(id);
   const back = () => setSelId(null);
@@ -196,8 +209,9 @@ export default function Approval() {
             <table className="w-full text-xs">
               <thead>
                 <tr className="border-b bg-[#F7F8FA] text-left text-[#4E5969]">
+                  <th className="px-3 py-2">单据号</th>
                   <th className="px-3 py-2">单据类型</th>
-                  <th className="px-3 py-2">单据号</th><th className="px-3 py-2">客户</th><th className="px-3 py-2">商机</th>
+                  <th className="px-3 py-2">客户</th><th className="px-3 py-2">商机</th><th className="px-3 py-2">合同编号</th>
                   <th className="px-3 py-2">摘要</th>
                   <th className="px-3 py-2">审批流 / 分支</th>
                   <th className="px-3 py-2">当前节点</th><th className="px-3 py-2">状态</th>
@@ -207,11 +221,12 @@ export default function Approval() {
               <tbody>
                 {rows.map((i) => (
                   <tr key={i.id} className="cursor-pointer border-b last:border-0 hover:bg-[#F7F8FA]" onClick={() => open(i.id)}>
+                    <td className="px-3 py-2.5 font-mono font-medium text-[#165DFF]">{i.docId}</td>
                     <td className="px-3 py-2.5"><Badge className={`${DOC_COLOR[i.docType] ?? "bg-[#F2F3F5] text-[#4E5969]"} hover:bg-inherit`}>{i.docType.replace(" · 提交", "")}</Badge></td>
-                    <td className="px-3 py-2.5 font-mono text-[#165DFF]">{i.docId}</td>
                     <td className="px-3 py-2.5 font-medium text-[#1D2129]">{bizOf(i).customer}</td>
                     <td className="px-3 py-2.5 text-[#4E5969]">{bizOf(i).opp}</td>
-                    <td className="max-w-56 truncate px-3 py-2.5 text-[#86909C]" title={i.summary}>{i.summary}</td>
+                    <td className="px-3 py-2.5 font-mono text-[#4E5969]">{bizOf(i).contractNo}</td>
+                    <td className="max-w-56 truncate px-3 py-2.5 text-[#86909C]" title={contentOf(i)}>{contentOf(i)}</td>
                     <td className="px-3 py-2.5 text-[#4E5969]">{i.flowName}<div className="text-[10px] text-[#86909C]">{i.branchName ?? "—"}（{i.snapshot.branch}）</div></td>
                     <td className="px-3 py-2.5 text-[#4E5969]">
                       {i.status === "审批中" ? <span className="text-[#165DFF]">{nodeLabel(i.snapshot.nodes[i.curNodeIdx])}</span> : `${i.results.length} 级已审`}
@@ -225,7 +240,7 @@ export default function Approval() {
                     </td>
                   </tr>
                 ))}
-                {!rows.length && <tr><td colSpan={10} className="px-3 py-10 text-center text-[#86909C]">无匹配审批实例</td></tr>}
+                {!rows.length && <tr><td colSpan={11} className="px-3 py-10 text-center text-[#86909C]">无匹配审批实例</td></tr>}
               </tbody>
             </table>
           </div>
