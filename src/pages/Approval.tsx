@@ -24,6 +24,17 @@ const DOC_COLOR: Record<string, string> = {
   "付款申请单 · 提交": "bg-[#FEF0FF] text-[#722ED1]",
 };
 
+/** 列表「名称」：核算单 → 「客户 · 产品内容 · 成本核算」（审批人扫一眼就知道审什么业务）；其他单据 → 摘要原文 */
+function titleOf(i: ApprovalInstance): string {
+  if (!i.docType.includes("核算单")) return i.summary;
+  const sheet = SHEETS.find((s) => s.id === i.docId);
+  const recs = entriesOfSheet(i.docId) ?? (i.docId === "CE-2026-1008" ? SHEET_ENTRIES : null);
+  const lines = [...new Set((recs ?? []).map((e) => e.line)
+    .filter((l) => l.includes(" · "))  // 跳过「L1」「L1+L2」这类汇总行，只取真实订单行
+    .map((l) => l.replace(/^L\w+ · /, "").replace(/（[^（）]*）$/, "").trim()))];
+  return lines.length ? `${sheet?.customer ?? ""} · ${lines.join("；")} · 成本核算` : i.summary;
+}
+
 /** 审批链时间线 + 审批操作 + 流转记录（核算单专属详情与通用实例详情共用） */
 function InstancePanel({ inst, doneText }: { inst: ApprovalInstance; doneText?: ReactNode }) {
   const [comment, setComment] = useState("");
@@ -128,7 +139,7 @@ export default function Approval() {
   const [kw, setKw] = useState("");
   const rows = getInstances().filter((i) =>
     (st === "全部" || i.status === st) &&
-    (!kw || i.docId.includes(kw) || i.summary.includes(kw) || i.flowName.includes(kw) || i.docType.includes(kw)));
+    (!kw || i.docId.includes(kw) || i.summary.includes(kw) || titleOf(i).includes(kw) || i.flowName.includes(kw) || i.docType.includes(kw)));
 
   const open = (id: string) => setSelId(id);
   const back = () => setSelId(null);
@@ -167,7 +178,7 @@ export default function Approval() {
               <thead>
                 <tr className="border-b bg-[#F7F8FA] text-left text-[#4E5969]">
                   <th className="px-3 py-2">实例号</th><th className="px-3 py-2">单据类型</th>
-                  <th className="px-3 py-2">单据号 / 摘要</th><th className="px-3 py-2">审批流 / 分支</th>
+                  <th className="px-3 py-2">名称 / 单据号</th><th className="px-3 py-2">审批流 / 分支</th>
                   <th className="px-3 py-2">当前节点</th><th className="px-3 py-2">状态</th>
                   <th className="px-3 py-2">提交人 / 时间</th><th className="px-3 py-2 text-right">操作</th>
                 </tr>
@@ -178,8 +189,8 @@ export default function Approval() {
                     <td className="px-3 py-2.5 font-mono text-[#86909C]">{i.id}</td>
                     <td className="px-3 py-2.5"><Badge className={`${DOC_COLOR[i.docType] ?? "bg-[#F2F3F5] text-[#4E5969]"} hover:bg-inherit`}>{i.docType.replace(" · 提交", "")}</Badge></td>
                     <td className="px-3 py-2.5">
-                      <div className="font-mono font-medium text-[#165DFF]">{i.docId}</div>
-                      <div className="text-[#86909C]">{i.summary}</div>
+                      <div className="font-medium text-[#1D2129]">{titleOf(i)}</div>
+                      <div className="font-mono text-[11px] text-[#165DFF]">{i.docId}</div>
                     </td>
                     <td className="px-3 py-2.5 text-[#4E5969]">{i.flowName}<div className="text-[10px] text-[#86909C]">{i.branchName ?? "—"}（{i.snapshot.branch}）</div></td>
                     <td className="px-3 py-2.5 text-[#4E5969]">
@@ -206,6 +217,7 @@ export default function Approval() {
           <div className="flex items-center gap-6 border-b border-[#E5E6EB] bg-white px-6">
             <button onClick={back} className="py-3 text-[13px] text-[#86909C] hover:text-[#165DFF]">← 返回列表</button>
             <span className="py-3 font-mono text-[14px] text-[#1D2129]">{inst.docId}</span>
+            <span className="py-3 text-[14px] font-medium text-[#1D2129]">{titleOf(inst)}</span>
             <Badge className={INST_COLOR[inst.status] + " hover:bg-inherit"}>{inst.status}</Badge>
             <span className="py-3 text-xs text-[#86909C]">审批实例 {inst.id} · 流「{inst.flowName}」分支「{inst.branchName ?? "—"}」（{inst.snapshot.branch}）· 提交人 {inst.submitter} {inst.submitAt}</span>
           </div>
@@ -310,6 +322,7 @@ export default function Approval() {
             <button onClick={back} className="py-3 text-[13px] text-[#86909C] hover:text-[#165DFF]">← 返回列表</button>
             <Badge className={`${DOC_COLOR[inst.docType] ?? "bg-[#F2F3F5] text-[#4E5969]"} hover:bg-inherit`}>{inst.docType.replace(" · 提交", "")}</Badge>
             <span className="py-3 font-mono text-[14px] text-[#1D2129]">{inst.docId}</span>
+            <span className="py-3 text-[14px] font-medium text-[#1D2129]">{titleOf(inst)}</span>
             <Badge className={INST_COLOR[inst.status] + " hover:bg-inherit"}>{inst.status}</Badge>
             <span className="py-3 text-xs text-[#86909C]">审批实例 {inst.id} · 流「{inst.flowName}」分支「{inst.branchName ?? "—"}」（{inst.snapshot.branch}）· 提交人 {inst.submitter} {inst.submitAt}</span>
           </div>
