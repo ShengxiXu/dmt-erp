@@ -119,7 +119,7 @@ export default function DeliveryDetail() {
         key: `line:${lid}`, type: "manual" as const,
         name: `出口负载评估（${pool.id} ${pool.name.split("（")[0]}）`,
         rule: "工程师查看该出口流量负载是否饱和，决定本出口能否继续使用（按实际流量负载判断，不按已售带宽做减法）",
-        dataText: `容量 ${fmt(pool.capacityM)}M · 已售 ${fmt(pool.dynamic.usedM)}M · 近 30 日峰值流量 ${fmt(pool.dynamic.peakM ?? 0)}M（利用率 ${utilOf(lid)}%）`,
+        dataText: `当前承载 ${pool.dynamic.orders.length} 家客户业务 · 近 30 日峰值流量 ${fmt(pool.dynamic.peakM ?? 0)}M / 容量 ${fmt(pool.capacityM)}M（利用率 ${utilOf(lid)}%）· 已售带宽 ${fmt(pool.dynamic.usedM)}M（仅商用参考，余量不做递减判定）`,
       };
     }),
     // IP 余量：每一对「出口 + IP 段」一行，系统自动定量校验
@@ -490,7 +490,7 @@ export default function DeliveryDetail() {
                         <select id="add-exit-sel" className="rounded-[2px] border border-[#E5E6EB] bg-white px-2 py-1 text-xs" defaultValue=""
                           onChange={(e) => e.target.value && addExit(e.target.value)}>
                           <option value="">＋ 添加出口…</option>
-                          {r1.filter((l) => !usedLines.includes(l.id)).map((l) => <option key={l.id} value={l.id}>{l.id} {l.name.split("（")[0]}（余 {fmt(l.capacityM - l.dynamic.usedM)}M）</option>)}
+                          {r1.filter((l) => !usedLines.includes(l.id)).map((l) => <option key={l.id} value={l.id}>{l.id} {l.name.split("（")[0]}（峰值 {fmt(l.dynamic.peakM ?? 0)}M / {fmt(l.capacityM)}M · {l.dynamic.orders.length} 家客户）</option>)}
                         </select>
                       </span>
                     </div>
@@ -498,8 +498,9 @@ export default function DeliveryDetail() {
                       {exits.length === 0 && <div className="rounded-[2px] border border-dashed border-[#E5E6EB] px-3 py-2 text-xs text-[#86909C]">尚未选择出口资源</div>}
                       {exits.map((e) => {
                         const p = lineOf(e.line);
-                        const ut = p.capacityM > 0 ? Math.round((p.dynamic.usedM / p.capacityM) * 100) : 0;
-                        const after = p.capacityM > 0 ? Math.round(((p.dynamic.usedM + e.bw) / p.capacityM) * 100) : 0;
+                        // 负载口径 = 近 30 日峰值流量 ÷ 容量（流量指标），不做「容量 − 已售」的递减判定；
+                        // 已售带宽只是商用参考，承载客户业务明细见下方列表
+                        const ut = utilOf(e.line);
                         const hasIp = ipAsgs.some((a) => a.line === e.line);
                         return (
                           <div key={e.line} className="rounded-[2px] border border-[#E5E6EB] p-3">
@@ -507,7 +508,7 @@ export default function DeliveryDetail() {
                               <span className="font-mono text-xs font-semibold text-[#1D2129]">{e.line}</span>
                               <span className="text-xs text-[#4E5969]">{p.name}</span>
                               <span className={`rounded-[2px] px-1.5 py-0.5 text-[11px] ${ut >= 90 ? "bg-[#FFECE8] text-[#F53F3F]" : ut >= 70 ? "bg-[#FFF7E8] text-[#FF7D00]" : "bg-[#E8F8F2] text-[#00B42A]"}`}>
-                                当前负载 {ut}%
+                                峰值负载 {ut}%
                               </span>
                               <span className="ml-auto">
                                 <Button size="sm" variant="ghost" className="text-[#F53F3F]" disabled={hasIp}
@@ -515,14 +516,20 @@ export default function DeliveryDetail() {
                                   onClick={() => removeExit(e.line)}>✕ 移除</Button>
                               </span>
                             </div>
-                            <div className="mt-2 grid items-center gap-3 md:grid-cols-[1fr_auto]">
+                            <div className="mt-2 grid items-start gap-3 md:grid-cols-[1fr_auto]">
                               <div>
                                 <div className="mb-1 flex justify-between text-[11px] text-[#86909C]">
-                                  <span>已售 {fmt(p.dynamic.usedM)}M / 容量 {fmt(p.capacityM)}M · 近 30 日峰值 {fmt(p.dynamic.peakM ?? 0)}M（利用率 {utilOf(e.line)}%）</span>
-                                  <span>本单占用 {fmt(e.bw)}M → 占用后 {after}%</span>
+                                  <span>当前覆盖客户业务 {p.dynamic.orders.length} 家 · 近 30 日峰值 {fmt(p.dynamic.peakM ?? 0)}M / 容量 {fmt(p.capacityM)}M（{ut}%）</span>
                                 </div>
                                 <div className="h-2 overflow-hidden rounded-[2px] bg-[#F2F3F5]">
                                   <div className="h-full bg-[#165DFF] transition-all" style={{ width: `${Math.min(ut, 100)}%` }} />
+                                </div>
+                                <div className="mt-1.5 flex flex-wrap gap-1">
+                                  {p.dynamic.orders.length > 0 ? p.dynamic.orders.map((o, oi) => (
+                                    <span key={oi} className="rounded-[2px] bg-[#F7F8FA] px-1.5 py-0.5 text-[11px] text-[#4E5969]">
+                                      {o.customer} · <span className="font-mono">{fmt(o.bw)}M</span> · {o.since}
+                                    </span>
+                                  )) : <span className="text-[11px] text-[#C9CDD4]">尚未承载客户业务</span>}
                                 </div>
                               </div>
                               <div className="flex items-center gap-1.5">
