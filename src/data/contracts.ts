@@ -297,3 +297,10 @@ export const daysToEnd = (c: Contract) => Math.round((new Date(c.end).getTime() 
 /** 到期预警清单：已生效且 days 天内到期（含已到期未终止），按剩余天数升序 */
 export const expiringContracts = (days = 90) =>
   CONTRACTS.filter((c) => c.status === "已生效" && daysToEnd(c) <= days).sort((a, b) => daysToEnd(a) - daysToEnd(b));
+/** 客户维度：全部生效合同中最近的一份到期（用于客户档案的到期提醒列） */
+export const nearestActiveEnd = (customer: string): { end: string; days: number } | null => {
+  const actives = CONTRACTS.filter((c) => c.customer === customer && c.status === "已生效");
+  if (!actives.length) return null;
+  const nearest = actives.reduce((a, b) => (daysToEnd(a) <= daysToEnd(b) ? a : b));
+  return { end: nearest.end, days: daysToEnd(nearest) };
+};

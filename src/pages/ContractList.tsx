@@ -10,6 +10,7 @@ import { ownerOfDeal } from "@/data/ownership";
 import { DEMO_TODAY } from "@/data/settings";
 import { exportCsv } from "@/utils/exportCsv";
 import ArcoShell from "@/components/ArcoShell";
+import ExpiryBadge from "@/components/ExpiryBadge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -30,9 +31,12 @@ export default function ContractList() {
   const navigate = useNavigate();
   const [tab, setTab] = useState<(typeof TABS)[number]>("全部");
   const [kw, setKw] = useState("");
+  const [onlyExpiring, setOnlyExpiring] = useState(false);
   // 数据权限：合同沿「商机 → 客户」链路解析归属人后按角色数据范围过滤
   const scoped = CONTRACTS.filter((c) => inDataScope(ownerOfDeal(c.dealId, c.customer)));
-  const shown = scoped.filter((c) => (tab === "全部" || c.status === tab) && (!kw || c.id.includes(kw) || c.customer.includes(kw)));
+  const expiringScoped = scoped.filter((c) => c.status === "已生效" && daysToEnd(c) <= 90);
+  const shown = scoped.filter((c) => (tab === "全部" || c.status === tab) && (!kw || c.id.includes(kw) || c.customer.includes(kw)))
+    .filter((c) => !onlyExpiring || (c.status === "已生效" && daysToEnd(c) <= 90));
   const banner = scopeBanner(CONTRACTS.length - scoped.length);
   const expiring = expiringContracts(90);
 
@@ -60,6 +64,10 @@ export default function ContractList() {
               ))}
             </div>
             <Input className="w-52" placeholder="搜索合同号 / 客户" value={kw} onChange={(e) => setKw(e.target.value)} />
+            <button onClick={() => setOnlyExpiring(!onlyExpiring)} title="只看 90 天内到期 / 已逾期的生效合同"
+              className={`rounded-[2px] border px-2.5 py-1.5 text-xs transition-colors ${onlyExpiring ? "border-[#FF7D00] bg-[#FFF7E8] font-medium text-[#FF7D00]" : "border-[#E5E6EB] text-[#4E5969] hover:border-[#FF7D00] hover:text-[#FF7D00]"}`}>
+              ⏳ 临期预警{expiringScoped.length ? `（${expiringScoped.length}）` : ""}
+            </button>
             <button onClick={() => exportCsv(`合同台账_${DEMO_TODAY}`, ["合同号", "客户", "订单内容", "月租合计(元)", "付款方式", "折扣", "签约主体", "状态", "合同期限"],
               shown.map((c) => [c.id, c.customer, c.lines.map((l) => l.ptype).join("+"), c.amount, c.pay, c.discount ? `${c.discount}%` : "标准", ENTITY_NAME(c.entityId), c.status, `${c.start} ~ ${c.end}`]))}
               className="flex items-center gap-1 rounded-[2px] border border-[#E5E6EB] px-2.5 py-1.5 text-xs text-[#4E5969] hover:border-[#165DFF] hover:text-[#165DFF]">
@@ -101,9 +109,7 @@ export default function ContractList() {
                     </td>
                     <td className="px-3 py-2.5 text-[#86909C]">
                       {c.start} ~ {c.end}
-                      {c.status === "已生效" && daysToEnd(c) <= 90 && (
-                        <span className={`ml-1.5 rounded-[2px] px-1 py-0.5 text-[10px] ${daysToEnd(c) <= 30 ? "bg-[#FFECE8] text-[#F53F3F]" : "bg-[#FFF3E8] text-[#FF7D00]"}`}>剩 {daysToEnd(c)} 天</span>
-                      )}
+                      {c.status === "已生效" && <ExpiryBadge days={daysToEnd(c)} />}
                     </td>
                     <td className="px-3 py-2.5 text-right"><button className="rounded-[2px] border border-[#E5E6EB] px-2 py-0.5 text-[11px] text-[#4E5969] hover:border-[#165DFF] hover:text-[#165DFF]">{c.status === "审批中" ? "去审批" : c.status === "待用章" || c.status === "签署中" ? "去签署" : "查看"}</button></td>
                   </tr>

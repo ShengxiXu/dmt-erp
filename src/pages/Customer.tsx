@@ -5,7 +5,7 @@ import { Link, useNavigate } from "react-router";
 import { Download } from "lucide-react";
 import { CUSTOMERS, useOpps, OPPS_OF, type Customer } from "@/data/customers";
 import { inDataScope, scopeBanner, currentUser } from "@/data/users";
-import { CONTRACTS, fmtMoney } from "@/data/contracts";
+import { CONTRACTS, fmtMoney, nearestActiveEnd, daysToEnd } from "@/data/contracts";
 import { RECEIVABLES, PAYMENTS, invBalance } from "@/data/receivables";
 import { customerFinance, FIN_TODAY } from "@/data/finance";
 import { R1_ROWS } from "@/data/resources";
@@ -13,6 +13,7 @@ import { DEMO_TODAY } from "@/data/settings";
 import { exportCsv } from "@/utils/exportCsv";
 import ArcoShell from "@/components/ArcoShell";
 import CenterModal from "@/components/CenterModal";
+import ExpiryBadge from "@/components/ExpiryBadge";
 import { RegionCascader } from "@/components/RegionCascader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -71,7 +72,7 @@ export default function Customer() {
               <tr className="border-b bg-[#F7F8FA] text-left text-[#4E5969]">
                 <th className="px-3 py-2">客户编码</th><th className="px-3 py-2">客户名称</th><th className="px-3 py-2">等级</th>
                 <th className="px-3 py-2">联系人 / 电话</th><th className="px-3 py-2">行业</th><th className="px-3 py-2">归属销售</th>
-                <th className="px-3 py-2">商机</th><th className="px-3 py-2">状态</th><th className="px-3 py-2">建档时间</th><th className="px-3 py-2 text-right">操作</th>
+                <th className="px-3 py-2">商机</th><th className="px-3 py-2">状态</th><th className="px-3 py-2">合同到期</th><th className="px-3 py-2">建档时间</th><th className="px-3 py-2 text-right">操作</th>
               </tr>
             </thead>
             <tbody>
@@ -92,6 +93,7 @@ export default function Customer() {
                     </Link>
                   </td>
                   <td className="px-3 py-2.5"><span className={`rounded-[2px] px-1.5 py-0.5 text-[10px] ${c.status === "合作中" ? "bg-[#E8F8F2] text-[#00B42A]" : "bg-[#F2F3F5] text-[#4E5969]"}`}>{c.status}</span></td>
+                  <td className="whitespace-nowrap px-3 py-2.5 text-[#86909C]">{(() => { const ne = nearestActiveEnd(c.name); return ne ? <>{ne.end}<ExpiryBadge days={ne.days} /></> : "—"; })()}</td>
                   <td className="px-3 py-2.5 text-[#86909C]">{c.createdAt}</td>
                   <td className="px-3 py-2.5 text-right">
                     <button onClick={() => setViewing(c)} className="mr-1 rounded-[2px] border border-[#E5E6EB] px-2 py-0.5 text-[11px] text-[#4E5969] hover:border-[#0D9488] hover:text-[#0D9488]">360° 视图</button>
@@ -295,7 +297,7 @@ export default function Customer() {
                           {contracts.map((c) => (
                             <tr key={c.id} className="cursor-pointer border-b last:border-0 hover:bg-[#F7F8FA]" onClick={() => { setViewing(null); navigate(`/contract/detail?id=${c.id}`); }}>
                               <td className="px-2 py-1.5"><span className="font-mono text-[#165DFF]">{c.id}</span><span className="ml-1 text-[#4E5969]">{c.lines.map((l) => l.ptype).join(" + ")}</span>{c.discount ? <span className="ml-1 text-[10px] text-[#FF7D00]">折 {c.discount}%</span> : null}</td>
-                              <td className="px-2 py-1.5 text-[#4E5969]">{c.start} ~ {c.end}</td>
+                              <td className="whitespace-nowrap px-2 py-1.5 text-[#4E5969]">{c.start} ~ {c.end}{c.status === "已生效" && <ExpiryBadge days={daysToEnd(c)} />}</td>
                               <td className="px-2 py-1.5 text-right font-mono">{fmtMoney(c.amount)} 元/月</td>
                               <td className="px-2 py-1.5"><span className={`rounded-[2px] px-1 py-0.5 text-[10px] ${c.status === "已生效" ? "bg-[#E8F8F2] text-[#00B42A]" : c.status === "审批中" ? "bg-[#FFF3E8] text-[#FF7D00]" : "bg-[#F2F3F5] text-[#4E5969]"}`}>{c.status}</span></td>
                               <td className="px-2 py-1.5 text-[#4E5969]">{c.pay}</td>
