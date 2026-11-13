@@ -1115,7 +1115,8 @@ export default function Home() {
                   recordSheetEntries(sheet0.id, recs);
                   const r = submitForApproval("成本核算单 · 提交", sheet0.id, `${sheet0.customer} · ${sheet0.contract}`,
                     { monthlyCost: sheet0.monthlyCost, contractValue: sheet0.contractValue, margin: sheet0.margin, lines: sheet0.lines },
-                    currentUser()?.name ?? "演示用户");
+                    currentUser()?.name ?? "演示用户",
+                    `${sheet0.customer} · ${lines.map((l) => l.name.replace(/（[^（）]*）$/, "").trim()).join("；")} · 成本核算单`);
                   if (!r.hit) alert(`未进入审批：${r.reason ?? "未命中审批点，单据直接生效"}`);
                 }
               }}>

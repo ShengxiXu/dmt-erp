@@ -24,8 +24,9 @@ const DOC_COLOR: Record<string, string> = {
   "付款申请单 · 提交": "bg-[#FEF0FF] text-[#722ED1]",
 };
 
-/** 列表「名称」：核算单 → 「客户 · 产品内容 · 成本核算」（审批人扫一眼就知道审什么业务）；其他单据 → 摘要原文 */
+/** 列表「名称」：优先实例自带标题（提交时写入，对应正式库表 subject 字段）；存量无标题实例按单据类型兼容推导 */
 function titleOf(i: ApprovalInstance): string {
+  if (i.title) return i.title;
   if (!i.docType.includes("核算单")) return i.summary;
   const sheet = SHEETS.find((s) => s.id === i.docId);
   const recs = entriesOfSheet(i.docId) ?? (i.docId === "CE-2026-1008" ? SHEET_ENTRIES : null);
@@ -178,7 +179,8 @@ export default function Approval() {
               <thead>
                 <tr className="border-b bg-[#F7F8FA] text-left text-[#4E5969]">
                   <th className="px-3 py-2">实例号</th><th className="px-3 py-2">单据类型</th>
-                  <th className="px-3 py-2">名称 / 单据号</th><th className="px-3 py-2">审批流 / 分支</th>
+                  <th className="px-3 py-2">名称</th><th className="px-3 py-2">单据号</th>
+                  <th className="px-3 py-2">审批流 / 分支</th>
                   <th className="px-3 py-2">当前节点</th><th className="px-3 py-2">状态</th>
                   <th className="px-3 py-2">提交人 / 时间</th><th className="px-3 py-2 text-right">操作</th>
                 </tr>
@@ -190,8 +192,8 @@ export default function Approval() {
                     <td className="px-3 py-2.5"><Badge className={`${DOC_COLOR[i.docType] ?? "bg-[#F2F3F5] text-[#4E5969]"} hover:bg-inherit`}>{i.docType.replace(" · 提交", "")}</Badge></td>
                     <td className="px-3 py-2.5">
                       <div className="font-medium text-[#1D2129]">{titleOf(i)}</div>
-                      <div className="font-mono text-[11px] text-[#165DFF]">{i.docId}</div>
                     </td>
+                    <td className="px-3 py-2.5 font-mono text-[#165DFF]">{i.docId}</td>
                     <td className="px-3 py-2.5 text-[#4E5969]">{i.flowName}<div className="text-[10px] text-[#86909C]">{i.branchName ?? "—"}（{i.snapshot.branch}）</div></td>
                     <td className="px-3 py-2.5 text-[#4E5969]">
                       {i.status === "审批中" ? <span className="text-[#165DFF]">{nodeLabel(i.snapshot.nodes[i.curNodeIdx])}</span> : `${i.results.length} 级已审`}
@@ -205,7 +207,7 @@ export default function Approval() {
                     </td>
                   </tr>
                 ))}
-                {!rows.length && <tr><td colSpan={8} className="px-3 py-10 text-center text-[#86909C]">无匹配审批实例</td></tr>}
+                {!rows.length && <tr><td colSpan={9} className="px-3 py-10 text-center text-[#86909C]">无匹配审批实例</td></tr>}
               </tbody>
             </table>
           </div>

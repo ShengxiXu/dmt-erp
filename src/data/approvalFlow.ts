@@ -227,6 +227,8 @@ export interface ApprovalInstance {
   results: NodeResult[];
   submitter: string; submitAt: string;
   ctx: Record<string, unknown>;
+  /** 审批标题（业务可读名称，如「展鹏教育 · 国内精品网 50M · 成本核算单」）：列表/详情直接展示，对应正式库表 subject 字段 */
+  title?: string;
   // v2 遗留字段（迁移用，读取处不再使用）
   pointId?: string; pointName?: string; chainId?: string; chainName?: string;
 }
@@ -281,7 +283,7 @@ export function simulate(docType: DocType, ctx: Record<string, unknown>): {
 // ---------- 引擎：提交 / 审批 ----------
 export interface SubmitResult { hit: boolean; instance?: ApprovalInstance; reason?: string }
 
-export function submitForApproval(docType: DocType, docId: string, summary: string, ctx: Record<string, unknown>, submitter: string): SubmitResult {
+export function submitForApproval(docType: DocType, docId: string, summary: string, ctx: Record<string, unknown>, submitter: string, title?: string): SubmitResult {
   const existing = INSTANCE_OF_DOC(docId);
   if (existing && existing.status === "审批中") return { hit: true, instance: existing, reason: "已有在途审批实例" };
   const { hit, reason, flow, branch } = simulate(docType, ctx);
@@ -291,7 +293,7 @@ export function submitForApproval(docType: DocType, docId: string, summary: stri
   }
   const instance: ApprovalInstance = {
     id: `AV-${String(INSTANCES.length + 1).padStart(3, "0")}`,
-    docType, docId, summary,
+    docType, docId, summary, title: title ?? summary,
     flowId: flow.id, flowName: flow.name,
     branchId: branch.id, branchName: branch.name,
     snapshot: { nodes: branch.nodes.map((n) => ({ ...n })), rejectPolicy: branch.rejectPolicy, branch: branch.conds.length ? condsText(branch.conds) : "兜底分支" },
