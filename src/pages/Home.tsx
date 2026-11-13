@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { useSearchParams, Link } from "react-router";
+import { useSearchParams, useNavigate, Link } from "react-router";
 import {
   CATEGORIES,
   RESOURCE_TAGS,
@@ -968,15 +968,86 @@ export default function Home() {
     );
   };
 
+  const navigate = useNavigate();
+
+  // ---------- 未指定合同：先选合同，再进入录入 ----------
+  // 核算单必须基于「已生效」合同建立（合同详情「进入成本核算」可带 ?contract= 直达本页）；
+  // 从导航菜单进入时没有合同上下文 → 展示合同启动页，避免对着演示数据盲填
+  if (!contract) {
+    const SHEET_STATUS_CLS: Record<string, string> = {
+      待填写: "bg-[#FFF3E8] text-[#FF7D00]",
+      待对方提交: "bg-[#E8F3FF] text-[#165DFF]",
+      审批中: "bg-[#E8F3FF] text-[#165DFF]",
+      已通过: "bg-[#E8F8F2] text-[#00B42A]",
+      已驳回: "bg-[#FFECE8] text-[#F53F3F]",
+      变更中: "bg-[#F5E8FF] text-[#722ED1]",
+      未建档: "bg-[#F2F3F5] text-[#86909C]",
+    };
+    const rank = (s?: string) => (s === "待填写" || s === "待对方提交" || s === "已驳回" ? 0 : s === "审批中" || s === "变更中" ? 1 : 2);
+    const actives = CONTRACTS.filter((c) => c.status === "已生效")
+      .map((c) => ({ c, sheet: SHEET_OF_CONTRACT(c.id) }))
+      .sort((a, b) => rank(a.sheet?.status) - rank(b.sheet?.status));
+    const todoN = actives.filter((a) => rank(a.sheet?.status) === 0).length;
+    return (
+      <ArcoShell breadcrumb="核算单录入">
+        <main className="space-y-4 p-6">
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-[4px] border border-[#E5E6EB] bg-white px-4 py-3">
+            <div>
+              <div className="text-sm font-semibold text-[#1D2129]">选择合同，开始成本核算填报</div>
+              <div className="mt-0.5 text-xs leading-5 text-[#86909C]">
+                核算单基于已生效合同建立（进入时自动建档）；CRM 签订前的商机业务不在本系统。
+                也可以从 <Link to="/contract" className="text-[#165DFF] hover:underline">合同管理</Link> 的合同详情点「进入成本核算」直达。
+              </div>
+            </div>
+            {todoN > 0 && <span className="rounded-[2px] bg-[#FFF7E8] px-2 py-1 text-xs text-[#B25E00]">⏳ {todoN} 份核算单待处理</span>}
+          </div>
+          <div className="overflow-x-auto rounded-[4px] border border-[#E5E6EB] bg-white">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b bg-[#F7F8FA] text-left text-[#4E5969]">
+                  <th className="px-3 py-2">合同号</th><th className="px-3 py-2">客户</th><th className="px-3 py-2">订单内容</th>
+                  <th className="px-3 py-2 text-right">月租合计（元）</th><th className="px-3 py-2">付款方式</th>
+                  <th className="px-3 py-2">合同期限</th><th className="px-3 py-2">核算单状态</th><th className="px-3 py-2 text-right">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {actives.map(({ c, sheet }) => {
+                  const st = sheet?.status ?? "未建档";
+                  return (
+                    <tr key={c.id} className="cursor-pointer border-b last:border-0 hover:bg-[#F7F8FA]" onClick={() => navigate(`/?contract=${c.id}`)}>
+                      <td className="px-3 py-2.5 font-mono text-[#165DFF]">{c.id}</td>
+                      <td className="px-3 py-2.5 font-medium text-[#1D2129]">{c.customer}</td>
+                      <td className="max-w-[240px] truncate px-3 py-2.5 text-[#4E5969]">{c.lines.map((l) => l.ptype).join(" + ")}</td>
+                      <td className="px-3 py-2.5 text-right font-mono">{c.amount.toLocaleString()}</td>
+                      <td className="px-3 py-2.5 text-[#4E5969]">{c.pay}</td>
+                      <td className="px-3 py-2.5 text-[#86909C]">{c.start} ~ {c.end}</td>
+                      <td className="px-3 py-2.5">
+                        <span className={`rounded-[2px] px-1.5 py-0.5 text-[10px] ${SHEET_STATUS_CLS[st]}`}>{st}</span>
+                        {sheet && <span className="ml-1 font-mono text-[10px] text-[#86909C]">{sheet.id}</span>}
+                      </td>
+                      <td className="px-3 py-2.5 text-right"><span className="rounded-[2px] border border-[#94BFFF] px-2 py-0.5 text-[11px] text-[#165DFF]">进入填报 →</span></td>
+                    </tr>
+                  );
+                })}
+                {!actives.length && <tr><td colSpan={8} className="px-3 py-10 text-center text-[#86909C]">暂无已生效合同（合同生效后才能成本核算）</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </main>
+      </ArcoShell>
+    );
+  }
+
   return (
     <ArcoShell breadcrumb="核算单录入">
       {/* 单号 + 状态条 */}
       <div className="flex items-center gap-4 border-b border-[#E5E6EB] bg-white px-6 py-2.5">
-        <span className="font-mono text-[14px] text-[#1D2129]">{contract ? (SHEET_OF_CONTRACT(contract.id)?.id ?? "—") : "CE-2026-1008"}</span>
+        <span className="font-mono text-[14px] text-[#1D2129]">{SHEET_OF_CONTRACT(contract.id)?.id ?? "—"}</span>
         <span className={`rounded-[2px] px-2 py-0.5 text-[12px] ${sent ? "bg-[#E8F3FF] text-[#165DFF]" : "bg-[#FFF3E8] text-[#FF7D00]"}`}>
           {sent ? "审批中（已锁定）" : "待填写"}
         </span>
         <div className="ml-auto flex items-center gap-4 text-[13px] text-[#86909C]">
+          <Link to="/" className="hover:text-[#165DFF]">更换合同</Link>
           <span className="cursor-pointer hover:text-[#165DFF]"
             onClick={() => alert("原型演示：对部门填报进度（未开始 / 填写中 / 已提交）+ 最后更新时间")}>查看对方进度</span>
           <span className="cursor-pointer hover:text-[#165DFF]"
