@@ -122,6 +122,21 @@ const ATTRS_IP: FieldDef[] = [
   { key: "remain", label: "剩余可用数", method: "calc", dynamic: true, placeholder: "②层 = 可用 − 已分配" },
   { key: "allocDetail", label: "分配明细", method: "readonly", dynamic: true, placeholder: "②层：占用订单清单" },
 ];
+/** R0 出口池档案字段模板（mat_pool）：多出口自组的资源实体（BGP 资源池），客户向池采购带宽 */
+const ATTRS_POOL: FieldDef[] = [
+  { key: "id", label: "池编码", method: "readonly", placeholder: "系统生成，如 P-BGP-01 / P-002" },
+  { key: "name", label: "池名称", method: "text", placeholder: "见名知意，如 BGP 三网互通资源池（二期）" },
+  { key: "product", label: "归属产品类型", method: "enum", options: ["AI 专线", "BGP 三网互通", "OPON", "D-MAN", "国内精品网", "国际精品网"], placeholder: "该池归属的产品类型（BGP 三网互通 = 自建资源池：三大运营商出口自组、自有 BGP 调度）" },
+  { key: "exitIds", label: "成员出口", method: "search", source: "R1 出口线路档案（多选）：池由出口自组；成员出口仍可被其他产品类型共用" },
+  { key: "ipIds", label: "选挂 IP 段", method: "search", source: "R3 IP 地址段档案（多选，单向维护：在池上选挂，段上不反向维护；可不选）" },
+  { key: "capacityM", label: "池容量(M)", method: "calc", placeholder: "①层 = 成员出口带宽合计，自动得出" },
+  { key: "monthlyCost", label: "池月成本(元)", method: "calc", placeholder: "①层 = 成员出口月租合计，自动得出" },
+  { key: "effect", label: "生效日期", method: "text", placeholder: "YYYY-MM-DD" },
+  { key: "measureCycleDays", label: "负载实测周期(天)", method: "text", numeric: true, placeholder: "超过周期未实测将提醒（工程师人工实测录入）" },
+  { key: "status", label: "状态", method: "readonly", placeholder: "草稿/生效/停用" },
+  { key: "usedM", label: "池已售带宽(M)", method: "calc", dynamic: true, placeholder: "②层实时聚合：挂在池上的订单占用合计（池化计收基数）" },
+  { key: "orders", label: "承载订单清单", method: "readonly", dynamic: true, placeholder: "②层：审批通过订单占用（客户向池采购、不指向具体出口）" },
+];
 /** R4 设备库存档案字段模板（mat_dev） */
 const ATTRS_DEV: FieldDef[] = [
   { key: "id", label: "设备编码", method: "readonly", placeholder: "系统生成" },
@@ -277,6 +292,7 @@ export function useCatalog(): number {
 // 预置行业通用物料；用户可自行增改。删除已被引用的物料不会让 BOM 行消失，但行会标「物料库已删除」。
 const matDefs: MaterialDef[] = persistable("materialDefs", () => [
   { key: "mat_exit", name: "出口线路", form: "服务化资源", group: "线路资源", status: "启用", remark: "向运营商采购的出口，可多家客户共享；BGP 调度平台、SLA 冗余池也算在这", attrs: ATTRS_EXIT, purchase: { kind: "带宽扩容", unit: "M" } },
+  { key: "mat_pool", name: "出口池", form: "服务化资源", group: "线路资源", status: "启用", remark: "多出口自组的资源实体（如 BGP 资源池）：客户向池采购带宽、不指向池内具体出口；成员出口可被其他产品类型共用。实例档案见资源中心 R0", attrs: ATTRS_POOL, purchase: { kind: "带宽扩容", unit: "M" } },
   { key: "mat_base", name: "基础线路", form: "服务化资源", group: "线路资源", status: "启用", remark: "接入端线路：单客户专用，可跨产品共用不重复采购", attrs: ATTRS_BASE, purchase: { kind: "采购入库", unit: "条" } },
   { key: "mat_ip", name: "IP 地址段", form: "服务化资源", group: "IP 资源", status: "启用", remark: "随出口线路绑定的 IP 段", attrs: ATTRS_IP, purchase: { kind: "采购入库", unit: "段" } },
   { key: "mat_dev", name: "网络设备与备件", form: "实物", group: "设备与备件", status: "启用", remark: "CPE / 交换机等待库存设备，含板卡光模块", attrs: ATTRS_DEV, purchase: { kind: "采购入库", unit: "台" } },
@@ -296,6 +312,10 @@ const PURCHASE_DEFAULTS: Record<string, { kind: "带宽扩容" | "采购入库";
   mat_resale: { kind: "采购入库", unit: "条" },
 };
 matDefs.forEach((m) => { if (!m.purchase && PURCHASE_DEFAULTS[m.key]) m.purchase = PURCHASE_DEFAULTS[m.key]; });
+// 旧快照回填：池化改造前的资源目录没有「出口池」物料，补齐（新快照自带，无需重复）
+if (!matDefs.some((m) => m.key === "mat_pool")) {
+  matDefs.push({ key: "mat_pool", name: "出口池", form: "服务化资源", group: "线路资源", status: "启用", remark: "多出口自组的资源实体（如 BGP 资源池）：客户向池采购带宽、不指向池内具体出口；成员出口可被其他产品类型共用。实例档案见资源中心 R0", attrs: ATTRS_POOL, purchase: { kind: "带宽扩容", unit: "M" } });
+}
 
 export const getMaterials = () => matDefs;
 /** 按 libKey 取物料定义（BOM 行渲染用；引用已删除的物料返回 undefined） */

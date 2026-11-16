@@ -1034,12 +1034,19 @@ export default function Resources() {
           {/* ===== R0 出口池档案（BGP 资源池） ===== */}
           {tab === "r0" && (
             <>
+              <div className="flex items-center justify-between rounded-[4px] border border-[#E5E6EB] bg-white px-4 py-2.5">
+                <div className="text-sm">
+                  <span className="font-semibold text-[#1D2129]">R0 · 出口池档案</span>
+                  <Link className="ml-2 rounded-[2px] bg-[#F7F8FA] px-1.5 py-0.5 text-[10px] text-[#4E5969] hover:text-[#165DFF]"
+                    to="/materials" title="这套实例档案归属的资源（类）——资源目录是主，档案是实例维度">
+                    归属资源：{MAT_DEF("mat_pool")?.name ?? "出口池"}
+                  </Link>
+                </div>
+                <Button size="sm" onClick={() => setCreatingPool(true)}>＋ 新建出口池</Button>
+              </div>
               <div className="rounded-[4px] border border-[#E5E6EB] bg-white px-4 py-2 text-[11px] leading-5 text-[#86909C]">
                 <span className="mr-1 font-semibold text-[#4E5969]">池化口径：</span>
                 BGP 三网互通 = 自建资源池（三大运营商出口自组、自有 BGP 调度）：客户向「池」采购带宽，不指向池内某条出口；成员出口仍可被其他产品类型（AI 专线 / D-MAN）共用，出口承载明细只列直接挂在出口上的订单。扩容判断由人工决策（系统不设超售比硬门槛，仅提示水位）；负载数据由工程师定期人工实测录入、留痕成趋势，系统不做流量分摊预测，拥塞处置（QoS / BGP 策略）是工程师现场工作。
-              </div>
-              <div className="flex justify-end">
-                <Button size="sm" onClick={() => setCreatingPool(true)}>＋ 新建出口池</Button>
               </div>
               <div className="grid gap-3 xl:grid-cols-2">
                 {POOLS.map((p) => (

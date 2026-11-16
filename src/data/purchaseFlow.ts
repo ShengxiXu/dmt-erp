@@ -19,7 +19,7 @@ export const reqKind = (r: Pick<PurchaseReq, "type" | "matKey">): "带宽扩容"
  *  旧数据无 matKey 时按 type 值兼容） */
 export const reqLineType = (r: Pick<PurchaseReq, "type" | "matKey">): POLineType =>
   r.matKey === "mat_ip" || (!r.matKey && r.type === "IP 段") ? "IP 段" :
-  r.matKey === "mat_exit" || (!r.matKey && r.type === "带宽") ? "带宽容量" :
+  r.matKey === "mat_exit" || r.matKey === "mat_pool" || (!r.matKey && r.type === "带宽") ? "带宽容量" :
   r.matKey === "mat_dev" || (!r.matKey && r.type === "设备") ? "设备" : "其他资源";
 
 // ---------- P08-1 采购需求单 ----------

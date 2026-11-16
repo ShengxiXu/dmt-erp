@@ -6,6 +6,7 @@ import { Link, useNavigate } from "react-router";
 import { usePurchaseFlow, getReqs, addReq, closeReq, createPoFromReqs, reqToContractChange, reqKind, type PurchaseReq, type ReqSource } from "@/data/purchaseFlow";
 import { getContracts } from "@/data/purchase";
 import { SUPPLIERS, R1_ROWS, R4_ROWS } from "@/data/resources";
+import { POOLS } from "@/data/pool";
 import { getMaterials, MAT_DEF, type MaterialDef } from "@/data/products";
 import { DEMO_TODAY } from "@/data/settings";
 import ArcoShell from "@/components/ArcoShell";
@@ -125,6 +126,7 @@ function ReqForm({ onClose }: { onClose: () => void }) {
   const [f, setF] = useState({ source: "手工提报" as ReqSource, matKey: mats[0]?.[1][0]?.key ?? "", qty: "", room: "上海漕河泾", expectDate: "", note: "" });
   // 规格选择器状态（按类型联动，均为档案主数据选择）
   const [poolId, setPoolId] = useState(R1_ROWS[0]?.id ?? "");
+  const [ePoolId, setEPoolId] = useState(POOLS[0]?.id ?? "");
   const [ipPrefix, setIpPrefix] = useState("/24");
   const [devKey, setDevKey] = useState("");
   const [contractId, setContractId] = useState("");
@@ -133,11 +135,13 @@ function ReqForm({ onClose }: { onClose: () => void }) {
   const kind = mat?.purchase?.kind ?? "采购入库";
   const unit = mat?.purchase?.unit ?? "个";
   const pool = R1_ROWS.find((r) => r.id === poolId);
+  const ePool = POOLS.find((p) => p.id === ePoolId);
   const dev = R4_ROWS.find((r) => r.id === devKey);
   const contract = getContracts().find((c) => c.id === contractId);
   // 规格由选择器生成（禁止手填）
   const spec = !mat ? "" :
     f.matKey === "mat_exit" ? (pool ? `${pool.carrier} 出口池 ${pool.id} 扩容（现 ${pool.capacityM}M / ${pool.monthlyCost.toLocaleString("zh-CN")} 元·月，原合同 ${pool.contractNo}）` : "") :
+    f.matKey === "mat_pool" ? (ePool ? `出口池 ${ePool.id} · ${ePool.name} 扩容（成员出口 ${ePool.exitIds.length} 条，现池容量 ${ePool.capacityM}M / ${ePool.monthlyCost.toLocaleString("zh-CN")} 元·月）` : "") :
     f.matKey === "mat_ip" ? `新建 IP 段 ${ipPrefix}（${f.room.trim() || "未选机房"}）` :
     f.matKey === "mat_dev" ? (dev ? `${dev.name}（与 ${dev.id} 在库档案同型号）` : "") :
     (contract ? `${contract.subject} · ${contract.name}` : "");
@@ -189,6 +193,17 @@ function ReqForm({ onClose }: { onClose: () => void }) {
             </div>
           </div>
         )}
+        {f.matKey === "mat_pool" && (
+          <div>
+            <div className="mb-0.5 text-[#4E5969]">目标出口池 <span className="text-[#F53F3F]">*</span><span className="ml-1 text-[#86909C]">（R0 出口池档案）</span></div>
+            <select className="w-full rounded-[2px] border border-[#E5E6EB] bg-white px-2 py-1.5 text-sm" value={ePoolId} onChange={(e) => setEPoolId(e.target.value)}>
+              {POOLS.map((p) => <option key={p.id} value={p.id}>{p.id} · {p.name}（成员出口 {p.exitIds.length} 条 · 现池容量 {p.capacityM}M / {p.monthlyCost.toLocaleString("zh-CN")} 元·月）</option>)}
+            </select>
+            <div className="mt-1.5 rounded-[2px] bg-[#E8F3FF] px-2.5 py-1.5 text-[11px] text-[#165DFF]">
+              池扩容 = 成员出口带宽扩容（带宽扩容口径：不新建采购单，各成员出口走原采购合同补充协议，池维度成本归集口径不变）。
+            </div>
+          </div>
+        )}
         {f.matKey === "mat_ip" && (
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -214,7 +229,7 @@ function ReqForm({ onClose }: { onClose: () => void }) {
             {!R4_ROWS.length && <div className="mt-1 text-[10px] text-[#F53F3F]">档案中暂无设备型号：请先在 资源中心 R4 建档后再提需求</div>}
           </div>
         )}
-        {mat && !["mat_exit", "mat_ip", "mat_dev"].includes(f.matKey) && (
+        {mat && !["mat_exit", "mat_pool", "mat_ip", "mat_dev"].includes(f.matKey) && (
           <div>
             <div className="mb-0.5 text-[#4E5969]">规格来源 <span className="text-[#F53F3F]">*</span><span className="ml-1 text-[#86909C]">（采购合同主数据：{mat.name} 按哪个合同采购）</span></div>
             <select className="w-full rounded-[2px] border border-[#E5E6EB] bg-white px-2 py-1.5 text-sm" value={contractId} onChange={(e) => setContractId(e.target.value)}>

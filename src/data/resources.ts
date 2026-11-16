@@ -26,7 +26,15 @@ export interface ArchiveDef {
 }
 
 /** 某物料下的全部实例档案（物料侧看“这个类下有哪些台账”） */
-export const ARCHIVES_OF_MATERIAL = (matKey: string): ArchiveDef[] => ARCHIVES.filter((a) => a.materialKey === matKey);
+// R0 出口池档案是独立一等实体（实例在 @/data/pool 的 POOLS），不并入 ARCHIVES——
+// Resources 页 tab=r0 有独立的池化布局，且 ARCHIVES 被 chain/CostItems 按 key 查询，混入会误命中。
+const R0_POOL: ArchiveDef = {
+  key: "r0", code: "R0", name: "出口池档案", materialKey: "mat_pool",
+  poolHint: "成本口径：客户向池采购带宽、不指向具体出口；池月租 = 成员出口合计，签单按边际计价（池月租 ÷（池已售＋本单）× 本单），月结按平均分摊做实际归属",
+  fields: [],
+};
+export const ARCHIVES_OF_MATERIAL = (matKey: string): ArchiveDef[] =>
+  matKey === "mat_pool" ? [R0_POOL] : ARCHIVES.filter((a) => a.materialKey === matKey);
 
 // ---------- R1 出口线路档案 ----------
 // 出口 = 向运营商采购的一条线路（合同性资源，非流量、不做减法），一条线路可多家客户共用。
