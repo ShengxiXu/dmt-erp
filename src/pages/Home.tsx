@@ -11,7 +11,7 @@ import {
 import { getCostItems, useCostItems, SETTLE_RULE, uncoveredClasses, type CostItem } from "@/data/costItems";
 import { GET_TYPE, MAT_DEF, useCatalog } from "@/data/products";
 import { CONTRACTS, type Contract } from "@/data/contracts";
-import { POOLS } from "@/data/pool";
+import { POOLS, type PoolDef } from "@/data/pool";
 import { ownerOfDeal } from "@/data/ownership";
 import { snapshotEsts, usePoolSettle, type PoolEst } from "@/data/poolSettle";
 import { SHEETS, SHEET_OF_CONTRACT, ensureSheetForContract, fillSheet, recordSheetEntries, recordSheetLines } from "@/data/sheets";
@@ -27,7 +27,7 @@ import { Badge } from "@/components/ui/badge";
 const fmt = (n: number) => n.toLocaleString("zh-CN", { maximumFractionDigits: 1 });
 
 /** 各类条目的金额计算：qty=手工输入，meta=档案带出值，lines=枚举条数，picked=单选档案行；pickedList=出口资源多选 */
-function calcAmount(item: CatalogItem, qty: number, meta: number, picked?: SourceRow | null, pickedList?: SourceRow[], sharedIds?: string[]) {
+function calcAmount(item: CatalogItem, qty: number, meta: number, picked?: SourceRow | null, pickedList?: SourceRow[], sharedIds?: string[], poolPick?: PoolDef | null) {
   switch (item.demo) {
     case "bwbase": {
       if (!pickedList?.length) return { text: "选择基础线路后自动计算（可多选，数量不限）", v: 0 };
@@ -50,9 +50,9 @@ function calcAmount(item: CatalogItem, qty: number, meta: number, picked?: Sourc
         groups.set(r.ptag ?? "", g);
       });
       const parts = Array.from(groups.entries()).map(([ptag, rs]) => {
-        // BGP 三网互通：挂「出口池」计价（客户向池采购、不指向具体出口）——池已售以 R0 池实体为准
+        // BGP 三网互通：挂「出口池」计价（客户向池采购、不指向具体出口）——以选定的 R0 池实体为准
         if (ptag === "BGP 三网互通") {
-          const pool = POOLS.find((p) => p.product === "BGP 三网互通");
+          const pool = poolPick ?? POOLS.find((p) => p.product === "BGP 三网互通");
           if (!pool) return { t: `${ptag}（未找到出口池档案）`, v: 0 };
           const sold = pool.dynamic.usedM + qty;
           const v = sold > 0 ? (pool.monthlyCost / sold) * qty : 0;
@@ -185,11 +185,25 @@ function EntryRow({
   const hasText = item.methods.some((m) => m.kind === "text");
   const opts = enumOptions(item);
 
+  /** 池化产品线（如 BGP 三网互通）：出口带宽行不再逐条选出口，改选「出口池」（客户向池采购、不指向具体出口） */
+  const poolCands = item.demo === "bwinternet" && linePtype ? POOLS.filter((p) => p.product === linePtype) : [];
+  const poolMode = poolCands.length > 0;
+  const [poolId, setPoolId] = useState<string>(poolCands[0]?.id ?? "");
+  const poolPick = poolMode ? (poolCands.find((p) => p.id === poolId) ?? poolCands[0]) : null;
+  // 选定池 → 同步成员出口为已选线路（计价 / IP 查询条件 / 提交快照复用原链路）
+  useEffect(() => {
+    if (!poolPick) return;
+    const members = SOURCES.lineinternet.rows.filter((r) => poolPick.exitIds.includes(r.id));
+    setPickedList(members);
+    onPickInternets?.(members);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [poolPick?.id]);
+
   /** IP 条目：本单分配数量（默认 = CRM 需求 ipNeed，选中档案后带出、可调整） */
   const effQty = item.demo === "ippool" ? (ipAlloc ?? ipNeed ?? 0) : qty;
   const calc = useMemo(
-    () => calcAmount(item, effQty, meta, pickedRow, pickedList, sharedIds),
-    [item, effQty, meta, pickedRow, pickedList, sharedIds]
+    () => calcAmount(item, effQty, meta, pickedRow, pickedList, sharedIds, poolPick),
+    [item, effQty, meta, pickedRow, pickedList, sharedIds, poolPick]
   );
   const autoShare = ["share200", "share40", "asset"].includes(item.demo);
   const amount: number | null = useMemo(() => {
@@ -276,7 +290,25 @@ function EntryRow({
               />
             </div>
           )}
-          {item.demo === "bwinternet" && (
+          {item.demo === "bwinternet" && poolMode && poolPick && (
+            <div className="w-full min-w-80 max-w-2xl space-y-1.5">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-[2px] bg-[#E8F3FF] px-2 py-1 text-xs font-medium text-[#165DFF]">出口池</span>
+                <select
+                  value={poolPick.id}
+                  disabled={locked}
+                  onChange={(e) => setPoolId(e.target.value)}
+                  className="h-8 min-w-72 rounded-[2px] border border-[#E5E6EB] bg-white px-2 text-sm text-[#4E5969] disabled:bg-[#F2F3F5]">
+                  {poolCands.map((p) => <option key={p.id} value={p.id}>{p.id} · {p.name}</option>)}
+                </select>
+              </div>
+              <div className="rounded-[2px] border border-[#BEDAFF] bg-[#F7FAFF] px-2.5 py-1.5 text-[11px] leading-5 text-[#165DFF]">
+                客户向池采购带宽、不指向具体出口。成员出口 {poolPick.exitIds.join(" + ")} · 池容量 {fmt(poolPick.capacityM)}M · 池已售 {fmt(poolPick.dynamic.usedM)}M · 池月成本 {fmt(poolPick.monthlyCost)} 元/月（成员出口合计，自动得出）；
+                本单按池边际计价：池月成本 ÷（池已售 + 本单带宽）× 本单带宽。IP 用池自有广播段，按成员出口为条件搜索选择。
+              </div>
+            </div>
+          )}
+          {item.demo === "bwinternet" && !poolMode && (
             <div className="w-full min-w-80 max-w-2xl">
               <ArchivePicker
                 sourceKey="lineinternet"
@@ -606,11 +638,21 @@ export default function Home() {
         groups.set(r.ptag ?? "", g);
       });
       for (const [ptag, rs] of groups) {
+        const bwKey = [...rowsOf(l).ops, ...rowsOf(l).tech].find((rk) => itemByKey[rk.split("|")[0]]?.demo === "bwinternet");
+        const bw = bwKey ? (bwStore[bwKey] ?? 50) : 50;
+        // BGP 三网互通：以 R0 出口池实体为准（客户向池采购；成员出口月租聚合在池上）
+        const r0Pool = POOLS.find((p) => p.product === ptag);
+        if (r0Pool) {
+          snaps.push({
+            orderId: l.id, orderName: l.name, pool: ptag, lineIds: r0Pool.exitIds,
+            bw, rentTotal: r0Pool.monthlyCost, soldTotal: r0Pool.dynamic.usedM,
+            est: r0Pool.dynamic.usedM + bw > 0 ? (r0Pool.monthlyCost / (r0Pool.dynamic.usedM + bw)) * bw : 0,
+          });
+          continue;
+        }
         const poolRows = SOURCES.lineinternet.rows.filter((r) => r.ptag === ptag);
         const rentTotal = poolRows.reduce((s, r) => s + Number(r.meta || 0), 0);
         const soldTotal = poolRows.reduce((s, r) => s + (r.pool?.usedM ?? 0), 0);
-        const bwKey = [...rowsOf(l).ops, ...rowsOf(l).tech].find((rk) => itemByKey[rk.split("|")[0]]?.demo === "bwinternet");
-        const bw = bwKey ? (bwStore[bwKey] ?? 50) : 50;
         snaps.push({
           orderId: l.id, orderName: l.name, pool: ptag, lineIds: rs.map((r) => r.id),
           bw, rentTotal, soldTotal,
@@ -848,8 +890,7 @@ export default function Home() {
         </div>
         {l.cat === "isp" && (
           <div className="border-b bg-[#E8F3FF] px-4 py-2 text-xs leading-5 text-[#165DFF]">
-            出口 = 向运营商采购的线路，可多家客户共用。成本按<strong>归属产品类型</strong>合并计收（边际计价）：同类型所有出口月租合计 ÷（已售带宽 + 本单带宽）× 本单带宽——回答「新增这一单的成本」；月结按平均分摊（池成本 ÷ 已售带宽）做实际归属。<strong>例外：BGP 三网互通挂「出口池」计价</strong>（客户向池采购、不指向具体出口，池已售以 R0 出口池档案为准）。
-            BGP 三网选电信/联通/移动三条（并入同一池），AI 专线、D-MAN 共享 BGP 出口；一单可选多条线路。
+            出口 = 向运营商采购的线路，可多家客户共用。成本按<strong>归属产品类型</strong>合并计收（边际计价）：同类型所有出口月租合计 ÷（已售带宽 + 本单带宽）× 本单带宽——回答「新增这一单的成本」；月结按平均分摊（池成本 ÷ 已售带宽）做实际归属。<strong>例外：BGP 三网互通不逐条选出口，改选「出口池」</strong>（客户向池采购、不指向具体出口，池已售/池月成本以 R0 出口池档案为准；选池即自动带出成员出口，作为 IP 搜索条件与快照留痕）。AI 专线、D-MAN 共享 BGP 出口按归属类型边际计价；一单可选多条线路。
           </div>
         )}
         {(() => {
