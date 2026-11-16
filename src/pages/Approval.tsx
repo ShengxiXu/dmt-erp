@@ -184,6 +184,21 @@ export default function Approval() {
   const opsSum = viewEntries.filter((e) => e.dept === "业务支撑部").reduce((s, e) => s + e.amount, 0);
   const techSum = viewEntries.filter((e) => e.dept === "技术部").reduce((s, e) => s + e.amount, 0);
 
+  /** 合同期财务测算（全周期口径）：期限优先取合同档案起止日期，其次回退核算单「· N 个月」文本 */
+  const contractOfSheet = sheet ? CONTRACTS.find((c) => sheet.contract.includes(c.id)) : undefined;
+  const oneTimeCost = viewEntries.filter((e) => e.costType === "一次性").reduce((s, e) => s + e.amount, 0);
+  const recurringCost = monthlyCost - oneTimeCost;
+  const termParsed = sheet?.contract.match(/(\d+)\s*个月/);
+  const termMonths = contractOfSheet
+    ? Math.max(1, Math.round((new Date(contractOfSheet.end).getTime() - new Date(contractOfSheet.start).getTime()) / (30.44 * 86400000)))
+    : termParsed ? Number(termParsed[1]) : null;
+  const monthlyProfit = sheet ? sheet.contractValue - recurringCost : 0;
+  const totalCost = termMonths != null ? recurringCost * termMonths + oneTimeCost : null;
+  const totalRevenue = sheet && termMonths != null ? sheet.contractValue * termMonths : null;
+  const totalProfit = totalCost != null && totalRevenue != null ? totalRevenue - totalCost : null;
+  const totalMarginPct = totalRevenue ? (totalProfit! / totalRevenue) * 100 : null;
+  const paybackMonths = oneTimeCost > 0 && monthlyProfit > 0 ? oneTimeCost / monthlyProfit : null;
+
   return (
     <ArcoShell breadcrumb="审批中心">
       {!inst && (
@@ -267,6 +282,34 @@ export default function Approval() {
                 <div><div className="text-xs text-[#86909C]">两部门填报</div><div className="font-medium">支撑部 ✓ · 技术部 ✓</div></div>
               </div>
             </section>
+
+            {viewEntries.length > 0 && (
+              <section className="rounded-[4px] border border-[#E5E6EB] bg-white">
+                <div className="flex items-center gap-3 border-b px-4 py-2.5">
+                  <span className="text-sm font-semibold text-[#1D2129]">合同期财务测算</span>
+                  <span className="text-[11px] text-[#86909C]">全周期口径：总收入 / 总成本 / 总毛利按合同期限折算，供审批判断整体盈利质量</span>
+                </div>
+                <div className="grid grid-cols-2 gap-px bg-[#F2F3F5] md:grid-cols-4">
+                  {[
+                    { label: "合同期限", value: termMonths != null ? `${termMonths} 个月` : "未知", sub: contractOfSheet ? `${contractOfSheet.start} ~ ${contractOfSheet.end}` : (termParsed ? "取自核算单登记" : "未登记期限") },
+                    { label: "周期性月成本", value: `¥ ${fmt(recurringCost)}`, sub: `月毛利（经常性）¥ ${fmt(monthlyProfit)}` },
+                    { label: "一次性投入", value: `¥ ${fmt(oneTimeCost)}`, sub: oneTimeCost > 0 ? "CPE / 安装调测等，签约首月发生" : "本单无一次性投入" },
+                    { label: "静态回收期", value: paybackMonths != null ? `${paybackMonths.toFixed(1)} 个月` : "—", sub: oneTimeCost > 0 ? "一次性投入 ÷ 月毛利" : "无一次性投入无需回收" },
+                    { label: "合同期总收入", value: totalRevenue != null ? `¥ ${fmt(totalRevenue)}` : "—", sub: termMonths != null ? `合同月额 ¥ ${fmt(sheet!.contractValue)} × ${termMonths} 个月` : "期限未知无法折算" },
+                    { label: "合同期总成本", value: totalCost != null ? `¥ ${fmt(totalCost)}` : "—", sub: termMonths != null ? `月成本 × ${termMonths} 个月 + 一次性投入` : "期限未知无法折算" },
+                    { label: "合同期总毛利", value: totalProfit != null ? `¥ ${fmt(totalProfit)}` : "—", sub: totalMarginPct != null ? `总毛利率 ${totalMarginPct.toFixed(1)}%` : "—",
+                      tone: totalProfit == null ? "" : totalProfit >= 0 ? "text-[#00B42A]" : "text-[#F53F3F]" },
+                    { label: "月均净贡献", value: termMonths != null ? `¥ ${fmt((totalProfit ?? 0) / termMonths)}` : "—", sub: "全合同毛利摊到每个月" },
+                  ].map((t) => (
+                    <div key={t.label} className="bg-white px-4 py-3">
+                      <div className="text-xs text-[#86909C]">{t.label}</div>
+                      <div className={`mt-1 font-mono text-lg font-semibold ${t.tone ?? "text-[#1D2129]"}`}>{t.value}</div>
+                      <div className="mt-0.5 text-[11px] leading-4 text-[#86909C]">{t.sub}</div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
 
             <div className="grid gap-4 lg:grid-cols-3">
               <section className="space-y-3 lg:col-span-2">
