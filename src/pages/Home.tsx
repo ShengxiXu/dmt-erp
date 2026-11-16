@@ -56,7 +56,7 @@ function calcAmount(item: CatalogItem, qty: number, meta: number, picked?: Sourc
           if (!pool) return { t: `${ptag}（未找到出口池档案）`, v: 0 };
           const sold = pool.dynamic.usedM + qty;
           const v = sold > 0 ? (pool.monthlyCost / sold) * qty : 0;
-          return { t: `BGP 出口池（${pool.id}，成员出口 ${pool.exitIds.join("+")}）${fmt(pool.monthlyCost)}÷${fmt(sold)}×${qty} = ${fmt(v)}（客户向池采购，不指向具体出口）`, v };
+          return { t: `${pool.id}（成员出口 ${pool.exitIds.join(" / ")}）：${fmt(pool.monthlyCost)} ÷（${fmt(pool.dynamic.usedM)} + ${qty}）× ${qty} = ${fmt(v)} 元/月`, v };
         }
         const poolRows = SOURCES.lineinternet.rows.filter((r) => r.ptag === ptag);
         const costSum = poolRows.reduce((s2, r) => s2 + Number(r.meta || 0), 0);
@@ -302,9 +302,16 @@ function EntryRow({
                   {poolCands.map((p) => <option key={p.id} value={p.id}>{p.id} · {p.name}</option>)}
                 </select>
               </div>
-              <div className="rounded-[2px] border border-[#BEDAFF] bg-[#F7FAFF] px-2.5 py-1.5 text-[11px] leading-5 text-[#165DFF]">
-                客户向池采购带宽、不指向具体出口。成员出口 {poolPick.exitIds.join(" + ")} · 池容量 {fmt(poolPick.capacityM)}M · 池已售 {fmt(poolPick.dynamic.usedM)}M · 池月成本 {fmt(poolPick.monthlyCost)} 元/月（成员出口合计，自动得出）；
-                本单按池边际计价：池月成本 ÷（池已售 + 本单带宽）× 本单带宽。IP 用池自有广播段，按成员出口为条件搜索选择。
+              <div className="rounded-[2px] border border-[#BEDAFF] bg-[#F7FAFF] px-2.5 py-1.5 text-[11px] leading-5 text-[#4E5969]">
+                <div><span className="text-[#86909C]">业务口径：</span>客户向池采购带宽，不指向池内具体出口</div>
+                <div className="mt-0.5">
+                  <span className="text-[#86909C]">成员出口：</span><span className="font-mono">{poolPick.exitIds.join(" / ")}</span>
+                  <span className="ml-3 text-[#86909C]">池容量：</span><span className="font-mono">{fmt(poolPick.capacityM)}M</span>
+                  <span className="ml-3 text-[#86909C]">池已售：</span><span className="font-mono">{fmt(poolPick.dynamic.usedM)}M</span>
+                  <span className="ml-3 text-[#86909C]">池月成本：</span><span className="font-mono">{fmt(poolPick.monthlyCost)} 元/月</span><span className="text-[#86909C]">（成员出口合计，自动得出）</span>
+                </div>
+                <div className="mt-0.5"><span className="text-[#86909C]">计价口径：</span>池月成本 ÷（池已售 + 本单带宽）× 本单带宽</div>
+                <div className="mt-0.5"><span className="text-[#86909C]">IP 分配：</span>使用池自有广播段，以成员出口为条件搜索选择</div>
               </div>
             </div>
           )}
