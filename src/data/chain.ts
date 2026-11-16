@@ -2,6 +2,7 @@
 // 链：产品类型 —装配→ 成本条目（挂 BOM 物料 / 勾成本中心）—取数→ 资源档案(R1~R4) 或采购合同（转售）；直接成本随单算，间接费用归集成本中心
 import type { CostItem } from "./costItems";
 import { ARCHIVES, R1_ROWS, R2_ROWS, R3_ROWS, R4_ROWS, r1PoolByProduct } from "./resources";
+import { POOLS } from "./pool";
 import { PURCHASE_CONTRACTS } from "./purchase";
 
 const fmtM = (n: number) => n.toLocaleString("zh-CN", { maximumFractionDigits: 2 });
@@ -80,8 +81,13 @@ export function billExample(item: CostItem): string | undefined {
   const k = itemArchiveKey(item);
   if (k === "r1") {
     const r = R1_ROWS[0];
-    const pool = r1PoolByProduct(r.product);
     const bw = 100;
+    // BGP 三网互通：挂出口池一等实体计价（客户向池采购、不指向具体出口）
+    const bgpPool = POOLS.find((p) => p.product === r.product);
+    if (bgpPool) {
+      return `客户买 ${bw}M：BGP 出口池（${bgpPool.id}，成员出口 ${bgpPool.exitIds.length} 条）池月租 ${fmtM(bgpPool.monthlyCost)} ÷（池已售 ${fmtM(bgpPool.dynamic.usedM)} + ${bw}）× ${bw} = ${fmtM((bgpPool.monthlyCost / (bgpPool.dynamic.usedM + bw)) * bw)} 元/月（客户向池采购，不指向具体出口；月结按平均分摊做实际归属）`;
+    }
+    const pool = r1PoolByProduct(r.product);
     return `客户买 ${bw}M：${r.product}出口池（${pool.lines} 条线）月租合计 ${fmtM(pool.costSum)} ÷（已售 ${fmtM(pool.soldSum)} + ${bw}）× ${bw} = ${fmtM((pool.costSum / (pool.soldSum + bw)) * bw)} 元/月（边际计价：新增本单的成本；月结按平均分摊做实际归属）`;
   }
   if (k === "r2") {

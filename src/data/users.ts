@@ -61,7 +61,7 @@ export const ROLES: Role[] = persistable("roles", () => [
     menus: ALL_PATHS.filter((p) => p !== "/system/users") },
   { name: "技术部", desc: "资源与实施：技术成本条目、资源分配与绑定、开通实施、到货入库、设备档案", builtin: true, dataScope: "全部数据",
     menus: ["/workbench", "/product", "/product/bom", "/materials", "/cost-items",
-      "/resources/r1", "/resources/r2", "/resources/r3", "/resources/r4", "/resources/chain-map",
+      "/resources/r0", "/resources/r1", "/resources/r2", "/resources/r3", "/resources/r4", "/resources/chain-map",
       "/purchase/reqs", "/purchase/orders", "/purchase/contracts", "/bills",
       "/", "/approval", "/delivery", "/cost", "/finance"] },
   { name: "财务", desc: "应收应付、开票收款、财务节点审批、月结跑批、欠费策略执行、坏账审批", builtin: true, dataScope: "全部数据",

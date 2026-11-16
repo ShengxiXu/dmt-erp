@@ -38,7 +38,8 @@ export const NAV_GROUPS: { group: string; items: NavItem[] }[] = [
       {
         to: "/resources/r1", label: "资源中心", icon: Warehouse,
         children: [
-          { to: "/resources/r1", label: "R1 出口资源池" },
+          { to: "/resources/r0", label: "R0 出口池档案" },
+          { to: "/resources/r1", label: "R1 出口线路" },
           { to: "/resources/r2", label: "R2 基础线路" },
           { to: "/resources/r3", label: "R3 IP 地址" },
           { to: "/resources/r4", label: "R4 设备库存" },

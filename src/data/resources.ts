@@ -30,8 +30,9 @@ export const ARCHIVES_OF_MATERIAL = (matKey: string): ArchiveDef[] => ARCHIVES.f
 
 // ---------- R1 出口线路档案 ----------
 // 出口 = 向运营商采购的一条线路（合同性资源，非流量、不做减法），一条线路可多家客户共用。
-// 无「池化线路 / BGP 出口组」之分：BGP 三网产品用电信/联通/移动三条（或多条）出口；
-// 共享关系 = 「归属产品类型 + 可共享产品类型」两个字段，组不再是资源实体。
+// BGP 三网互通 = 自建资源池（多出口自组、自有 BGP 调度），池是独立一等实体（见 @/data/pool）：
+// 客户向「池」采购带宽、不指向池内某一条出口；出口仍可被多个产品类型共用（含挂进池）。
+// 出口承载明细只列直接挂在该出口上的订单；BGP 类订单统一记在池上（存量数据加载时迁移）。
 // 成本计收口径（全出口统一，产品类型级池化）：
 // ① 录入测算（边际计价，决策依据）＝产品类型出口月租合计 ÷（该产品类型已售带宽合计 + 本单带宽）× 本单带宽
 //    ——回答「新增这一单要花多少钱」，新线爬坡期客户不会被全价吓退；
@@ -45,7 +46,16 @@ export interface R1Row {
   sharedWith: string;     // 可共享产品类型（、分隔；空 = 专属，仅一家使用）
   carrier: string; region: string; contractNo: string;
   capacityM: number; monthlyCost: number; effect: string; status: string;
-  dynamic: { usedM: number; peakM?: number; orders: PoolOrder[] };
+  dynamic: { usedM: number; peakM?: number; orders: PoolOrder[]; measures?: MeasureRec[] };
+}
+
+/** 负载实测留痕（工程师定期人工实测录入；池级在 @/data/pool，出口级挂在这里） */
+export interface MeasureRec {
+  id: string;
+  at: string;          // 实测日期 YYYY-MM-DD
+  by: string;          // 实测人
+  peakM: number;       // 实测峰值带宽（Mbps）
+  note?: string;
 }
 
 /** 出口承载的客户业务（until = 合同到期月，YYYY-MM） */

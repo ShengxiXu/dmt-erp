@@ -8,10 +8,13 @@ import { useState } from "react";
 import { useParams, Link } from "react-router";
 import {
   ARCHIVES, ARCHIVE_FIELDS, R1_ROWS, R2_ROWS, R3_ROWS, R4_ROWS, IP_CAT_L1, IP_CAT_L2_DEMO, R1_CONTRACTS, R1_CONTRACT_META, R2_CONTRACT_META, SUPPLIERS,
-  INV_IN_DOCS, INV_OUT_DOCS,
+  INV_IN_DOCS, INV_OUT_DOCS, untilOf,
   useInventory, stockIn, stockOut,
   type ArchiveDef, type FieldDef,
 } from "@/data/resources";
+import { POOLS, usePools, poolExits, poolWater, poolMeasureDue, exitMeasureDue, measurePool, measureExit, type PoolDef } from "@/data/pool";
+import { DEMO_TODAY } from "@/data/settings";
+import { currentUser } from "@/data/users";
 import { MAT_DEF, useCatalog } from "@/data/products";
 import { usePurchase } from "@/data/purchase";
 import ArcoShell from "@/components/ArcoShell";
@@ -69,7 +72,7 @@ const CELL: Record<string, (row: any, f: FieldDef) => string> = {
 };
 
 const NAV_NAME: Record<string, string> = {
-  r1: "R1 出口线路档案", r2: "R2 基础线路", r3: "R3 IP 地址段",
+  r0: "R0 出口池档案", r1: "R1 出口线路档案", r2: "R2 基础线路", r3: "R3 IP 地址段",
   r4: "R4 设备库存",
 };
 
@@ -721,6 +724,123 @@ function ArchiveTable({ archive, rows, onEdit }: { archive: ArchiveDef; rows: an
   );
 }
 
+// ---------- R0 出口池（BGP 资源池）卡片 ----------
+// 池 = 一等资源实体：多出口自组（自有 BGP 调度），客户向池采购带宽、不指向池内某条出口。
+// 扩容判断人工决策（不设超售比硬门槛）；负载数据由工程师定期人工实测录入，到期未录提醒。
+function ExitPoolCard({ pool, onOpen, onMeasure }: { pool: PoolDef; onOpen: () => void; onMeasure: () => void }) {
+  usePools();
+  const pct = Math.round(poolWater(pool) * 100);
+  const due = poolMeasureDue(pool, DEMO_TODAY);
+  const exits = poolExits(pool);
+  return (
+    <div onClick={onOpen} className="cursor-pointer rounded-[4px] border border-[#E5E6EB] bg-white p-4 transition-colors hover:border-[#94BFFF]">
+      <div className="flex items-start justify-between gap-2">
+        <div className="text-sm font-medium leading-5 text-[#1D2129]">{pool.name}</div>
+        <div className="flex shrink-0 items-center gap-1">
+          {due && <span className="rounded-[2px] bg-[#FFECE8] px-1.5 py-0.5 text-[10px] text-[#F53F3F]">待实测</span>}
+          <span className="rounded-[2px] bg-[#E8F3FF] px-1.5 py-0.5 text-[10px] text-[#165DFF]">{pool.product}</span>
+        </div>
+      </div>
+      <div className="mt-1 font-mono text-[11px] text-[#86909C]">{pool.id} · 成员出口 {exits.length} 条 · 生效 {pool.effect}</div>
+      <div className="mt-3">
+        <div className="mb-1 flex items-baseline justify-between text-xs">
+          <span className="text-[#4E5969]">池已售 {fmt(pool.dynamic.usedM)} M / 池容量 {fmt(pool.capacityM)} M</span>
+          <span className="font-mono font-semibold" style={{ color: utilColor(pct) }}>{pct}%</span>
+        </div>
+        <div className="h-2 overflow-hidden rounded-[2px] bg-[#F2F3F5]">
+          <div className="h-full rounded-[2px]" style={{ width: `${Math.min(pct, 100)}%`, background: utilColor(pct) }} />
+        </div>
+        <div className="mt-1 flex items-center justify-between text-[11px] text-[#86909C]">
+          <span>池订单 {pool.dynamic.orders.length} 单 · 实测周期 {pool.measureCycleDays} 天{pool.dynamic.lastMeasuredAt ? ` · 最近实测 ${pool.dynamic.lastMeasuredAt}` : " · 尚未实测"}</span>
+          <span className="font-medium" style={{ color: utilColor(pct) }}>{utilLabel(pct)}</span>
+        </div>
+      </div>
+      <div className="mt-3 space-y-1 border-t border-[#F2F3F5] pt-2.5">
+        {exits.map((e) => {
+          const epct = e.capacityM > 0 ? Math.round((e.dynamic.usedM / e.capacityM) * 100) : 0;
+          return (
+            <div key={e.id} className="flex items-center gap-2 text-[11px]">
+              <span className="shrink-0 rounded-[2px] bg-[#F2F3F5] px-1.5 py-0.5 font-mono text-[10px] text-[#4E5969]">{e.carrier}</span>
+              <span className="min-w-0 flex-1 truncate text-[#4E5969]" title={e.name}>{e.name}</span>
+              <span className="shrink-0 font-mono text-[#86909C]">已售 {fmt(e.dynamic.usedM)}/{fmt(e.capacityM)}M · 峰 {fmt(e.dynamic.peakM ?? 0)}M</span>
+              <span className="shrink-0 font-semibold" style={{ color: utilColor(epct) }}>{epct}%</span>
+            </div>
+          );
+        })}
+      </div>
+      <div className="mt-3 flex items-center justify-between border-t border-[#F2F3F5] pt-2.5">
+        <span className="text-xs text-[#4E5969]">池月成本 <span className="font-mono font-semibold text-[#1D2129]">{fmt(pool.monthlyCost)}</span> 元（成员出口月租合计）</span>
+        <div className="flex items-center gap-2">
+          <button onClick={(e) => { e.stopPropagation(); onMeasure(); }} className="rounded-[2px] border border-[#E5E6EB] px-2 py-0.5 text-[11px] text-[#4E5969] hover:border-[#165DFF] hover:text-[#165DFF]">负载实测</button>
+          <button onClick={(e) => { e.stopPropagation(); onOpen(); }} className="rounded-[2px] border border-[#E5E6EB] px-2 py-0.5 text-[11px] text-[#4E5969] hover:border-[#165DFF] hover:text-[#165DFF]">明细</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------- R0 负载实测录入弹窗（工程师定期人工实测；池级 / 出口级二选一） ----------
+function MeasureModal({ initial, onClose }: { initial: { kind: "pool" | "exit"; id: string }; onClose: () => void }) {
+  usePools();
+  const [kind, setKind] = useState(initial.kind);
+  const [poolId, setPoolId] = useState(POOLS.some((p) => p.id === initial.id) ? initial.id : (POOLS[0]?.id ?? ""));
+  const [exitId, setExitId] = useState(R1_ROWS.some((r) => r.id === initial.id) ? initial.id : (R1_ROWS[0]?.id ?? ""));
+  const [peakM, setPeakM] = useState("");
+  const [note, setNote] = useState("");
+  const by = currentUser()?.name ?? "工程师";
+  const submit = () => {
+    const v = Number(peakM);
+    if (!v || v <= 0) return alert("请填写实测峰值带宽（大于 0 的数值，单位 M）");
+    const rec = kind === "pool"
+      ? measurePool(poolId, v, by, DEMO_TODAY, note.trim() || undefined)
+      : measureExit(exitId, v, by, DEMO_TODAY, note.trim() || undefined);
+    if (!rec) return alert("录入失败：请检查目标选择");
+    alert(`已录入实测：${rec.id} · ${kind === "pool" ? "池" : "出口"} ${kind === "pool" ? poolId : exitId} · 峰值 ${v} M · ${DEMO_TODAY} · ${by}`);
+    onClose();
+  };
+  return (
+    <CenterModal title="负载实测录入" sub="工程师定期人工实测后录入，系统留痕成趋势、生成到期提醒；不做流量分摊预测，拥塞处置由工程师现场处置" width={480} onClose={onClose}>
+      <div className="space-y-3 text-xs">
+        <div>
+          <div className="mb-1 text-[#4E5969]">实测对象</div>
+          <div className="flex gap-2">
+            {([["pool", "池级（整个资源池）"], ["exit", "出口级（单条线路）"]] as const).map(([k, label]) => (
+              <button key={k} type="button" onClick={() => setKind(k)}
+                className={`rounded-[2px] border px-2.5 py-1.5 text-xs transition-colors ${kind === k ? "border-[#165DFF] bg-[#E8F3FF] text-[#165DFF]" : "border-[#E5E6EB] text-[#4E5969] hover:border-[#94BFFF]"}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+          <select className="mt-2 w-full rounded-[2px] border border-[#E5E6EB] bg-white px-2 py-1.5 text-sm" value={kind === "pool" ? poolId : exitId}
+            onChange={(e) => (kind === "pool" ? setPoolId(e.target.value) : setExitId(e.target.value))}>
+            {(kind === "pool" ? POOLS : R1_ROWS).map((t: any) => (
+              <option key={t.id} value={t.id}>{t.id} · {t.name}</option>
+            ))}
+          </select>
+          {kind === "exit" && exitMeasureDue(exitId, DEMO_TODAY) && (
+            <div className="mt-1 rounded-[2px] bg-[#FFF3E8] px-2 py-1 text-[10px] text-[#FF7D00]">该出口已超过实测周期未录入（沿用所属池周期）</div>
+          )}
+        </div>
+        <div>
+          <div className="mb-0.5 text-[#4E5969]">实测峰值带宽（M）<span className="text-[#F53F3F]"> *</span></div>
+          <Input type="number" min={1} autoFocus placeholder="如 520" value={peakM} onChange={(e) => setPeakM(e.target.value)} />
+        </div>
+        <div>
+          <div className="mb-0.5 text-[#4E5969]">备注（测试方法 / 抽样窗口）</div>
+          <Input placeholder="如：晚高峰 20:00-21:00 端口采样" value={note} onChange={(e) => setNote(e.target.value)} />
+        </div>
+        <div className="rounded-[2px] bg-[#F7F8FA] px-2 py-1.5 text-[10px] text-[#86909C]">
+          实测人：{by} · 实测日期：{DEMO_TODAY}（演示时钟固定）· 录入后生成留痕记录，更新「最近实测」并消除到期提醒
+        </div>
+        <div className="flex justify-end gap-2 border-t border-[#F2F3F5] pt-3">
+          <Button variant="outline" size="sm" onClick={onClose}>取消</Button>
+          <Button size="sm" onClick={submit}>确认录入</Button>
+        </div>
+      </div>
+    </CenterModal>
+  );
+}
+
 // ---------- 主页面 ----------
 export default function Resources() {
   const params = useParams();
@@ -731,6 +851,7 @@ export default function Resources() {
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<any>(null);
   const [detail, setDetail] = useState<any>(null);
+  const [measure, setMeasure] = useState<null | { kind: "pool" | "exit"; id: string }>(null);
   const [kw, setKw] = useState("");
   const archive = ARCHIVES.find((a) => a.key === tab);
   const baseRows: Record<string, any[]> = { r1: R1_ROWS, r2: R2_ROWS, r3: R3_ROWS, r4: R4_ROWS };
@@ -741,11 +862,14 @@ export default function Resources() {
   const shownRows = kwTrim ? rows.filter((r) => JSON.stringify(r).toLowerCase().includes(kwTrim)) : rows;
 
   // 顶部健康总览
+  usePools();
   const avgUtil = Math.round(R1_ROWS.reduce((s, r) => s + r.dynamic.usedM / r.capacityM, 0) / R1_ROWS.length * 100);
   const ipTotal = R3_ROWS.reduce((s, r) => s + r.total, 0);
   const ipUsed = R3_ROWS.reduce((s, r) => s + r.dynamic.allocated, 0);
   const lowStock = R4_ROWS.filter((r) => r.dynamic.stock - r.dynamic.locked <= 2);
+  const duePools = POOLS.filter((p) => poolMeasureDue(p, DEMO_TODAY));
   const overview = [
+    { label: "出口池", value: `${POOLS.length} 个`, sub: duePools.length ? `待实测 ${duePools.map((p) => p.id).join("、")}` : "负载实测均在周期内", color: duePools.length ? "#FF7D00" : "#00B42A" },
     { label: "出口线路", value: `${R1_ROWS.length} 条`, sub: `平均商用水位 ${avgUtil}%`, color: utilColor(avgUtil) },
     { label: "IP 地址", value: `${ipUsed} / ${ipTotal}`, sub: `已分配 ${Math.round((ipUsed / ipTotal) * 100)}%`, color: utilColor((ipUsed / ipTotal) * 100) },
     { label: "基础线路", value: `${R2_ROWS.length} 条`, sub: "接入段 / 长途段", color: "#165DFF" },
@@ -782,7 +906,7 @@ export default function Resources() {
           </div>
 
           {/* 健康总览条 */}
-          <div className="grid grid-cols-4 gap-3">
+          <div className="grid grid-cols-5 gap-3">
             {overview.map((o) => (
               <div key={o.label} className="rounded-[4px] border border-[#E5E6EB] bg-white px-4 py-3">
                 <div className="text-[11px] text-[#86909C]">{o.label}</div>
@@ -816,6 +940,21 @@ export default function Resources() {
             </div>
           )}
           {/* ===== 各档案内容（卡片 / 列表 双视图） ===== */}
+          {/* ===== R0 出口池档案（BGP 资源池） ===== */}
+          {tab === "r0" && (
+            <>
+              <div className="rounded-[4px] border border-[#E5E6EB] bg-white px-4 py-2 text-[11px] leading-5 text-[#86909C]">
+                <span className="mr-1 font-semibold text-[#4E5969]">池化口径：</span>
+                BGP 三网互通 = 自建资源池（三大运营商出口自组、自有 BGP 调度）：客户向「池」采购带宽，不指向池内某条出口；成员出口仍可被其他产品类型（AI 专线 / D-MAN）共用，出口承载明细只列直接挂在出口上的订单。扩容判断由人工决策（系统不设超售比硬门槛，仅提示水位）；负载数据由工程师定期人工实测录入、留痕成趋势，系统不做流量分摊预测，拥塞处置（QoS / BGP 策略）是工程师现场工作。
+              </div>
+              <div className="grid gap-3 xl:grid-cols-2">
+                {POOLS.map((p) => (
+                  <ExitPoolCard key={p.id} pool={p} onOpen={() => setDetail(p)} onMeasure={() => setMeasure({ kind: "pool", id: p.id })} />
+                ))}
+              </div>
+            </>
+          )}
+
           {archive && curView === "list" && (
             <ArchiveTable archive={archive} rows={shownRows} onEdit={setEditing} />
           )}
@@ -907,13 +1046,17 @@ export default function Resources() {
                     </div>
                   ))}
                   <div className="mt-1 flex justify-between font-semibold text-[#0E42D2]">
-                    <span>本线已售 {fmt(detail.dynamic.usedM)} M · 本单成本按「{detail.product}出口池」边际计价：池月租合计 ÷（池已售合计 + 本单带宽）× 本单带宽（月结按平均分摊做实际归属）</span>
+                    <span>{detail.product === "BGP 三网互通"
+                      ? "BGP 订单统一记在「出口池」上（客户向池采购、不指向本线）；本线已售仅含直挂订单"
+                      : `本线已售 ${fmt(detail.dynamic.usedM)} M · 本单成本按「${detail.product}出口池」边际计价：池月租合计 ÷（池已售合计 + 本单带宽）× 本单带宽（月结按平均分摊做实际归属）`}</span>
                     <span className="font-mono">容量 {fmt(detail.capacityM)} M（商用参考）</span>
                   </div>
                 </div>
               </>
               <div className="mt-3 text-[11px] leading-5 text-[#86909C]">
-                「出口带宽租用费」从本档案选线（按归属产品类型过滤、可多选）；同类型出口合并计收（边际计价）：月租合计 ÷（已售 + 本单带宽）× 本单带宽。选线后，「IP 地址使用费」以所选线路为条件从 IP 地址段档案挑选。
+                {detail.product === "BGP 三网互通"
+                  ? "「出口带宽租用费」对 BGP 三网订单改为选「出口池」并填池占用带宽（见 R0 出口池档案）；本页承载明细只列直挂在本线上的订单。"
+                  : "「出口带宽租用费」从本档案选线（按归属产品类型过滤、可多选）；同类型出口合并计收（边际计价）：月租合计 ÷（已售 + 本单带宽）× 本单带宽。选线后，「IP 地址使用费」以所选线路为条件从 IP 地址段档案挑选。"}
               </div>
               <Button size="sm" variant="outline" className="mt-3" onClick={() => { setEditing(detail); setDetail(null); }}>编辑该资源</Button>
               <RelatedList archiveKey="r1" />
@@ -921,6 +1064,106 @@ export default function Resources() {
           </div>
         </CenterModal>
       )}
+
+      {/* ===== 居中弹窗：R0 出口池详情 ===== */}
+      {detail && tab === "r0" && (
+        <CenterModal title={`${detail.id} · ${detail.name}`} sub="出口池档案：①层主数据 + ②层池订单 / 负载实测（只读，由业务单据生成）" width={720} onClose={() => setDetail(null)}>
+          <div className="space-y-4 text-xs">
+            <div>
+              <div className="mb-2 font-semibold text-[#4E5969]">①层主数据</div>
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+                {[
+                  ["归属产品类型", detail.product],
+                  ["池容量", `${fmt(detail.capacityM)} M（= 成员出口容量合计，商用参考）`],
+                  ["池月成本", `${fmt(detail.monthlyCost)} 元/月（= 成员出口月租合计）`],
+                  ["生效日期", detail.effect],
+                  ["状态", detail.status],
+                  ["负载实测周期", `${detail.measureCycleDays} 天${detail.dynamic.lastMeasuredAt ? ` · 最近实测 ${detail.dynamic.lastMeasuredAt}` : " · 尚未实测"}`],
+                ].map(([k, v]) => (
+                  <div key={k as string} className="flex justify-between border-b border-dashed border-[#F2F3F5] py-1">
+                    <dt className="text-[#86909C]">{k}</dt>
+                    <dd className="max-w-[60%] text-right font-medium text-[#1D2129]">{v}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+            <div>
+              <div className="mb-2 font-semibold text-[#4E5969]">成员出口（多对多；可同时被其他产品类型共用）</div>
+              <div className="space-y-1.5">
+                {poolExits(detail).map((e) => {
+                  const epct = e.capacityM > 0 ? Math.round((e.dynamic.usedM / e.capacityM) * 100) : 0;
+                  const due = exitMeasureDue(e.id, DEMO_TODAY);
+                  return (
+                    <div key={e.id} className="rounded-[2px] border border-[#E5E6EB] px-2.5 py-1.5">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-[11px] text-[#4E5969]">{e.id}</span>
+                        <span className="min-w-0 flex-1 truncate text-[#1D2129]">{e.name}</span>
+                        {due && <span className="shrink-0 rounded-[2px] bg-[#FFECE8] px-1 py-0.5 text-[10px] text-[#F53F3F]">待实测</span>}
+                        <span className="shrink-0 font-mono text-[11px]" style={{ color: utilColor(epct) }}>已售 {fmt(e.dynamic.usedM)}/{fmt(e.capacityM)}M · {epct}%</span>
+                        <button className="shrink-0 rounded-[2px] border border-[#E5E6EB] px-1.5 py-0.5 text-[10px] text-[#4E5969] hover:border-[#165DFF] hover:text-[#165DFF]"
+                          onClick={() => { setMeasure({ kind: "exit", id: e.id }); }}>负载实测</button>
+                      </div>
+                      <div className="mt-1 text-[10px] text-[#86909C]">
+                        {e.carrier} · 合同 {e.contractNo} · 月租 {fmt(e.monthlyCost)} 元 · 实测峰值 {e.dynamic.peakM != null ? `${fmt(e.dynamic.peakM)} M` : "—"}
+                        {e.dynamic.orders.length > 0 && ` · 直挂订单：${e.dynamic.orders.map((o) => `${o.customer} ${o.bw}M`).join("、")}`}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            <div>
+              <div className="mb-2 font-semibold text-[#4E5969]">池上选挂的 IP 段（单向维护：在池档案选挂，R3 段上不反向维护）</div>
+              <div className="flex flex-wrap gap-1.5">
+                {(detail.ipIds as string[]).length
+                  ? (detail.ipIds as string[]).map((id) => {
+                      const seg = R3_ROWS.find((r) => r.id === id);
+                      return <span key={id} className="rounded-[2px] bg-[#E8F3FF] px-2 py-1 font-mono text-[11px] text-[#165DFF]">{seg ? seg.segment : id}</span>;
+                    })
+                  : <span className="text-[#C9CDD4]">未选挂 IP 段</span>}
+              </div>
+            </div>
+            <div>
+              <div className="mb-2 font-semibold text-[#4E5969]">②层池订单（只读，由审批通过订单生成；客户向池采购、不指向具体出口）</div>
+              <div className="rounded-[2px] border border-[#BEDAFF] bg-[#E8F3FF] p-3 leading-6">
+                {(detail.dynamic.orders as PoolDef["dynamic"]["orders"]).length ? (
+                  <>
+                    {(detail.dynamic.orders as PoolDef["dynamic"]["orders"]).map((o) => (
+                      <div key={o.customer} className="flex justify-between border-b border-[#E8F3FF] py-0.5 last:border-0">
+                        <span>{o.customer}</span>
+                        <span className="font-mono">{o.bw} M · {o.since} 开通{untilOf(o) !== "—" ? ` · ${untilOf(o)} 到期` : ""}</span>
+                      </div>
+                    ))}
+                    <div className="mt-1 flex justify-between font-semibold text-[#0E42D2]">
+                      <span>池已售 {fmt(detail.dynamic.usedM)} M · 边际计价 = 池月租 ÷（池已售 + 本单带宽）× 本单带宽</span>
+                      <span className="font-mono">池容量 {fmt(detail.capacityM)} M（商用参考）</span>
+                    </div>
+                  </>
+                ) : <span className="text-[#86909C]">暂无池订单</span>}
+              </div>
+            </div>
+            <div>
+              <div className="mb-2 font-semibold text-[#4E5969]">负载实测留痕（工程师人工实测录入）</div>
+              {(detail.dynamic.measures as PoolDef["dynamic"]["measures"]).length ? (
+                <div className="max-h-36 space-y-1 overflow-y-auto">
+                  {[...(detail.dynamic.measures as PoolDef["dynamic"]["measures"])].reverse().map((m) => (
+                    <div key={m.id} className="flex items-center gap-2 rounded-[2px] bg-[#F7F8FA] px-2 py-1 text-[11px]">
+                      <span className="font-mono text-[#86909C]">{m.id}</span>
+                      <span className="font-mono font-semibold text-[#165DFF]">{fmt(m.peakM)} M</span>
+                      <span className="text-[#4E5969]">{m.at} · {m.by}</span>
+                      {m.note && <span className="truncate text-[#86909C]">· {m.note}</span>}
+                    </div>
+                  ))}
+                </div>
+              ) : <div className="text-[11px] text-[#C9CDD4]">尚未录入实测数据（超过 {detail.measureCycleDays} 天未录将提醒）</div>}
+              <Button size="sm" variant="outline" className="mt-2" onClick={() => setMeasure({ kind: "pool", id: detail.id })}>录入本次实测</Button>
+            </div>
+          </div>
+        </CenterModal>
+      )}
+
+      {/* ===== 居中弹窗：负载实测录入 ===== */}
+      {measure && <MeasureModal initial={measure} onClose={() => setMeasure(null)} />}
 
       {/* ===== 居中弹窗：R3 IP 网段明细 ===== */}
       {detail && tab === "r3" && (

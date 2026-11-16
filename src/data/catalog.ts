@@ -153,32 +153,25 @@ export const SOURCES: Record<string, { name: string; rows: SourceRow[] }> = {
   lineinternet: {
     name: "出口线路档案（向运营商采购的线路，可多家客户共用；一对一运营商线路仅存在于转售业务）",
     rows: [
-      { id: "E-CT-1", title: "电信 BGP 出口｜归属 BGP 三网互通（可共享 AI 专线 / D-MAN）· 1G", ptag: "BGP 三网互通", shareTo: ["AI 专线", "D-MAN"], sub: "月租 45,000 元（固定周期成本，与售出无关）｜合同 CT-2026-018｜计收 = 归属产品类型出口月租合计 ÷（已售合计 + 本单）× 本单带宽｜不关联基础线路档案（基础线路仅一对一）", meta: "45000",
+      { id: "E-CT-1", title: "电信 BGP 出口｜归属 BGP 三网互通（可共享 AI 专线 / D-MAN）· 1G", ptag: "BGP 三网互通", shareTo: ["AI 专线", "D-MAN"], sub: "月租 45,000 元（固定周期成本，与售出无关）｜合同 CT-2026-018｜BGP 订单统一记在出口池（R0 出口池档案），本线承载明细仅直挂订单；AI 专线 / D-MAN 按归属产品类型边际计价", meta: "45000",
         pool: {
-          capacityM: 1000, usedM: 600,
+          capacityM: 1000, usedM: 150,
           orders: [
-            { customer: "中海贸易（BGP）", bw: 200, since: "2025-09" },
-            { customer: "凯瑞传媒（BGP）", bw: 200, since: "2026-02" },
             { customer: "云启数据（AI 专线）", bw: 100, since: "2026-03" },
             { customer: "跃游网络（D-MAN）", bw: 50, since: "2026-06" },
-            { customer: "某科技公司（BGP，本单）", bw: 50, since: "—" },
           ],
         } },
-      { id: "I-102", title: "联通 169 BGP 出口｜归属 BGP 三网互通（可共享 AI 专线）· 1G", ptag: "BGP 三网互通", shareTo: ["AI 专线"], sub: "月租 40,000 元｜合同 CU-2026-033｜计收 = 归属产品类型出口月租合计 ÷（已售合计 + 本单）× 本单带宽｜不关联基础线路档案（基础线路仅一对一）", meta: "40000",
+      { id: "I-102", title: "联通 169 BGP 出口｜归属 BGP 三网互通（可共享 AI 专线）· 1G", ptag: "BGP 三网互通", shareTo: ["AI 专线"], sub: "月租 40,000 元｜合同 CU-2026-033｜BGP 订单统一记在出口池（R0），本线承载明细仅直挂订单；AI 专线按归属产品类型边际计价", meta: "40000",
         pool: {
-          capacityM: 1000, usedM: 500,
+          capacityM: 1000, usedM: 100,
           orders: [
-            { customer: "中海贸易（BGP）", bw: 200, since: "2025-09" },
-            { customer: "凯瑞传媒（BGP）", bw: 200, since: "2026-02" },
             { customer: "云启数据（AI 专线）", bw: 100, since: "2026-03" },
           ],
         } },
-      { id: "I-103", title: "移动 CMNET BGP 出口｜归属 BGP 三网互通（可共享 AI 专线）· 800M", ptag: "BGP 三网互通", shareTo: ["AI 专线"], sub: "月租 28,000 元｜合同 CM-2026-007｜计收 = 归属产品类型出口月租合计 ÷（已售合计 + 本单）× 本单带宽｜不关联基础线路档案（基础线路仅一对一）", meta: "28000",
+      { id: "I-103", title: "移动 CMNET BGP 出口｜归属 BGP 三网互通（可共享 AI 专线）· 800M", ptag: "BGP 三网互通", shareTo: ["AI 专线"], sub: "月租 28,000 元｜合同 CM-2026-007｜BGP 订单统一记在出口池（R0），本线承载明细仅直挂订单；AI 专线按归属产品类型边际计价", meta: "28000",
         pool: {
-          capacityM: 800, usedM: 500,
+          capacityM: 800, usedM: 100,
           orders: [
-            { customer: "中海贸易（BGP）", bw: 200, since: "2025-09" },
-            { customer: "凯瑞传媒（BGP）", bw: 200, since: "2026-02" },
             { customer: "云启数据（AI 专线）", bw: 100, since: "2026-03" },
           ],
         } },

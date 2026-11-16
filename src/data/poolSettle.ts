@@ -5,6 +5,7 @@
 import { persistable } from "@/data/persist";
 import { useSyncExternalStore } from "react";
 import { SOURCES } from "./catalog";
+import { POOLS } from "./pool";
 import { demoNow } from "./settings";
 
 /** 签单时锁定的预估快照（一条 = 一单在一个出口池的占用） */
@@ -80,7 +81,18 @@ export function poolList(): PoolAgg[] {
     }));
     map.set(r.ptag, g);
   }
-  return [...map.values()];
+  const agg = [...map.values()];
+  // BGP 三网互通：已售与存量订单以出口池一等实体为准（客户向池采购、不指向具体出口；
+  // 成员出口上的直挂订单（AI 专线 / D-MAN）属于各自产品类型，不计入 BGP 池已售）
+  const bgpPoolEnt = POOLS.find((p) => p.product === "BGP 三网互通");
+  const bgpAgg = agg.find((g) => g.pool === "BGP 三网互通");
+  if (bgpPoolEnt && bgpAgg) {
+    bgpAgg.soldTotal = bgpPoolEnt.dynamic.usedM;
+    bgpAgg.stockOrders = bgpPoolEnt.dynamic.orders.map((o, i) => ({
+      orderId: `${bgpPoolEnt.id}#${i}`, orderName: o.customer, bw: o.bw,
+    }));
+  }
+  return agg;
 }
 
 /** 该池的签单快照（含已结算过的，供明细查看） */

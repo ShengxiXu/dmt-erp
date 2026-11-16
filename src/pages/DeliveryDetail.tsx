@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { WORK_ORDERS, STEP_NAMES, TECH_PARAMS, CATS, IP_OCCUPIED, CAT_DESC } from "@/data/delivery";
 import { R1_ROWS, R2_ROWS, R3_ROWS, R4_ROWS, untilOf } from "@/data/resources";
+import { POOLS, usePools, poolWater, poolMeasureDue, addPoolOrder, removePoolOrder } from "@/data/pool";
 import { DEMO_TODAY } from "@/data/settings";
 import { usePurchaseFlow, woResumedByPurchase, addReq, getReqs } from "@/data/purchaseFlow";
 import ArcoShell from "@/components/ArcoShell";
@@ -66,6 +67,13 @@ export default function DeliveryDetail() {
   const [poReq, setPoReq] = useState<{ id: string; name: string; qty: number; price: number; supplier: string } | null>(null);
   const [altCpe, setAltCpe] = useState("");
   const [cat, setCat] = useState(wo.cat);
+  /** BGP 类产品：客户向「出口池」采购带宽（选池 + 填池占用带宽，不指向池内具体出口）；IP 仍逐出口绑定（宣告路径校验） */
+  const isBgp = cat === "BGP 三网互通";
+  const [poolSel, setPoolSel] = useState<{ poolId: string; bw: number }>({ poolId: "P-BGP-01", bw: 150 });
+  const poolAsg = isBgp ? poolSel : null;
+  const poolKey = poolAsg ? `pool:${poolAsg.poolId}` : "";
+  usePools();
+  const poolRow = () => (poolAsg ? POOLS.find((p) => p.id === poolAsg.poolId) : undefined);
   const [techVals, setTechVals] = useState<Record<string, string>>({});
   const [approved, setApproved] = useState(false);
   const [bound, setBound] = useState(false);
@@ -117,8 +125,21 @@ export default function DeliveryDetail() {
   // ---------- 步骤 0：资源检查（P02-2 口径） ----------
   type CheckRow = { key: string; type: "manual" | "auto"; name: string; rule: string; dataText?: string; free?: number; need?: number; freeNote?: string; unit?: string };
   const checks: CheckRow[] = [
+    // BGP 类产品：池级负载评估一行（不按已售做减法，扩容人工决策）
+    ...(poolAsg ? [(() => {
+      const pool = POOLS.find((p) => p.id === poolAsg.poolId)!;
+      const lastMs = pool.dynamic.measures[pool.dynamic.measures.length - 1];
+      const due = poolMeasureDue(pool, DEMO_TODAY);
+      const overCap = pool.dynamic.usedM + poolAsg.bw > pool.capacityM;
+      return {
+        key: poolKey, type: "manual" as const,
+        name: `池负载评估（${pool.id} ${pool.name}）`,
+        rule: "工程师查看池负载是否饱和，决定本单能否承接（按实测流量负载判断，不按已售带宽做减法；扩容由人工决策，系统不设超售比硬门槛）",
+        dataText: `池已售 ${fmt(pool.dynamic.usedM)}M / 池容量 ${fmt(pool.capacityM)}M（水位 ${Math.round(poolWater(pool) * 100)}%${overCap ? "，本单计入后超容量——仅提示、不阻断，扩容走人工决策" : ""}）· 最近实测峰值 ${lastMs ? `${fmt(lastMs.peakM)}M（${lastMs.at}）` : "尚未实测"}${due ? " · 已超实测周期，请工程师补录" : ""} · 成员出口 ${pool.exitIds.length} 条（可向其他产品类型共用）`,
+      };
+    })()] : []),
     // 出口负载：每条约用线路一行，工程师人工评估（不做减法判定）
-    ...usedLines.map((lid) => {
+    ...(poolAsg ? [] : usedLines.map((lid) => {
       const pool = lineOf(lid);
       return {
         key: `line:${lid}`, type: "manual" as const,
@@ -126,7 +147,7 @@ export default function DeliveryDetail() {
         rule: "工程师查看该出口流量负载是否饱和，决定本出口能否继续使用（按实际流量负载判断，不按已售带宽做减法）",
         dataText: `当前承载 ${pool.dynamic.orders.length} 家客户业务 · 近 30 日峰值流量 ${fmt(pool.dynamic.peakM ?? 0)}M / 容量 ${fmt(pool.capacityM)}M（利用率 ${utilOf(lid)}%）· 已售带宽 ${fmt(pool.dynamic.usedM)}M（仅商用参考，余量不做递减判定）`,
       };
-    }),
+    })),
     // IP 余量：每一对「出口 + IP 段」一行，系统自动定量校验
     ...ipAsgs.map((a, i) => ({
       key: `ip${i}`, type: "auto" as const,
@@ -148,8 +169,9 @@ export default function DeliveryDetail() {
     })),
   ];
   const failed = checks.filter((c) => c.type === "auto" && (c.free ?? 0) < (c.need ?? 0));
-  const fullLines = usedLines.filter((l) => verdicts[l] === "full");
-  const lineBlocked = usedLines.some((l) => verdicts[l] !== "ok");
+  const manualTargets = poolAsg ? [poolAsg.poolId] : usedLines;
+  const fullLines = manualTargets.filter((l) => verdicts[l] === "full");
+  const lineBlocked = manualTargets.some((l) => verdicts[l] !== "ok");
   const allPass = failed.length === 0 && !lineBlocked;
   /** IP 余量不足的分配（索引 + 校验结果） */
   const failedIpAsgs = ipAsgs.map((a, i) => ({ a, i })).filter(({ i }) => calcs[i].over);
@@ -192,20 +214,29 @@ export default function DeliveryDetail() {
 
   // 检查结论摘要（进审批页展示、流转记录留痕）
   const checkSummary = [
-    ...usedLines.map((l) => `出口 ${l} 负载${verdicts[l] === "ok" ? "正常" : verdicts[l] === "full" ? "饱和" : "待评估"}（利用率 ${utilOf(l)}%）`),
+    ...(poolAsg ? [`池 ${poolAsg.poolId} 负载${verdicts[poolAsg.poolId] === "ok" ? "正常" : verdicts[poolAsg.poolId] === "full" ? "饱和" : "待评估"}（水位 ${Math.round((poolRow() ? poolWater(poolRow()!) : 0) * 100)}%）`] : usedLines.map((l) => `出口 ${l} 负载${verdicts[l] === "ok" ? "正常" : verdicts[l] === "full" ? "饱和" : "待评估"}（利用率 ${utilOf(l)}%）`)),
     expanded ? `I-101 已扩容 ${fmt(expandM)}M（500M → ${fmt(pool101.capacityM)}M，月租 ${fmt(newMonthly)} 元）` : "",
     ...devices.filter((d) => d.mode === "按单采购（P08）").map((d) => `${devOf(d.id).name} 改按单采购（${poReq?.id ?? "采购申请"}，到货后恢复）`),
     suspended ? "不满足项已挂起并生成采购需求（P08-1）" : "",
   ].filter(Boolean).join("；");
 
   const bind = () => {
-    // 出口：已售带宽 += 本单占用（按线汇总，同线多条分配只加一次）
-    setR1((rows) => rows.map((r) => {
-      const es = exits.filter((e) => e.line === r.id);
-      if (!es.length) return r;
-      const add = es.reduce((s, e) => s + e.bw, 0);
-      return { ...r, dynamic: { ...r.dynamic, usedM: r.dynamic.usedM + add, orders: [...r.dynamic.orders.filter((o) => !o.customer.includes("核算中")), { customer: "上海某科技公司", bw: add, since: "开通后回填" }] } };
-    }));
+    // BGP：写入出口池（客户向池采购、不指向具体出口）；替换池内「核算中」预登记订单
+    if (poolAsg) {
+      const pool = POOLS.find((p) => p.id === poolAsg.poolId);
+      if (pool) {
+        pool.dynamic.orders.filter((o) => o.customer.includes("核算中")).forEach((o) => removePoolOrder(pool.id, o.customer));
+        addPoolOrder(pool.id, { customer: `${wo.customer}（BGP）`, bw: poolAsg.bw, since: "开通后回填" });
+      }
+    } else {
+      // 出口：已售带宽 += 本单占用（按线汇总，同线多条分配只加一次）
+      setR1((rows) => rows.map((r) => {
+        const es = exits.filter((e) => e.line === r.id);
+        if (!es.length) return r;
+        const add = es.reduce((s, e) => s + e.bw, 0);
+        return { ...r, dynamic: { ...r.dynamic, usedM: r.dynamic.usedM + add, orders: [...r.dynamic.orders.filter((o) => !o.customer.includes("核算中")), { customer: "上海某科技公司", bw: add, since: "开通后回填" }] } };
+      }));
+    }
     setR3((rows) => rows.map((r) => {
       const as = ipAsgs.filter((a) => a.ip === r.id);
       if (!as.length) return r;
@@ -254,7 +285,10 @@ export default function DeliveryDetail() {
     if (!bound) return [];
     return [
       ...(expanded ? [`②层写入 · 扩容生效：I-101 池容量 500M → ${fmt(pool101.capacityM)}M，月租 75,000 → ${fmt(pool101.monthlyCost)} 元`] : []),
-      ...exits.map((e) => `②层写入 · 出口池 ${e.line} 已售带宽 +${fmt(e.bw)}M（现 ${fmt(lineOf(e.line).dynamic.usedM)}M / ${fmt(lineOf(e.line).capacityM)}M）`),
+      ...(poolAsg ? (() => {
+        const pool = POOLS.find((p) => p.id === poolAsg.poolId);
+        return [`②层写入 · 出口池 ${poolAsg.poolId} 已售带宽 +${fmt(poolAsg.bw)}M（现 ${fmt(pool?.dynamic.usedM ?? 0)}M / ${fmt(pool?.capacityM ?? 0)}M，客户向池采购、不指向具体出口）`];
+      })() : exits.map((e) => `②层写入 · 出口池 ${e.line} 已售带宽 +${fmt(e.bw)}M（现 ${fmt(lineOf(e.line).dynamic.usedM)}M / ${fmt(lineOf(e.line).capacityM)}M）`)),
       ...ipAsgs.map((a, i) => `②层写入 · IP 精确分配：本单 ${calcs[i].rangeText}，已记入 ${ipOf(a.ip).segment.split("（")[0]} 占用区间`),
       ...devices.map((d) => d.mode === STOCK_MODE
         ? `②层写入 · ${devOf(d.id).name}：锁定 ${d.n} 台 → 出库（现存量 ${devOf(d.id).dynamic.stock + d.n} → ${devOf(d.id).dynamic.stock} 台）`
@@ -382,6 +416,20 @@ export default function DeliveryDetail() {
                     ))}
 
                     {fullLines.map((lid) => {
+                      const poolEnt = lid.startsWith("P-") ? POOLS.find((p) => p.id === lid) : undefined;
+                      if (poolEnt) {
+                        const lastMs = poolEnt.dynamic.measures[poolEnt.dynamic.measures.length - 1];
+                        return (
+                          <div key={lid} className="space-y-2 rounded-[2px] border border-[#FFCF8B] bg-[#FFF7E8] p-3 text-xs">
+                            <div className="font-semibold text-[#D25F00]">池负载饱和：{poolEnt.id} {poolEnt.name}，工程师评估不可承接。处理方式：</div>
+                            <div className="space-y-1 text-[#4E5969]">
+                              <div>① 人工决策扩容：新增成员出口或上调既有出口采购带宽（走采购流程，扩容后池容量 / 池月成本同步更新）</div>
+                              <div>② 与商务协商调整本单带宽或开通节奏（回到步骤②修改分配申请）</div>
+                            </div>
+                            <div className="text-[10px] text-[#86909C]">池已售 {fmt(poolEnt.dynamic.usedM)}M / 池容量 {fmt(poolEnt.capacityM)}M · 最近实测 {lastMs ? `${fmt(lastMs.peakM)}M（${lastMs.at}）` : "尚未实测"} · 系统不设超售比硬门槛，承接判断由工程师按实测负载做出</div>
+                          </div>
+                        );
+                      }
                       const pool = lineOf(lid);
                       const peakM = pool.dynamic.peakM ?? 0;
                       const ut = utilOf(lid);
@@ -491,7 +539,105 @@ export default function DeliveryDetail() {
               <section className="rounded-[4px] border border-[#E5E6EB] bg-white ">
                 <div className="border-b px-4 py-2.5 text-sm font-semibold">② 资源分配申请（四类资源各自独立选择与校验，数据取自资源中心②层实时档案）</div>
                 <div className="space-y-5 p-4">
-                  {/* ① 出口资源（可多选）：选中即见当前负载与本单占用 */}
+                  {/* ① 出口资源：BGP 类选「出口池」+ 填池占用带宽；其他产品类型逐出口多选 */}
+                  {poolAsg ? (() => {
+                    const pool = poolRow();
+                    if (!pool) return null;
+                    const pct = Math.round(poolWater(pool) * 100);
+                    const overCap = pool.dynamic.usedM + poolAsg.bw > pool.capacityM;
+                    const lastMs = pool.dynamic.measures[pool.dynamic.measures.length - 1];
+                    return (
+                      <div>
+                        <div className="mb-1.5 flex flex-wrap items-center gap-2">
+                          <span className="text-[11px] font-semibold text-[#4E5969]">① 出口池</span>
+                          <span className="rounded-[2px] bg-[#E8F3FF] px-1.5 py-0.5 text-[11px] text-[#165DFF]">BGP 客户向池采购带宽 · 不指向池内具体出口</span>
+                          <span className="rounded-[2px] bg-[#F2F3F5] px-1.5 py-0.5 text-[11px] text-[#86909C]">扩容人工决策 · 不设超售比硬门槛</span>
+                          <span className="ml-auto">
+                            <select className="rounded-[2px] border border-[#E5E6EB] bg-white px-2 py-1 text-xs" value={poolAsg.poolId}
+                              onChange={(e) => setPoolSel((s) => ({ ...s, poolId: e.target.value }))}>
+                              {POOLS.filter((p) => p.product === cat || p.product === "BGP 三网互通").map((p) => (
+                                <option key={p.id} value={p.id}>{p.id} {p.name}（池已售 {fmt(p.dynamic.usedM)}M / {fmt(p.capacityM)}M · 池订单 {p.dynamic.orders.length} 单）</option>
+                              ))}
+                            </select>
+                          </span>
+                        </div>
+                        <div className="rounded-[2px] border border-[#E5E6EB] p-3">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-mono text-xs font-semibold text-[#1D2129]">{pool.id}</span>
+                            <span className="text-xs text-[#4E5969]">{pool.name} · 成员出口 {pool.exitIds.length} 条（电信 / 联通 / 移动自组，自有 BGP 调度）</span>
+                            <span className={`rounded-[2px] px-1.5 py-0.5 text-[11px] ${pct >= 90 ? "bg-[#FFECE8] text-[#F53F3F]" : pct >= 70 ? "bg-[#FFF7E8] text-[#FF7D00]" : "bg-[#E8F8F2] text-[#00B42A]"}`}>
+                              池水位 {pct}%
+                            </span>
+                            <span className="ml-auto flex items-center gap-1.5">
+                              <span className="whitespace-nowrap text-xs text-[#4E5969]">本单占用带宽（计入池）</span>
+                              <Input type="number" min={1} className="h-8 w-24 text-xs" value={poolAsg.bw}
+                                onChange={(ev) => setPoolSel((s) => ({ ...s, bw: Math.max(1, Number(ev.target.value)) }))} />
+                              <span className="text-xs text-[#86909C]">M</span>
+                            </span>
+                          </div>
+                          <div className="mt-2">
+                            <div className="mb-1 flex justify-between text-[11px] text-[#86909C]">
+                              <span>池已售 {fmt(pool.dynamic.usedM)}M{overCap ? ` + 本单 ${fmt(poolAsg.bw)}M` : ""} / 池容量 {fmt(pool.capacityM)}M（商用参考，容量不做减法准入）</span>
+                              <span>最近实测峰值 {lastMs ? `${fmt(lastMs.peakM)}M（${lastMs.at}）` : "尚未实测"}</span>
+                            </div>
+                            <div className="h-2 overflow-hidden rounded-[2px] bg-[#F2F3F5]">
+                              <div className="h-full bg-[#165DFF] transition-all" style={{ width: `${Math.min(pct, 100)}%` }} />
+                            </div>
+                            {overCap && (
+                              <div className="mt-1 rounded-[2px] bg-[#FFF7E8] px-2 py-1 text-[11px] text-[#FF7D00]">
+                                ⚠ 本单计入后池已售 {fmt(pool.dynamic.usedM + poolAsg.bw)}M 超池容量——仅提示不阻断；是否扩容由人工决策（扩成员出口或上调采购带宽）
+                              </div>
+                            )}
+                          </div>
+                          <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px]">
+                            {pool.dynamic.orders.length > 0 ? (
+                              <>
+                                <span className="text-[#4E5969]">池订单 <span className="font-mono font-medium text-[#1D2129]">{pool.dynamic.orders.length}</span> 单 · 合计带宽 <span className="font-mono font-medium text-[#1D2129]">{fmt(pool.dynamic.usedM)}M</span>（客户向池采购，不区分落在哪条出口）</span>
+                                <button type="button" className="text-[#165DFF] hover:underline"
+                                  onClick={() => setCustOpen((m) => ({ ...m, [pool.id]: !m[pool.id] }))}>
+                                  {custOpen[pool.id] ? "▲ 收起池订单" : "▼ 池订单明细"}
+                                </button>
+                              </>
+                            ) : <span className="text-[#C9CDD4]">池内尚无客户订单</span>}
+                          </div>
+                          {custOpen[pool.id] && pool.dynamic.orders.length > 0 && (
+                            <div className="mt-1.5 overflow-hidden rounded-[2px] border border-[#F2F3F5]">
+                              <table className="w-full text-[11px]">
+                                <thead>
+                                  <tr className="bg-[#F7F8FA] text-left text-[#86909C]">
+                                    <th className="px-2 py-1 font-normal">客户</th>
+                                    <th className="px-2 py-1 font-normal">带宽</th>
+                                    <th className="px-2 py-1 font-normal">开通时间</th>
+                                    <th className="px-2 py-1 font-normal">到期时间</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {pool.dynamic.orders.map((o, oi) => {
+                                    const until = untilOf(o);
+                                    const near = until !== "—" && !until.includes("回填") && new Date(`${until}-01`) <= EXPIRE_SOON;
+                                    return (
+                                      <tr key={oi} className="border-t border-[#F2F3F5] text-[#4E5969]">
+                                        <td className="px-2 py-1">{o.customer}</td>
+                                        <td className="px-2 py-1 font-mono">{fmt(o.bw)}M</td>
+                                        <td className="px-2 py-1 font-mono">{o.since}</td>
+                                        <td className={`px-2 py-1 font-mono ${near ? "font-medium text-[#FF7D00]" : ""}`}>{until}{near ? "（临期）" : ""}</td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                          <div className="mt-2 rounded-[2px] bg-[#F7F8FA] px-2 py-1.5 text-[10px] leading-4 text-[#86909C]">
+                            成员出口负载（供工程师参考，系统不做流量分摊预测）：{pool.exitIds.map((eid) => {
+                              const e = R1_ROWS.find((r) => r.id === eid);
+                              return e ? `${e.id} ${e.carrier} 已售 ${fmt(e.dynamic.usedM)}/${fmt(e.capacityM)}M · 实测峰 ${fmt(e.dynamic.peakM ?? 0)}M` : eid;
+                            }).join("；")}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })() : (
                   <div>
                     <div className="mb-1.5 flex flex-wrap items-center gap-2">
                       <span className="text-[11px] font-semibold text-[#4E5969]">① 出口资源</span>
@@ -586,6 +732,7 @@ export default function DeliveryDetail() {
                       })}
                     </div>
                   </div>
+                  )}
 
                   {/* ② IP 地址（可多选，绑定到所选出口） */}
                   <div>
@@ -761,7 +908,7 @@ export default function DeliveryDetail() {
                 <div className="rounded-[2px] border border-[#E5E6EB]">
                   <div className="grid gap-px bg-[#E5E6EB] md:grid-cols-2">
                     {([
-                      { title: "出口带宽", color: "#165DFF", rows: exits.map((e) => ({ main: e.line, sub: `本单占用 ${fmt(e.bw)}M` })) },
+                      { title: "出口带宽", color: "#165DFF", rows: poolAsg ? [{ main: `${poolAsg.poolId} ${poolRow()?.name ?? ""}`, sub: `本单池占用 ${fmt(poolAsg.bw)}M（客户向池采购）` }] : exits.map((e) => ({ main: e.line, sub: `本单占用 ${fmt(e.bw)}M` })) },
                       { title: "IP 地址", color: "#0FC6C2", rows: ipAsgs.map((a, i) => ({ main: ipOf(a.ip).segment.split("（")[0], sub: calcs[i].rangeText })) },
                       { title: "基础线路", color: "#FF7D00", rows: bases.length ? bases.map((b) => ({ main: b })) : [{ main: "无", muted: true }] },
                       { title: "设备", color: "#722ED1", rows: devices.map((d) => ({ main: `${devOf(d.id).name} × ${d.n} 台`, sub: d.mode })) },
@@ -874,7 +1021,17 @@ export default function DeliveryDetail() {
             <div className="rounded-[4px] border border-[#BEDAFF] bg-white p-4 ">
               <div className="mb-2 text-sm font-semibold text-[#165DFF]">②层实时数据（只读，由单据生成）</div>
               <div className="space-y-3 text-xs">
-                {usedLines.map((lid) => {
+                {poolAsg ? (() => {
+                  const pool = poolRow();
+                  if (!pool) return null;
+                  const pct = Math.round(poolWater(pool) * 100);
+                  return (
+                    <div>
+                      <div className="mb-1 flex justify-between text-[#4E5969]"><span>{pool.id} 池已售（容量 {fmt(pool.capacityM)}M，本单 +{fmt(poolAsg.bw)}M）</span><span className="font-mono">{fmt(pool.dynamic.usedM)} / {fmt(pool.capacityM)} M</span></div>
+                      <div className="h-2 overflow-hidden rounded-[2px] bg-[#F2F3F5]"><div className="h-full bg-[#165DFF] transition-all" style={{ width: `${Math.min(pct, 100)}%` }} /></div>
+                    </div>
+                  );
+                })() : usedLines.map((lid) => {
                   const p = lineOf(lid);
                   const bw = exits.filter((e) => e.line === lid).reduce((s, e) => s + e.bw, 0);
                   return (

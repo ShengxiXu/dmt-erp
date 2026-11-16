@@ -11,6 +11,7 @@ import {
 import { getCostItems, useCostItems, SETTLE_RULE, uncoveredClasses, type CostItem } from "@/data/costItems";
 import { GET_TYPE, MAT_DEF, useCatalog } from "@/data/products";
 import { CONTRACTS, type Contract } from "@/data/contracts";
+import { POOLS } from "@/data/pool";
 import { ownerOfDeal } from "@/data/ownership";
 import { snapshotEsts, usePoolSettle, type PoolEst } from "@/data/poolSettle";
 import { SHEETS, SHEET_OF_CONTRACT, ensureSheetForContract, fillSheet, recordSheetEntries, recordSheetLines } from "@/data/sheets";
@@ -49,6 +50,14 @@ function calcAmount(item: CatalogItem, qty: number, meta: number, picked?: Sourc
         groups.set(r.ptag ?? "", g);
       });
       const parts = Array.from(groups.entries()).map(([ptag, rs]) => {
+        // BGP 三网互通：挂「出口池」计价（客户向池采购、不指向具体出口）——池已售以 R0 池实体为准
+        if (ptag === "BGP 三网互通") {
+          const pool = POOLS.find((p) => p.product === "BGP 三网互通");
+          if (!pool) return { t: `${ptag}（未找到出口池档案）`, v: 0 };
+          const sold = pool.dynamic.usedM + qty;
+          const v = sold > 0 ? (pool.monthlyCost / sold) * qty : 0;
+          return { t: `BGP 出口池（${pool.id}，成员出口 ${pool.exitIds.join("+")}）${fmt(pool.monthlyCost)}÷${fmt(sold)}×${qty} = ${fmt(v)}（客户向池采购，不指向具体出口）`, v };
+        }
         const poolRows = SOURCES.lineinternet.rows.filter((r) => r.ptag === ptag);
         const costSum = poolRows.reduce((s2, r) => s2 + Number(r.meta || 0), 0);
         const soldSum = poolRows.reduce((s2, r) => s2 + (r.pool?.usedM ?? 0), 0);
@@ -839,7 +848,7 @@ export default function Home() {
         </div>
         {l.cat === "isp" && (
           <div className="border-b bg-[#E8F3FF] px-4 py-2 text-xs leading-5 text-[#165DFF]">
-            出口 = 向运营商采购的线路，可多家客户共用。成本按<strong>归属产品类型</strong>合并计收（边际计价）：同类型所有出口月租合计 ÷（已售带宽 + 本单带宽）× 本单带宽——回答「新增这一单的成本」；月结按平均分摊（池成本 ÷ 已售带宽）做实际归属。
+            出口 = 向运营商采购的线路，可多家客户共用。成本按<strong>归属产品类型</strong>合并计收（边际计价）：同类型所有出口月租合计 ÷（已售带宽 + 本单带宽）× 本单带宽——回答「新增这一单的成本」；月结按平均分摊（池成本 ÷ 已售带宽）做实际归属。<strong>例外：BGP 三网互通挂「出口池」计价</strong>（客户向池采购、不指向具体出口，池已售以 R0 出口池档案为准）。
             BGP 三网选电信/联通/移动三条（并入同一池），AI 专线、D-MAN 共享 BGP 出口；一单可选多条线路。
           </div>
         )}
