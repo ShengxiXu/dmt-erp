@@ -753,10 +753,39 @@ export default function DeliveryDetail() {
             {step === 2 && (
               <section className="rounded-[4px] border border-[#E5E6EB] bg-white p-4 ">
                 <div className="mb-2 text-sm font-semibold">③ 资源分配审批（审批流可配置：当前 = 资源主管）</div>
-                <div className="rounded-[2px] bg-[#F7F8FA] p-3 text-xs leading-5 text-[#4E5969]">
-                  申请内容：出口 {exits.map((e) => `${e.line}（本单占用 ${fmt(e.bw)}M）`).join(" + ")} · IP {ipAsgs.map((a, i) => `${ipOf(a.ip).segment.split("（")[0]} ${calcs[i].rangeText}`).join("；")} · 基础线路 {bases.join("、") || "无"} · 设备 {devices.map((d) => `${devOf(d.id).name} × ${d.n} 台（${d.mode}）`).join("；")}<br />
-                  技术参数（{cat}）：{techFields.length} 项已填全 · 申请人：{wo.assignee} · 可用性检查：{checkSummary ? checkSummary : "系统预检通过"}
-                  {expanded && <><br />关联记录：本单前置触发 I-101 扩容 {fmt(expandM)}M（500M → {fmt(pool101.capacityM)}M），扩容后成本核算口径不变、池维度月报按新月租归集</>}
+                <div className="rounded-[2px] border border-[#E5E6EB]">
+                  <div className="grid gap-px bg-[#E5E6EB] md:grid-cols-2">
+                    {([
+                      { title: "出口带宽", color: "#165DFF", rows: exits.map((e) => ({ main: e.line, sub: `本单占用 ${fmt(e.bw)}M` })) },
+                      { title: "IP 地址", color: "#0FC6C2", rows: ipAsgs.map((a, i) => ({ main: ipOf(a.ip).segment.split("（")[0], sub: calcs[i].rangeText })) },
+                      { title: "基础线路", color: "#FF7D00", rows: bases.length ? bases.map((b) => ({ main: b })) : [{ main: "无", muted: true }] },
+                      { title: "设备", color: "#722ED1", rows: devices.map((d) => ({ main: `${devOf(d.id).name} × ${d.n} 台`, sub: d.mode })) },
+                    ] as { title: string; color: string; rows: { main: string; sub?: string; muted?: boolean }[] }[]).map((g) => (
+                      <div key={g.title} className="bg-white px-4 py-3">
+                        <div className="mb-2 flex items-center gap-1.5">
+                          <span className="h-3 w-1 rounded-full" style={{ background: g.color }} />
+                          <span className="text-xs font-semibold text-[#1D2129]">{g.title}</span>
+                          <span className="text-[11px] text-[#86909C]">{g.rows.length} 项</span>
+                        </div>
+                        <div className="space-y-1.5">
+                          {g.rows.map((r, i) => (
+                            <div key={i} className="flex items-baseline justify-between gap-3 text-xs">
+                              <span className={`min-w-0 truncate ${r.muted ? "text-[#C9CDD4]" : "font-medium text-[#1D2129]"}`}>{r.main}</span>
+                              {r.sub && <span className="shrink-0 font-mono text-[#4E5969]">{r.sub}</span>}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="space-y-1 border-t border-[#E5E6EB] bg-[#F7F8FA] px-4 py-2.5 text-xs text-[#4E5969]">
+                    <div className="flex flex-wrap gap-x-6 gap-y-1">
+                      <span>技术参数（{cat}）：{techFields.length} 项已填全</span>
+                      <span>申请人：{wo.assignee}</span>
+                      <span>可用性检查：{checkSummary ? checkSummary : "系统预检通过"}</span>
+                    </div>
+                    {expanded && <div className="text-[#FF7D00]">关联记录：本单前置触发 I-101 扩容 {fmt(expandM)}M（500M → {fmt(pool101.capacityM)}M），扩容后成本核算口径不变、池维度月报按新月租归集</div>}
+                  </div>
                 </div>
                 <div className="mt-3 flex gap-2">
                   <Button size="sm" variant="outline" onClick={() => setStep(1)}>← 返回修改申请</Button>
