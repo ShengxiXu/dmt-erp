@@ -11,6 +11,7 @@ import { WORK_ORDERS, STEP_NAMES } from "@/data/delivery";
 import { RECEIVABLES } from "@/data/receivables";
 import { promiseBroken, promiseOverDays, dueFollowUps } from "@/data/finance";
 import { R1_ROWS } from "@/data/resources";
+import { POOLS, poolMeasureDue } from "@/data/pool";
 import { getBatches, useSettle } from "@/data/settle";
 import { useSessionRole, setSessionRole, USERS } from "@/data/users";
 import { getOpps, OPP_STAGES } from "@/data/customers";
@@ -58,6 +59,9 @@ function buildTodos(role: Role): Todo[] {
         const pct = Math.round((top.dynamic.usedM / top.capacityM) * 100);
         t.push({ title: `${top.id} ${top.carrier}出口利用率 ${pct}%（当前最高）`, sub: `${top.product}${top.sharedWith ? ` · 与 ${top.sharedWith} 共用` : ""} · 关注扩容节奏`, link: "/resources/r1", cta: "查看" });
       }
+      // 负载实测到期未录（R0 出口池档案的「待实测」徽标同源）：工程师定期人工实测录入
+      POOLS.filter((p) => p.status === "生效" && poolMeasureDue(p, DEMO_TODAY)).forEach((p) =>
+        t.push({ title: `出口池 ${p.id} 负载实测待补录`, sub: `${p.name} · 实测周期 ${p.measureCycleDays} 天${p.dynamic.lastMeasuredAt ? `，最近实测 ${p.dynamic.lastMeasuredAt}` : "，尚未实测"} · 工程师人工实测后录入`, link: "/resources/r0", cta: "去录入", hot: true }));
       return t;
     }
     case "财务": {

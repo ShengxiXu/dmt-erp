@@ -9,6 +9,7 @@ import { CONTRACTS, fmtMoney, nearestActiveEnd, daysToEnd } from "@/data/contrac
 import { RECEIVABLES, PAYMENTS, invBalance } from "@/data/receivables";
 import { customerFinance, FIN_TODAY } from "@/data/finance";
 import { R1_ROWS } from "@/data/resources";
+import { POOLS } from "@/data/pool";
 import { DEMO_TODAY } from "@/data/settings";
 import { exportCsv } from "@/utils/exportCsv";
 import ArcoShell from "@/components/ArcoShell";
@@ -115,7 +116,11 @@ export default function Customer() {
         const contracts = CONTRACTS.filter((c) => c.customer === v.name);
         const invs = RECEIVABLES.filter((r) => r.customer === v.name);
         const pays = PAYMENTS.filter((p) => p.customer === v.name);
-        const resources = R1_ROWS.flatMap((r) => r.dynamic.orders.filter((o) => o.customer.startsWith(v.name)).map((o) => ({ pool: r.name, ...o })));
+        const resources = [
+          ...R1_ROWS.flatMap((r) => r.dynamic.orders.filter((o) => o.customer.startsWith(v.name)).map((o) => ({ pool: r.name, ...o }))),
+          // BGP 类订单记在出口池上（客户向池采购、不指向具体出口），客户资源视图须包含池订单
+          ...POOLS.flatMap((p) => p.dynamic.orders.filter((o) => o.customer.startsWith(v.name)).map((o) => ({ pool: `${p.name}（出口池）`, ...o }))),
+        ];
         const cf = customerFinance(v.name);   // 财务口径唯一出处（finance.ts）：DSO / 逾期 / 账龄 / 催收
         const invTotal = cf.invTotal;
         const recvTotal = cf.recvTotal;

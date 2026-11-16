@@ -12,7 +12,7 @@ import {
   useInventory, stockIn, stockOut,
   type ArchiveDef, type FieldDef,
 } from "@/data/resources";
-import { POOLS, usePools, poolExits, poolWater, poolMeasureDue, exitMeasureDue, measurePool, measureExit, type PoolDef } from "@/data/pool";
+import { POOLS, usePools, poolExits, poolWater, poolMeasureDue, exitMeasureDue, measurePool, measureExit, addPool, type PoolDef } from "@/data/pool";
 import { DEMO_TODAY } from "@/data/settings";
 import { currentUser } from "@/data/users";
 import { MAT_DEF, useCatalog } from "@/data/products";
@@ -779,6 +779,96 @@ function ExitPoolCard({ pool, onOpen, onMeasure }: { pool: PoolDef; onOpen: () =
   );
 }
 
+// ---------- R0 新建出口池弹窗（成员出口多对多；容量 / 池月成本按成员合计自动得出） ----------
+const POOL_PRODUCTS = ["BGP 三网互通", "AI 专线", "OPON", "D-MAN", "国内精品网", "国际精品网"];
+function PoolCreateModal({ onClose }: { onClose: () => void }) {
+  const [name, setName] = useState("");
+  const [product, setProduct] = useState(POOL_PRODUCTS[0]);
+  const [exitIds, setExitIds] = useState<string[]>([]);
+  const [ipIds, setIpIds] = useState<string[]>([]);
+  const [effect, setEffect] = useState(DEMO_TODAY);
+  const [cycle, setCycle] = useState(30);
+  const picked = exitIds.map((id) => R1_ROWS.find((r) => r.id === id)).filter((r): r is (typeof R1_ROWS)[number] => !!r);
+  const capM = picked.reduce((s, r) => s + r.capacityM, 0);
+  const costM = picked.reduce((s, r) => s + r.monthlyCost, 0);
+  const toggle = (list: string[], set: (v: string[]) => void, id: string) =>
+    set(list.includes(id) ? list.filter((x) => x !== id) : [...list, id]);
+  const submit = () => {
+    if (!name.trim()) return alert("请填写池名称");
+    if (!exitIds.length) return alert("请至少选择 1 条成员出口（池由出口自组）");
+    const seq = POOLS.reduce((m, p) => { const n = Number((p.id.match(/(\d+)$/) ?? [])[1]); return Number.isFinite(n) ? Math.max(m, n) : m; }, 0) + 1;
+    const prefix = product === "BGP 三网互通" ? "P-BGP-" : "P-";
+    const id = prefix + String(seq).padStart(product === "BGP 三网互通" ? 2 : 3, "0");
+    const pool = addPool({ id, name: name.trim(), product, exitIds, ipIds, effect, measureCycleDays: cycle });
+    alert(`已新建出口池 ${pool.id} · ${pool.name}：成员出口 ${exitIds.length} 条，池容量 ${fmt(pool.capacityM)}M，池月成本 ${fmt(pool.monthlyCost)} 元（均由成员出口合计自动得出）`);
+    onClose();
+  };
+  return (
+    <CenterModal title="新建出口池" sub="池 = 多出口自组的资源实体（如 BGP 三网互通）；客户向池采购带宽、不指向池内具体出口。容量与池月成本由成员出口合计自动得出，无需手填" width={640} onClose={onClose}>
+      <div className="space-y-3 text-xs">
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <div className="mb-0.5 text-[#4E5969]">池名称 <span className="text-[#F53F3F]">*</span></div>
+            <Input autoFocus placeholder="如 BGP 三网互通资源池（二期）" value={name} onChange={(e) => setName(e.target.value)} />
+          </div>
+          <div>
+            <div className="mb-0.5 text-[#4E5969]">归属产品类型 <span className="text-[#F53F3F]">*</span></div>
+            <select className="w-full rounded-[2px] border border-[#E5E6EB] bg-white px-2 py-1.5 text-sm" value={product} onChange={(e) => setProduct(e.target.value)}>
+              {POOL_PRODUCTS.map((p) => <option key={p} value={p}>{p}</option>)}
+            </select>
+          </div>
+        </div>
+        <div>
+          <div className="mb-1 text-[#4E5969]">成员出口（R1 档案，多对多可多选）<span className="text-[#F53F3F]"> *</span></div>
+          <div className="max-h-36 space-y-1 overflow-y-auto rounded-[2px] border border-[#E5E6EB] p-2">
+            {R1_ROWS.map((r) => (
+              <label key={r.id} className="flex items-center gap-2 text-xs text-[#1D2129]">
+                <input type="checkbox" className="accent-[#165DFF]" checked={exitIds.includes(r.id)} onChange={() => toggle(exitIds, setExitIds, r.id)} />
+                <span className="font-mono">{r.id}</span>
+                <span className="min-w-0 flex-1 truncate text-[#86909C]">{r.name} · {r.carrier}</span>
+                <span className="shrink-0 font-mono text-[#4E5969]">{fmt(r.capacityM)}M · {fmt(r.monthlyCost)} 元/月</span>
+              </label>
+            ))}
+          </div>
+          <div className="mt-1 rounded-[2px] border border-dashed border-[#BEDAFF] bg-[#F7FAFF] px-2 py-1 font-mono text-[11px] text-[#165DFF]">
+            池容量 = {fmt(capM)} M · 池月成本 = {fmt(costM)} 元/月（随成员出口选择实时合计，保存后作为①层档案参数）
+          </div>
+        </div>
+        <div>
+          <div className="mb-1 text-[#4E5969]">选挂 IP 段（R3 档案，单向维护：在池上选挂，段上不反向维护；可不选）</div>
+          <div className="max-h-28 space-y-1 overflow-y-auto rounded-[2px] border border-[#E5E6EB] p-2">
+            {R3_ROWS.map((r) => (
+              <label key={r.id} className="flex items-center gap-2 text-xs text-[#1D2129]">
+                <input type="checkbox" className="accent-[#165DFF]" checked={ipIds.includes(r.id)} onChange={() => toggle(ipIds, setIpIds, r.id)} />
+                <span className="font-mono">{r.id}</span>
+                <span className="font-mono text-[#4E5969]">{r.segment}</span>
+                <span className={`rounded-[2px] px-1 text-[10px] ${r.source === "自有" ? "bg-[#E8F8F2] text-[#00B42A]" : "bg-[#FFF3E8] text-[#FF7D00]"}`}>{r.source}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <div className="mb-0.5 text-[#4E5969]">生效日期</div>
+            <Input type="date" value={effect} onChange={(e) => setEffect(e.target.value)} />
+          </div>
+          <div>
+            <div className="mb-0.5 text-[#4E5969]">负载实测周期（天）</div>
+            <Input type="number" min={1} value={cycle} onChange={(e) => setCycle(Math.max(1, Number(e.target.value)))} />
+          </div>
+        </div>
+        <div className="flex items-center justify-between border-t border-[#F2F3F5] pt-3">
+          <span className="text-[10px] text-[#C9CDD4]">原型演示：保存即生效并落本地快照；正式环境走「草稿 → 生效」状态机，变更留痕</span>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={onClose}>取消</Button>
+            <Button size="sm" onClick={submit}>保存出口池</Button>
+          </div>
+        </div>
+      </div>
+    </CenterModal>
+  );
+}
+
 // ---------- R0 负载实测录入弹窗（工程师定期人工实测；池级 / 出口级二选一） ----------
 function MeasureModal({ initial, onClose }: { initial: { kind: "pool" | "exit"; id: string }; onClose: () => void }) {
   usePools();
@@ -852,6 +942,7 @@ export default function Resources() {
   const [editing, setEditing] = useState<any>(null);
   const [detail, setDetail] = useState<any>(null);
   const [measure, setMeasure] = useState<null | { kind: "pool" | "exit"; id: string }>(null);
+  const [creatingPool, setCreatingPool] = useState(false);
   const [kw, setKw] = useState("");
   const archive = ARCHIVES.find((a) => a.key === tab);
   const baseRows: Record<string, any[]> = { r1: R1_ROWS, r2: R2_ROWS, r3: R3_ROWS, r4: R4_ROWS };
@@ -946,6 +1037,9 @@ export default function Resources() {
               <div className="rounded-[4px] border border-[#E5E6EB] bg-white px-4 py-2 text-[11px] leading-5 text-[#86909C]">
                 <span className="mr-1 font-semibold text-[#4E5969]">池化口径：</span>
                 BGP 三网互通 = 自建资源池（三大运营商出口自组、自有 BGP 调度）：客户向「池」采购带宽，不指向池内某条出口；成员出口仍可被其他产品类型（AI 专线 / D-MAN）共用，出口承载明细只列直接挂在出口上的订单。扩容判断由人工决策（系统不设超售比硬门槛，仅提示水位）；负载数据由工程师定期人工实测录入、留痕成趋势，系统不做流量分摊预测，拥塞处置（QoS / BGP 策略）是工程师现场工作。
+              </div>
+              <div className="flex justify-end">
+                <Button size="sm" onClick={() => setCreatingPool(true)}>＋ 新建出口池</Button>
               </div>
               <div className="grid gap-3 xl:grid-cols-2">
                 {POOLS.map((p) => (
@@ -1164,6 +1258,9 @@ export default function Resources() {
 
       {/* ===== 居中弹窗：负载实测录入 ===== */}
       {measure && <MeasureModal initial={measure} onClose={() => setMeasure(null)} />}
+
+      {/* ===== 居中弹窗：新建出口池 ===== */}
+      {creatingPool && <PoolCreateModal onClose={() => setCreatingPool(false)} />}
 
       {/* ===== 居中弹窗：R3 IP 网段明细 ===== */}
       {detail && tab === "r3" && (

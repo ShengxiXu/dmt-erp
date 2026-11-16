@@ -181,3 +181,18 @@ export function removePoolOrder(poolId: string, customer: string): void {
   pool.dynamic.orders.splice(idx, 1);
   bump();
 }
+
+/** 新建出口池（R0 档案页入口）：容量 / 池月成本由成员出口合计自动得出；②层业务数据从空开始 */
+export function addPool(input: Omit<PoolDef, "id" | "capacityM" | "monthlyCost" | "status" | "dynamic"> & { id: string }): PoolDef {
+  const exits = input.exitIds.map((id) => R1_ROWS.find((r) => r.id === id)).filter((r): r is (typeof R1_ROWS)[number] => !!r);
+  const pool: PoolDef = {
+    ...input,
+    capacityM: exits.reduce((s, r) => s + r.capacityM, 0),
+    monthlyCost: exits.reduce((s, r) => s + r.monthlyCost, 0),
+    status: "生效",
+    dynamic: { usedM: 0, orders: [], measures: [] },
+  };
+  POOLS.push(pool);
+  bump();
+  return pool;
+}

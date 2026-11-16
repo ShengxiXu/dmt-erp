@@ -9,6 +9,7 @@ import { getOpps } from "@/data/customers";
 import { RECEIVABLES } from "@/data/receivables";
 import { agingBuckets, dsoDays, badDebtRisk, financeKPIs, FIN_TODAY } from "@/data/finance";
 import { R1_ROWS } from "@/data/resources";
+import { POOLS } from "@/data/pool";
 import { getBatches } from "@/data/settle";
 import { DEMO_TODAY } from "@/data/settings";
 
@@ -64,8 +65,11 @@ export default function Analytics() {
     const grossMargin = monthlyRevenue - monthlyExitCost;
     const marginRate = monthlyRevenue ? Math.round((grossMargin / monthlyRevenue) * 1000) / 10 : 0;
 
-    // ④ 出口池利用率
-    const pools = R1_ROWS.map((r) => ({ label: r.name, value: r.capacityM ? Math.round((r.dynamic.usedM / r.capacityM) * 1000) / 10 : 0, used: r.dynamic.usedM, cap: r.capacityM }));
+    // ④ 出口池利用率：出口线路（直挂订单水位）+ 出口池（池订单水位，BGP 类客户向池采购）
+    const pools = [
+      ...R1_ROWS.map((r) => ({ label: r.name, kind: "出口", value: r.capacityM ? Math.round((r.dynamic.usedM / r.capacityM) * 1000) / 10 : 0, used: r.dynamic.usedM, cap: r.capacityM })),
+      ...POOLS.filter((p) => p.status === "生效").map((p) => ({ label: `${p.name}（${p.id}）`, kind: "出口池", value: p.capacityM ? Math.round((p.dynamic.usedM / p.capacityM) * 1000) / 10 : 0, used: p.dynamic.usedM, cap: p.capacityM })),
+    ];
 
     // ⑤ 应收账龄 / 财务 KPI / DSO —— 全部取 finance.ts 共享口径（唯一出处，本页不重算）
     const aging = agingBuckets();
@@ -108,7 +112,7 @@ export default function Analytics() {
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
           {[
             ["生效合同月租（元/月）", fmt(data.monthlyRevenue), `${data.activeContracts.length} 份生效合同`, "#165DFF"],
-            ["出口池月成本（元/月）", fmt(data.monthlyExitCost), `${R1_ROWS.filter((r) => r.status === "生效").length} 个出口池（带宽成本）`, "#0D9488"],
+            ["出口池月成本（元/月）", fmt(data.monthlyExitCost), `${R1_ROWS.filter((r) => r.status === "生效").length} 条出口线路 · ${POOLS.filter((p) => p.status === "生效").length} 个出口池（带宽成本）`, "#0D9488"],
             ["带宽毛利（元/月）", fmt(data.grossMargin), `毛利率 ${data.marginRate}%（合同额 vs 出口带宽成本，未含线路/机房等）`, data.grossMargin >= 0 ? "#00B42A" : "#F53F3F"],
             ["应收 / 回款率", fmt(data.kpi.应收总额), `已收 ${fmt(data.kpi.已收金额)} 元 · 回款率 ${Math.round(data.kpi.回款率 * 100)}% · 逾期率 ${Math.round(data.kpi.逾期率 * 100)}%`, "#FF7D00"],
           ].map(([k, v, sub, color]) => (
@@ -219,13 +223,16 @@ export default function Analytics() {
           <div className="rounded-[4px] border border-[#E5E6EB] bg-white p-4">
             <div className="mb-3 flex items-center justify-between">
               <span className="text-sm font-semibold text-[#1D2129]">出口池利用率</span>
-              <Link to="/resources/r1" className="text-[11px] text-[#165DFF] hover:underline">R1 出口资源池 →</Link>
+              <Link to="/resources/r0" className="text-[11px] text-[#165DFF] hover:underline">R0 出口池 →</Link>
             </div>
             <div className="space-y-2.5">
               {data.pools.map((p) => (
                 <div key={p.label}>
                   <div className="mb-0.5 flex justify-between text-[11px]">
-                    <span className="text-[#4E5969]">{p.label}</span>
+                    <span className="text-[#4E5969]">
+                      {p.kind === "出口池" && <span className="mr-1 rounded-[2px] bg-[#E8F3FF] px-1 py-0.5 text-[9px] text-[#165DFF]">出口池</span>}
+                      {p.label}
+                    </span>
                     <span className="font-mono text-[#1D2129]">{p.used}M / {p.cap}M · <span className={p.value >= 80 ? "text-[#F53F3F]" : p.value >= 60 ? "text-[#FF7D00]" : "text-[#00B42A]"}>{p.value}%</span></span>
                   </div>
                   <div className="h-2 overflow-hidden rounded-[2px] bg-[#F2F3F5]">
