@@ -282,13 +282,18 @@ export default function DeliveryDetail() {
       </div>
 
       <main className="space-y-4 p-6">
-        <section className="rounded-[4px] border border-[#E5E6EB] bg-white p-4 text-sm ">
-          <div className="grid gap-x-8 gap-y-2 md:grid-cols-5">
+        <section className="rounded-[4px] border border-[#E5E6EB] bg-white p-4 text-sm">
+          <div className="grid gap-x-8 gap-y-3 md:grid-cols-4">
             <div><div className="text-xs text-[#86909C]">客户 / 合同</div><div className="font-medium">{wo.customer} · {wo.contract}</div></div>
             <div><div className="text-xs text-[#86909C]">关联核算单</div><div className="font-mono font-medium">{wo.sheetId}（已通过）</div></div>
-            <div><div className="text-xs text-[#86909C]">开通对象</div><div className="font-medium">{wo.line}</div></div>
             <div><div className="text-xs text-[#86909C]">负责人</div><div className="font-medium">{wo.assignee}</div></div>
             <div><div className="text-xs text-[#86909C]">要求完成</div><div className="font-medium text-[#FF7D00]">{wo.deadline}</div></div>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1.5 border-t border-dashed border-[#E5E6EB] pt-3">
+            <span className="text-xs text-[#86909C]">开通对象</span>
+            <span className="font-medium text-[#1D2129]">{wo.line}</span>
+            <span className="rounded-[2px] bg-[#E8F3FF] px-1.5 py-0.5 text-[11px] text-[#165DFF]">{wo.cat}</span>
+            <span className="rounded-[2px] bg-[#E8FFFB] px-1.5 py-0.5 font-mono text-[11px] text-[#0FC6C2]">带宽 {wo.bwM}M</span>
           </div>
         </section>
 
