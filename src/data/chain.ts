@@ -36,7 +36,7 @@ export function itemProblems(it: CostItem): string[] {
   if (it.status === "停用") out.push("这笔账已被停用，开单时不会计算");
   if (it.status === "草稿") out.push("这笔账还是草稿、没有生效");
   if (it.category === "资源驱动" && !it.sourceArchive) out.push("还没告诉系统从哪个资源档案里挑");
-  if (it.settleType !== "间接" && !it.formula) out.push("还没告诉系统这笔账按什么计价方式算");
+  if (it.settleType !== "间接" && !it.formula && it.category !== "手工录入") out.push("还没告诉系统这笔账按什么计价方式算");
   if (it.settleType === "间接" && !it.costCenter) out.push("还没告诉系统这笔间接费用归集到哪个成本中心");
   return out;
 }

@@ -6,6 +6,8 @@
 import { persistable } from "@/data/persist";
 import { useSyncExternalStore } from "react";
 import { ITEMS } from "./catalog";
+import { getCostItems } from "./costItems";
+import { getCenters } from "./costCenters";
 
 export type SpecFieldType = "select" | "number" | "text" | "date" | "switch";
 
@@ -247,7 +249,7 @@ const cats: ProductCat[] = persistable("productCats", () => [
           { id: "plan_ai_std", name: "标准版", price: 3800, values: { bw: "100M", ip: "4 个", line: "1 条" }, remark: "中小客户主推" },
           { id: "plan_ai_pro", name: "尊享版", price: 6800, values: { bw: "200M", ip: "8 个", line: "1 条" }, remark: "含优先排障" },
         ] }, ISP_FIELDS),
-      T("BGP 三网互通", { sla: "99.9%", costItems: ISP_COST, materials: ISP_MATS, centers: ["CC-01"] }, ISP_FIELDS),
+      T("BGP 三网互通", { sla: "99.9%", costItems: ISP_COST, materials: [...ISP_MATS, M("mat_pool")], centers: ["CC-01"] }, ISP_FIELDS),
       T("OPON", { costItems: ISP_COST, materials: ISP_MATS, centers: ["CC-01"] }, ISP_FIELDS),
       T("D-MAN", { costItems: ISP_COST, materials: ISP_MATS, centers: ["CC-01"] }, ISP_FIELDS),
       T("国内精品网", { costItems: ISP_COST, materials: ISP_MATS, centers: ["CC-01"] }, ISP_FIELDS),
@@ -272,6 +274,35 @@ const cats: ProductCat[] = persistable("productCats", () => [
 // ---------- 轻量 store：页面间共享 + 变更通知 ----------
 let version = 0;
 const listeners = new Set<() => void>();
+
+// 池化回填（幂等）：出口池升为一等实体后，BGP 三网互通的清单组成补「出口池」资源行——
+// 文档化「客户向池采购」；成本仍经 mat_exit 推导（无条目适用 mat_pool），不重复计收。存量快照同样补齐并留版本痕。
+const bgpTypeSeed = cats.find((c) => c.name === "ISP 互联网接入")?.types.find((t) => t.name === "BGP 三网互通");
+if (bgpTypeSeed && !(bgpTypeSeed.materials ?? []).some((m) => m.libKey === "mat_pool")) {
+  bgpTypeSeed.materials = [...(bgpTypeSeed.materials ?? []), { key: "seed_mat_pool", libKey: "mat_pool", itemKeys: [] }];
+  bgpTypeSeed.asmVersion += 1;
+  bgpTypeSeed.asmHistory.push({ v: bgpTypeSeed.asmVersion, date: "2026-11-16", items: [...bgpTypeSeed.costItems], note: "池化回填：组成补「出口池」资源行（成本口径不变，出口带宽费仍经出口线路推导）" });
+}
+
+// 装配一致性回填（幂等）：成本条目库后续演进新增条目（光模块 / 交付杂项等）后，各产品类型
+// 已装配的 costItems 与「组成推导并集」漂移（缺后增条目）。按当前组成 + 剔除 + 成本中心重算落存，
+// 保证核算单预置行 = 条目库当前口径（与资源清单页保存逻辑同一公式）；变更留版本痕。
+const deriveAsmItems = (t: ProductType): string[] => {
+  const compKeys = (t.materials ?? []).map((m) => m.libKey);
+  const direct = getCostItems()
+    .filter((i) => i.settleType !== "间接" && i.appliesTo && compKeys.includes(i.appliesTo) && !(t.directOff ?? []).includes(i.key))
+    .map((i) => i.key);
+  const centerItems = (t.centers ?? []).flatMap((id) => getCenters().find((c) => c.id === id)?.itemKeys ?? []);
+  return Array.from(new Set([...direct, ...centerItems]));
+};
+cats.forEach((c) => c.types.forEach((t) => {
+  const derived = deriveAsmItems(t);
+  if (derived.join() !== (t.costItems ?? []).join()) {
+    t.costItems = derived;
+    t.asmVersion += 1;
+    t.asmHistory.push({ v: t.asmVersion, date: "2026-11-16", items: [...derived], note: "装配回填：按条目库当前口径重算推导并集（补后增条目）" });
+  }
+}));
 
 export const getCats = () => cats;
 export const subscribeCats = (fn: () => void) => {
