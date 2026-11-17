@@ -32,6 +32,10 @@ interface IpAsg { line: string; ip: string; ipStart: string; ipN: number }
 /** 设备申领行：多选 */
 interface DevRow { id: string; mode: string; n: number }
 const segPrefix = (seg: string) => seg.split("/")[0].split(".").slice(0, 3).join(".");
+/** 出口线路绑定的 IP 段（R3 档案 boundLines 字段） */
+const segOfLine = (lineId: string) => R3_ROWS.find((r) => (r.boundLines ?? []).includes(lineId));
+/** 出口可绑定的全部 IP 段 */
+const segsOfLine = (lineId: string) => R3_ROWS.filter((r) => (r.boundLines ?? []).includes(lineId));
 const STOCK_MODE = "库存直绑（P02）";
 
 export default function DeliveryDetail() {
@@ -41,7 +45,7 @@ export default function DeliveryDetail() {
   const wo = WORK_ORDERS.find((w) => w.id === id) ?? WORK_ORDERS[0];
   /** 本工单对应的订单行 id（wo.line = 「L1 · 行名称」，取第一段） */
   const lineId = wo.line.split(" · ")[0];
-  /** 交付资源计划快照：成本核算提交时写入（出口/池、IP 段与数量、基础线路在此阶段选定并锁定） */
+  /** 交付资源计划快照：成本核算提交时写入，作为本工单的资源预填（默认选用）；仅基础线路锁定 */
   const planItem = woPlanOf(wo.sheetId)?.[lineId] ?? null;
   /** 旧单兼容（快照上线前提交的历史数据）：从条目快照文本解析 IP 需求与选定段 */
   const legacyIp = (() => {
@@ -56,13 +60,13 @@ export default function DeliveryDetail() {
   /** IP 段在本单中的展示/绑定线路（R3 档案 boundLines）；BGP 广播段仅作内部关联，不展示为「归属出口」 */
   const boundLineOf = (segId: string) => R3_ROWS.find((r) => r.id === segId)?.boundLines?.[0] ?? "E-CT-1";
   const [step, setStep] = useState(wo.step);
-  /** 出口资源：优先取核算快照；BGP 类老单默认三网出口（演示），其余默认 I-101 */
+  /** 出口资源：核算快照预填；BGP 类老单默认三网出口（演示），其余默认 I-101 */
   const initExits = (): ExitRes[] =>
     planItem?.exits?.length ? planItem.exits.map((e) => ({ ...e }))
     : wo.cat === "BGP 三网互通"
       ? [{ line: "E-CT-1", bw: 50 }, { line: "I-102", bw: 50 }, { line: "I-103", bw: 50 }]
       : [{ line: "I-101", bw: 50 }];
-  /** IP 分配：优先取核算快照（选定段 + 分配数，与订单行一致）；历史数据从条目快照解析；老演示单走默认 */
+  /** IP 分配：核算快照预填（选定段 + 分配数）；历史数据从条目快照解析；老演示单走默认 */
   const initIpAsgs = (): IpAsg[] => {
     const mk = (segId: string, n: number): IpAsg => {
       const seg = R3_ROWS.find((r) => r.id === segId);
@@ -78,9 +82,9 @@ export default function DeliveryDetail() {
       ];
     return [{ line: "I-101", ip: "IP-58.40.0", ipStart: "58.40.0.200", ipN: ipNeedOf ?? 4 }];
   };
-  const [exits] = useState<ExitRes[]>(initExits);
+  const [exits, setExits] = useState<ExitRes[]>(initExits);
   const [ipAsgs, setIpAsgs] = useState<IpAsg[]>(initIpAsgs);
-  /** 基础线路：取自核算快照选定的线路（锁定，变更走变更流程） */
+  /** 基础线路：核算阶段选定并锁定（唯一锁定项）；无快照时默认 B-001 */
   const [bases] = useState<string[]>(planItem?.bases?.length ? [...planItem.bases] : ["B-001"]);
   const [devices, setDevices] = useState<DevRow[]>([{ id: "EQ-AR6121", mode: STOCK_MODE, n: 2 }]);
   /** 出口负载评估结论（工程师人工），按线路号记录 */
@@ -92,7 +96,7 @@ export default function DeliveryDetail() {
   const [cat, setCat] = useState(wo.cat);
   /** BGP 类产品：客户向「出口池」采购带宽（选池 + 填池占用带宽，不指向池内具体出口）；IP 仍逐出口绑定（宣告路径校验） */
   const isBgp = cat === "BGP 三网互通";
-  const [poolSel] = useState<{ poolId: string; bw: number }>({ poolId: planItem?.poolId ?? "P-BGP-01", bw: planItem?.bwM ?? wo.bwM });
+  const [poolSel, setPoolSel] = useState<{ poolId: string; bw: number }>({ poolId: planItem?.poolId ?? "P-BGP-01", bw: planItem?.bwM ?? wo.bwM });
   const poolAsg = isBgp ? poolSel : null;
   const poolKey = poolAsg ? `pool:${poolAsg.poolId}` : "";
   usePools();
@@ -205,6 +209,7 @@ export default function DeliveryDetail() {
   const [expandApproved, setExpandApproved] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [suspended, setSuspended] = useState(false);
+  const [altPick, setAltPick] = useState<{ idx: number; lineId: string } | null>(null);
 
   const pool101 = lineOf("I-101");
   const newMonthly = Math.round((75000 * (500 + expandM)) / 500);
@@ -212,6 +217,26 @@ export default function DeliveryDetail() {
     setR1((rows) => rows.map((r) => (r.id === "I-101" ? { ...r, capacityM: r.capacityM + expandM, monthlyCost: newMonthly } : r)));
     setExpandApproved(true);
     setExpanded(true);
+  };
+  /** 某条 IP 分配的更换候选出口：本单未占用的其他线路，且其绑定 IP 段余量满足需求 */
+  const altCandidates = (idx: number) =>
+    r1.filter((l) => l.id !== ipAsgs[idx].line && !usedLines.includes(l.id))
+      .map((l) => {
+        const seg = segOfLine(l.id);
+        if (!seg) return null;
+        const free = seg.total - seg.dynamic.allocated;
+        if (free < ipAsgs[idx].ipN) return null;
+        return { line: l, seg, free };
+      })
+      .filter(Boolean) as { line: (typeof r1)[number]; seg: (typeof r3)[number]; free: number }[];
+  /** 更换出口：出口资源列表中的旧线替换为新线（本单占用带宽随之转移），IP 分配指向新线的绑定段 */
+  const applyAlt = (idx: number, lineId: string) => {
+    const seg = segOfLine(lineId);
+    if (!seg) return;
+    const oldLine = ipAsgs[idx].line;
+    setExits((es) => es.map((e) => (e.line === oldLine ? { ...e, line: lineId } : e)));
+    setIpAsgs((as) => as.map((x, j) => (j === idx ? { ...x, line: lineId, ip: seg.id, ipStart: `${segPrefix(seg.segment)}.200` } : x)));
+    setAltPick(null);
   };
 
   // 检查结论摘要（进审批页展示、流转记录留痕）
@@ -261,7 +286,21 @@ export default function DeliveryDetail() {
   const techDone = techFields.length > 0 && techFields.every((f) => (techVals[f.label] ?? "").toString().trim() !== "");
   const setTech = (label: string, v: string) => setTechVals((s) => ({ ...s, [label]: v }));
 
-  // ---------- 步骤①资源分配：出口/IP/基础线路在核算阶段已选定（只读）；设备按供给执行可调整 ----------
+  // ---------- 步骤①资源分配：出口 / IP / 基础线路 / 设备 四类资源各自独立增删 ----------
+  const addExit = (lineId: string) => setExits((es) => (es.some((e) => e.line === lineId) ? es : [...es, { line: lineId, bw: 50 }]));
+  /** 移除出口：其下 IP 分配一并移除 */
+  const removeExit = (lineId: string) => {
+    setExits((es) => es.filter((e) => e.line !== lineId));
+    setIpAsgs((as) => as.filter((a) => a.line !== lineId));
+  };
+  const addIpAsg = (lineId: string) => {
+    const seg = segsOfLine(lineId)[0];
+    if (seg) setIpAsgs((as) => [...as, { line: lineId, ip: seg.id, ipStart: `${segPrefix(seg.segment)}.200`, ipN: 4 }]);
+  };
+  const changeIpAsgLine = (idx: number, lineId: string) => {
+    const seg = segsOfLine(lineId)[0];
+    setIpAsgs((as) => as.map((x, j) => (j === idx ? { ...x, line: lineId, ip: seg?.id ?? x.ip, ipStart: seg ? `${segPrefix(seg.segment)}.200` : x.ipStart } : x)));
+  };
   const addDevice = () => {
     const firstCpe = r4.find((r) => r.category === "CPE")?.id ?? r4[0].id;
     setDevices((ds) => [...ds, { id: firstCpe, mode: STOCK_MODE, n: 1 }]);
@@ -411,7 +450,7 @@ export default function DeliveryDetail() {
                             <div className="font-semibold text-[#D25F00]">池负载饱和：{poolEnt.id} {poolEnt.name}，工程师评估不可承接。处理方式：</div>
                             <div className="space-y-1 text-[#4E5969]">
                               <div>① 人工决策扩容：新增成员出口或上调既有出口采购带宽（走采购流程，扩容后池容量 / 池月成本同步更新）</div>
-                              <div>② 与商务协商调整本单带宽或开通节奏（调整本单资源属变更，走 <Link to="/lifecycle" className="underline">变更流程</Link>）</div>
+                              <div>② 与商务协商调整本单带宽或开通节奏（回到步骤②修改分配申请）</div>
                             </div>
                             <div className="text-[10px] text-[#86909C]">池已售 {fmt(poolEnt.dynamic.usedM)}M / 池容量 {fmt(poolEnt.capacityM)}M · 最近实测 {lastMs ? `${fmt(lastMs.peakM)}M（${lastMs.at}）` : "尚未实测"} · 系统不设超售比硬门槛，承接判断由工程师按实测负载做出</div>
                           </div>
@@ -420,6 +459,8 @@ export default function DeliveryDetail() {
                       const pool = lineOf(lid);
                       const peakM = pool.dynamic.peakM ?? 0;
                       const ut = utilOf(lid);
+                      const idx = ipAsgs.findIndex((a) => a.line === lid);
+                      const cands = idx >= 0 ? altCandidates(idx) : [];
                       return (
                         <div key={lid} className="space-y-2 rounded-[2px] border border-[#FFCF8B] bg-[#FFF7E8] p-3 text-xs">
                           <div className="font-semibold text-[#D25F00]">出口负载饱和：{pool.id} 近 30 日峰值流量 {fmt(peakM)}M（利用率 {ut}%），工程师评估不可承接。处理方式：</div>
@@ -445,22 +486,50 @@ export default function DeliveryDetail() {
                             </div>
                           )}
                           {expanded && lid === "I-101" && <div className="text-[#00B42A]">✓ 扩容完成：I-101 池 500M → {fmt(pool101.capacityM)}M，月租 75,000 → {fmt(pool101.monthlyCost)} 元，检查表已按新容量重新计算</div>}
-                          <div className="space-y-1 border-t border-[#FFCF8B] pt-2 text-[#4E5969]">
-                            <div>② 本单出口资源已于核算阶段锁定，不可在本工单内直接更换；如确需改挂其他出口，请走 <Link to="/lifecycle" className="underline">变更流程</Link> 调整后重新评估。</div>
+                          <div className="space-y-2 border-t border-[#FFCF8B] pt-2">
+                            <div>② 更换出口池（随绑 IP 段一起切换）：</div>
+                            {cands.length > 0 ? (
+                              <div className="grid gap-2 md:grid-cols-2">
+                                {cands.map(({ line: l, seg }) => (
+                                  <button key={l.id} onClick={() => setAltPick({ idx, lineId: l.id })}
+                                    className={`rounded-[2px] border p-3 text-left text-xs ${altPick?.idx === idx && altPick.lineId === l.id ? "border-[#165DFF] bg-[#E8F3FF]" : "border-[#E5E6EB] bg-white"}`}>
+                                    <div className="font-medium text-[#1D2129]">{l.id} · {l.name.split("（")[0]}</div>
+                                    <div className="mt-1 text-[#4E5969]">近 30 日峰值 <span className={`font-mono ${(l.dynamic.peakM ?? 0) / l.capacityM < 0.7 ? "text-[#00B42A]" : "text-[#F53F3F]"}`}>{fmt(l.dynamic.peakM ?? 0)}M / {fmt(l.capacityM)}M（{Math.round(((l.dynamic.peakM ?? 0) / l.capacityM) * 100)}%）</span> · 绑定 IP 段 {seg.segment.split("（")[0]}（余 {seg.total - seg.dynamic.allocated} 个）</div>
+                                  </button>
+                                ))}
+                              </div>
+                            ) : <div className="text-[#F53F3F]">无其他可用出口（全部被本单占用或无满足余量的绑定 IP 段）</div>}
+                            {altPick?.idx === idx && (
+                              <div className="flex gap-2">
+                                <Button size="sm" onClick={() => applyAlt(idx, altPick.lineId)}>确认更换</Button>
+                                <Button size="sm" variant="ghost" onClick={() => setAltPick(null)}>再想想</Button>
+                              </div>
+                            )}
                           </div>
                         </div>
                       );
                     })}
 
-                    {failedIpAsgs.map(({ a, i }) => (
-                      <div key={`ip-${i}`} className="space-y-2 rounded-[2px] border border-[#FFCF8B] bg-[#FFF7E8] p-3 text-xs">
-                        <div className="font-semibold text-[#D25F00]">IP 段余量不足：{ipOf(a.ip).segment.split("（")[0]}（出口 {a.line}）余 {ipOf(a.ip).total - ipOf(a.ip).dynamic.allocated} 个，需求 {a.ipN} 个。处理方式：</div>
-                        <div className="space-y-1 text-[#4E5969]">
-                          <div>① 由工程师释放同段其他预留 / 待开通占用后重新校验；</div>
-                          <div>② 本单 IP 段与数量已于核算阶段锁定，确需调整（换段 / 改量）请走 <Link to="/lifecycle" className="underline">变更流程</Link>。</div>
+                    {failedIpAsgs.map(({ a, i }) => {
+                      const cands = altCandidates(i);
+                      return (
+                        <div key={`ip-${i}`} className="space-y-2 rounded-[2px] border border-[#FFCF8B] bg-[#FFF7E8] p-3 text-xs">
+                          <div className="font-semibold text-[#D25F00]">IP 段余量不足：{ipOf(a.ip).segment.split("（")[0]}（出口 {a.line}）余 {ipOf(a.ip).total - ipOf(a.ip).dynamic.allocated} 个，需求 {a.ipN} 个。处理方式：</div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span>① 调整本单数量（至步骤②修改）；② 更换出口池（随绑 IP 段一起切换）：</span>
+                            {cands.length > 0 ? (
+                              <>
+                                <select className="rounded-[2px] border border-[#E5E6EB] bg-white px-2 py-1" value={altPick?.idx === i ? altPick.lineId : ""} onChange={(e) => setAltPick({ idx: i, lineId: e.target.value })}>
+                                  <option value="">请选择…</option>
+                                  {cands.map(({ line: l, seg }) => <option key={l.id} value={l.id}>{l.id} {l.name.split("（")[0]} · {seg.segment.split("（")[0]}（余 {seg.total - seg.dynamic.allocated} 个）</option>)}
+                                </select>
+                                <Button size="sm" variant="outline" disabled={!(altPick?.idx === i && altPick.lineId)} onClick={() => altPick && applyAlt(i, altPick.lineId)}>切换</Button>
+                              </>
+                            ) : <span className="text-[#F53F3F]">无其他可用出口</span>}
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
 
                     <div className="flex flex-wrap items-center gap-2 border-t border-[#E5E6EB] pt-3">
                       <span className="text-xs text-[#4E5969]">现有处理方式都不合适，或不急于开通？</span>
@@ -494,14 +563,14 @@ export default function DeliveryDetail() {
             {/* 步骤 1：资源分配申请 */}
             {step === 1 && (
               <section className="rounded-[4px] border border-[#E5E6EB] bg-white ">
-                <div className="border-b px-4 py-2.5 text-sm font-semibold">② 资源分配确认（出口 / IP / 基础线路取自核算单快照，只读；数据联动资源中心②层实时档案）</div>
+                <div className="border-b px-4 py-2.5 text-sm font-semibold">② 资源分配申请（出口 / IP / 设备核算预填、可在可用性检查与分配环节调整；基础线路核算阶段锁定）</div>
                 <div className="space-y-5 p-4">
-                  {/* 锁定说明：资源在成本核算阶段选定，与订单对应；变更一律走变更流程 */}
+                  {/* 锁定说明：仅基础线路在成本核算阶段锁定；其余资源以核算快照为预填，可在此调整 */}
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-[2px] border border-[#BEDAFF] bg-[#E8F3FF] px-3 py-2 text-xs text-[#0E42D2]">
-                    <span className="font-semibold">资源已于成本核算阶段选定并锁定</span>
-                    <span className="text-[#4E5969]">出口 / 出口池、IP 段与数量、基础线路均来自核算单快照（与订单对应），此处只读不回改；具体分配地址由工程师在开通时确定。确需变更资源选择，请走 <Link to="/lifecycle" className="font-medium underline">变更流程</Link>。</span>
+                    <span className="font-semibold">基础线路已于成本核算阶段选定并锁定</span>
+                    <span className="text-[#4E5969]">出口 / 出口池、IP 段与数量、设备以核算单快照为默认预填，工程师可结合可用性检查结果在本页调整（调整动作留痕，审批页可回看）。</span>
                   </div>
-                  {/* ① 出口池（BGP 类）：核算阶段选定，只读展示 */}
+                  {/* ① 出口资源：BGP 类选「出口池」+ 填池占用带宽；其他产品类型逐出口多选 */}
                   {poolAsg ? (() => {
                     const pool = poolRow();
                     if (!pool) return null;
@@ -514,7 +583,14 @@ export default function DeliveryDetail() {
                           <span className="text-[11px] font-semibold text-[#4E5969]">① 出口池</span>
                           <span className="rounded-[2px] bg-[#E8F3FF] px-1.5 py-0.5 text-[11px] text-[#165DFF]">BGP 客户向池采购带宽 · 不指向池内具体出口</span>
                           <span className="rounded-[2px] bg-[#F2F3F5] px-1.5 py-0.5 text-[11px] text-[#86909C]">扩容人工决策 · 不设超售比硬门槛</span>
-                          <span className="ml-auto rounded-[2px] bg-[#F2F3F5] px-1.5 py-0.5 text-[11px] text-[#86909C]">核算阶段选定 · 只读</span>
+                          <span className="ml-auto">
+                            <select className="rounded-[2px] border border-[#E5E6EB] bg-white px-2 py-1 text-xs" value={poolAsg.poolId}
+                              onChange={(e) => setPoolSel((s) => ({ ...s, poolId: e.target.value }))}>
+                              {POOLS.filter((p) => p.product === cat || p.product === "BGP 三网互通").map((p) => (
+                                <option key={p.id} value={p.id}>{p.id} {p.name}（池已售 {fmt(p.dynamic.usedM)}M / {fmt(p.capacityM)}M · 池订单 {p.dynamic.orders.length} 单）</option>
+                              ))}
+                            </select>
+                          </span>
                         </div>
                         <div className="rounded-[2px] border border-[#E5E6EB] p-3">
                           <div className="flex flex-wrap items-center gap-2">
@@ -524,8 +600,10 @@ export default function DeliveryDetail() {
                               池水位 {pct}%
                             </span>
                             <span className="ml-auto flex items-center gap-1.5">
-                              <span className="whitespace-nowrap text-xs text-[#4E5969]">本单占用带宽（计入池，核算选定）</span>
-                              <span className="rounded-[2px] bg-[#F2F3F5] px-2 py-1 font-mono text-xs font-medium text-[#1D2129]">{fmt(poolAsg.bw)} M</span>
+                              <span className="whitespace-nowrap text-xs text-[#4E5969]">本单占用带宽（计入池）</span>
+                              <Input type="number" min={1} className="h-8 w-24 text-xs" value={poolAsg.bw}
+                                onChange={(ev) => setPoolSel((s) => ({ ...s, bw: Math.max(1, Number(ev.target.value)) }))} />
+                              <span className="text-xs text-[#86909C]">M</span>
                             </span>
                           </div>
                           <div className="mt-2">
@@ -594,16 +672,23 @@ export default function DeliveryDetail() {
                   <div>
                     <div className="mb-1.5 flex flex-wrap items-center gap-2">
                       <span className="text-[11px] font-semibold text-[#4E5969]">① 出口资源</span>
-                      <span className="rounded-[2px] bg-[#F2F3F5] px-1.5 py-0.5 text-[11px] text-[#86909C]">已选 {exits.length} 条 · 核算选定</span>
-                      <span className="ml-auto rounded-[2px] bg-[#F2F3F5] px-1.5 py-0.5 text-[11px] text-[#86909C]">核算阶段选定 · 只读</span>
+                      <span className="rounded-[2px] bg-[#F2F3F5] px-1.5 py-0.5 text-[11px] text-[#86909C]">已选 {exits.length} 条 · 可多选</span>
+                      <span className="ml-auto flex items-center gap-1.5">
+                        <select id="add-exit-sel" className="rounded-[2px] border border-[#E5E6EB] bg-white px-2 py-1 text-xs" defaultValue=""
+                          onChange={(e) => e.target.value && addExit(e.target.value)}>
+                          <option value="">＋ 添加出口…</option>
+                          {r1.filter((l) => !usedLines.includes(l.id)).map((l) => <option key={l.id} value={l.id}>{l.id} {l.name.split("（")[0]}（峰值 {fmt(l.dynamic.peakM ?? 0)}M / {fmt(l.capacityM)}M · {l.dynamic.orders.length} 家客户）</option>)}
+                        </select>
+                      </span>
                     </div>
                     <div className="space-y-2">
-                      {exits.length === 0 && <div className="rounded-[2px] border border-dashed border-[#E5E6EB] px-3 py-2 text-xs text-[#86909C]">核算单未选定出口资源</div>}
+                      {exits.length === 0 && <div className="rounded-[2px] border border-dashed border-[#E5E6EB] px-3 py-2 text-xs text-[#86909C]">尚未选择出口资源</div>}
                       {exits.map((e) => {
                         const p = lineOf(e.line);
                         // 负载口径 = 近 30 日峰值流量 ÷ 容量（流量指标），不做「容量 − 已售」的递减判定；
                         // 已售带宽只是商用参考，承载客户业务明细见下方列表
                         const ut = utilOf(e.line);
+                        const hasIp = ipAsgs.some((a) => a.line === e.line);
                         return (
                           <div key={e.line} className="rounded-[2px] border border-[#E5E6EB] p-3">
                             <div className="flex flex-wrap items-center gap-2">
@@ -612,17 +697,26 @@ export default function DeliveryDetail() {
                               <span className={`rounded-[2px] px-1.5 py-0.5 text-[11px] ${ut >= 90 ? "bg-[#FFECE8] text-[#F53F3F]" : ut >= 70 ? "bg-[#FFF7E8] text-[#FF7D00]" : "bg-[#E8F8F2] text-[#00B42A]"}`}>
                                 峰值负载 {ut}%
                               </span>
-                              <span className="ml-auto flex items-center gap-1.5">
-                                <span className="whitespace-nowrap text-xs text-[#4E5969]">本单占用带宽（核算选定）</span>
-                                <span className="rounded-[2px] bg-[#F2F3F5] px-2 py-1 font-mono text-xs font-medium text-[#1D2129]">{fmt(e.bw)} M</span>
+                              <span className="ml-auto">
+                                <Button size="sm" variant="ghost" className="text-[#F53F3F]" disabled={hasIp}
+                                  title={hasIp ? "该出口下存在 IP 分配，请先移除对应 IP 分配" : ""}
+                                  onClick={() => removeExit(e.line)}>✕ 移除</Button>
                               </span>
                             </div>
-                            <div className="mt-2">
-                              <div className="mb-1 flex justify-between text-[11px] text-[#86909C]">
-                                <span>近 30 日峰值 {fmt(p.dynamic.peakM ?? 0)}M / 容量 {fmt(p.capacityM)}M（峰值利用率 {ut}%）</span>
+                            <div className="mt-2 grid items-start gap-3 md:grid-cols-[1fr_auto]">
+                              <div>
+                                <div className="mb-1 flex justify-between text-[11px] text-[#86909C]">
+                                  <span>近 30 日峰值 {fmt(p.dynamic.peakM ?? 0)}M / 容量 {fmt(p.capacityM)}M（峰值利用率 {ut}%）</span>
+                                </div>
+                                <div className="h-2 overflow-hidden rounded-[2px] bg-[#F2F3F5]">
+                                  <div className="h-full bg-[#165DFF] transition-all" style={{ width: `${Math.min(ut, 100)}%` }} />
+                                </div>
                               </div>
-                              <div className="h-2 overflow-hidden rounded-[2px] bg-[#F2F3F5]">
-                                <div className="h-full bg-[#165DFF] transition-all" style={{ width: `${Math.min(ut, 100)}%` }} />
+                              <div className="flex items-center gap-1.5">
+                                <span className="whitespace-nowrap text-xs text-[#4E5969]">本单占用带宽</span>
+                                <Input type="number" min={1} className="h-8 w-24 text-xs" value={e.bw}
+                                  onChange={(ev) => setExits((es) => es.map((x) => (x.line === e.line ? { ...x, bw: Math.max(1, Number(ev.target.value)) } : x)))} />
+                                <span className="text-xs text-[#86909C]">M</span>
                               </div>
                             </div>
                             <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px]">
@@ -671,41 +765,63 @@ export default function DeliveryDetail() {
                   </div>
                   )}
 
-                  {/* ② IP 地址：段与数量核算阶段选定（只读）；BGP 广播段三网宣告、不归属单条出口；起始地址由工程师开通时确定 */}
+                  {/* ② IP 地址（可多选，绑定到所选出口） */}
                   <div>
                     <div className="mb-1.5 flex flex-wrap items-center gap-2">
                       <span className="text-[11px] font-semibold text-[#4E5969]">② IP 地址</span>
-                      <span className="rounded-[2px] bg-[#F2F3F5] px-1.5 py-0.5 text-[11px] text-[#86909C]">
-                        {isBgp ? "BGP 池自有广播段 · 三网宣告 · 不归属单条出口" : "随所选出口绑定"}
-                      </span>
+                      <span className="rounded-[2px] bg-[#F2F3F5] px-1.5 py-0.5 text-[11px] text-[#86909C]">{isBgp ? "BGP 池自有广播段 · 三网宣告 · 不归属单条出口" : `已选 ${ipAsgs.length} 段 · 可多选 · 候选段随所选出口联动`}</span>
                       {ipNeedOf != null && (
                         <span className={`rounded-[2px] px-1.5 py-0.5 text-[11px] ${ipAsgs.reduce((s, a) => s + a.ipN, 0) === ipNeedOf ? "bg-[#E8F8F2] text-[#00B42A]" : "bg-[#FFECE8] text-[#F53F3F]"}`}>
-                          本单合计 {ipAsgs.reduce((s, a) => s + a.ipN, 0)} 个{ipNeedOf != null ? ` · 订单行需求 ${ipNeedOf} 个${ipAsgs.reduce((s, a) => s + a.ipN, 0) === ipNeedOf ? "（一致）" : "（不一致，差异走异常处理）"}` : ""}
+                          本单合计 {ipAsgs.reduce((s, a) => s + a.ipN, 0)} 个 · 订单行需求 {ipNeedOf} 个{ipAsgs.reduce((s, a) => s + a.ipN, 0) === ipNeedOf ? "（一致）" : "（不一致，差异走异常处理）"}
                         </span>
                       )}
-                      <span className="ml-auto rounded-[2px] bg-[#F2F3F5] px-1.5 py-0.5 text-[11px] text-[#86909C]">核算阶段选定 · 只读</span>
+                      <span className="ml-auto">
+                        <select className="rounded-[2px] border border-[#E5E6EB] bg-white px-2 py-1 text-xs" defaultValue=""
+                          onChange={(e) => e.target.value && addIpAsg(e.target.value)}>
+                          <option value="">＋ 添加 IP 分配…</option>
+                          {usedLines.map((lid) => <option key={lid} value={lid}>{lid}（{segsOfLine(lid).map((s) => s.id).join(" / ")}）</option>)}
+                        </select>
+                      </span>
                     </div>
                     <div className="space-y-2">
-                      {ipAsgs.length === 0 && <div className="rounded-[2px] border border-dashed border-[#E5E6EB] px-3 py-2 text-xs text-[#86909C]">核算单未选定 IP 段</div>}
+                      {ipAsgs.length === 0 && <div className="rounded-[2px] border border-dashed border-[#E5E6EB] px-3 py-2 text-xs text-[#86909C]">尚未分配 IP（先在「出口资源」中选择出口）</div>}
                       {ipAsgs.map((a, i) => {
                         const c = calcs[i];
+                        // BGP：候选段 = 池内成员出口绑定的全部广播段；其他：随所选出口联动
+                        const segOpts = isBgp
+                          ? [...new Map(usedLines.flatMap((lid) => segsOfLine(lid)).map((r) => [r.id, r])).values()]
+                          : segsOfLine(a.line);
                         return (
                           <div key={i} className="rounded-[2px] border border-[#E5E6EB] p-3">
-                            <div className="grid items-end gap-3 md:grid-cols-[1.2fr_1fr_0.6fr]">
+                            <div className="grid gap-3 md:grid-cols-[1fr_1.3fr_1fr_0.5fr_auto]">
                               <div>
-                                <div className="mb-0.5 text-xs text-[#4E5969]">{isBgp ? "IP 段（BGP 池自有广播段，R3）" : "IP 段（R3，核算选定）"}</div>
-                                <div className="rounded-[2px] bg-[#F7F8FA] px-2 py-1.5 font-mono text-xs text-[#1D2129]">
-                                  {ipOf(a.ip).id} {ipOf(a.ip).segment.split("（")[0]}
-                                  <span className="ml-2 font-sans text-[#86909C]">段内余 {ipOf(a.ip).total - ipOf(a.ip).dynamic.allocated} 个</span>
-                                </div>
+                                <div className="mb-0.5 text-xs text-[#4E5969]">所属出口</div>
+                                {isBgp ? (
+                                  <div className="rounded-[2px] bg-[#F2F3F5] px-2 py-1.5 text-xs text-[#4E5969]" title="BGP 池自有广播段三网宣告，不归属单条出口">BGP 池广播段（三网宣告）</div>
+                                ) : (
+                                  <select className="w-full rounded-[2px] border border-[#E5E6EB] bg-white px-2 py-1.5 text-xs" value={a.line}
+                                    onChange={(e) => changeIpAsgLine(i, e.target.value)}>
+                                    {usedLines.map((lid) => <option key={lid} value={lid}>{lid}</option>)}
+                                  </select>
+                                )}
                               </div>
                               <div>
-                                <div className="mb-0.5 text-xs text-[#4E5969]">本单起始地址（开通时确定，自动校验）</div>
+                                <div className="mb-0.5 text-xs text-[#4E5969]">{isBgp ? "IP 段（BGP 池自有广播段，R3）" : "IP 段（R3，随出口联动）"}</div>
+                                <select className="w-full rounded-[2px] border border-[#E5E6EB] bg-white px-2 py-1.5 text-xs" value={a.ip}
+                                  onChange={(e) => { const seg = ipOf(e.target.value); setIpAsgs((as) => as.map((x, j) => (j === i ? { ...x, ip: e.target.value, ipStart: `${segPrefix(seg.segment)}.200` } : x))); }}>
+                                  {segOpts.map((r) => <option key={r.id} value={r.id}>{r.id} {r.segment}（余 {r.total - r.dynamic.allocated} 个）</option>)}
+                                </select>
+                              </div>
+                              <div>
+                                <div className="mb-0.5 text-xs text-[#4E5969]">本单起始地址</div>
                                 <Input className="h-8 font-mono text-xs" value={a.ipStart} onChange={(e) => setIpAsgs((as) => as.map((x, j) => (j === i ? { ...x, ipStart: e.target.value.trim() } : x)))} />
                               </div>
                               <div>
-                                <div className="mb-0.5 text-xs text-[#4E5969]">本单分配数量</div>
-                                <div className="rounded-[2px] bg-[#F2F3F5] px-2 py-1.5 text-center font-mono text-xs font-medium text-[#1D2129]">{a.ipN} 个</div>
+                                <div className="mb-0.5 text-xs text-[#4E5969]">数量</div>
+                                <Input type="number" min={1} className="h-8 text-xs" value={a.ipN} onChange={(e) => setIpAsgs((as) => as.map((x, j) => (j === i ? { ...x, ipN: Math.max(1, Number(e.target.value)) } : x)))} />
+                              </div>
+                              <div className="flex items-end">
+                                <Button size="sm" variant="ghost" className="text-[#F53F3F]" onClick={() => setIpAsgs((as) => as.filter((_, j) => j !== i))}>✕ 删除</Button>
                               </div>
                             </div>
                             <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
@@ -722,11 +838,11 @@ export default function DeliveryDetail() {
                     </div>
                   </div>
 
-                  {/* ③ 基础线路：核算阶段选定（只读） */}
+                  {/* ③ 基础线路：成本核算阶段选定并锁定（只读展示） */}
                   <div>
                     <div className="mb-1.5 flex flex-wrap items-center gap-2">
                       <span className="text-[11px] font-semibold text-[#4E5969]">③ 基础线路</span>
-                      <span className="rounded-[2px] bg-[#F2F3F5] px-1.5 py-0.5 text-[11px] text-[#86909C]">已选 {bases.length} 条 · 核算选定 · 只读</span>
+                      <span className="rounded-[2px] bg-[#F2F3F5] px-1.5 py-0.5 text-[11px] text-[#86909C]">已选 {bases.length} 条 · 核算阶段选定 · 只读</span>
                     </div>
                     <div className="flex flex-wrap gap-1.5">
                       {bases.length === 0 && <div className="rounded-[2px] border border-dashed border-[#E5E6EB] px-3 py-1.5 text-xs text-[#86909C]">核算单未选定基础线路</div>}
@@ -820,12 +936,12 @@ export default function DeliveryDetail() {
                 </div>
                 <div className="flex items-center gap-3 border-t px-4 py-3">
                   <Button size="sm" variant="outline" onClick={() => setStep(0)}>← 返回可用性检查</Button>
-                  <Button size="sm" disabled={ipOverAny || devicesOver || !techDone || !ipAllValid} onClick={() => setStep(2)}>提交分配确认</Button>
-                  {ipOverAny && <span className="text-xs text-[#F53F3F]">存在 IP 分配数量超段内余量，禁止提交（处理见可用性检查页，变更走变更流程）</span>}
+                  <Button size="sm" disabled={ipOverAny || devicesOver || !techDone || !ipAllValid} onClick={() => setStep(2)}>提交分配申请</Button>
+                  {ipOverAny && <span className="text-xs text-[#F53F3F]">存在 IP 分配数量超段内余量，禁止提交</span>}
                   {devicesOver && <span className="text-xs text-[#F53F3F]">存在设备库存不足：请调整数量、更换型号，或改按单采购</span>}
                   {!ipAllValid && !ipOverAny && <span className="text-xs text-[#F53F3F]">存在未通过校验的 IP 地址区间</span>}
                   {!techDone && <span className="text-xs text-[#FF7D00]">技术参数未填全（{techFields.filter((f) => (techVals[f.label] ?? "").trim()).length}/{techFields.length}），暂不可提交</span>}
-                  <span className="text-xs text-[#86909C]">出口 / IP / 基础线路与核算单快照一致性由系统保证；资源变更请走 <Link to="/lifecycle" className="underline">变更流程</Link></span>
+                  <span className="text-xs text-[#86909C]">与成本核算已选资源不一致时触发异常校验（P01-8）</span>
                 </div>
               </section>
             )}
@@ -869,9 +985,9 @@ export default function DeliveryDetail() {
                   </div>
                 </div>
                 <div className="mt-3 flex gap-2">
-                  <Button size="sm" variant="outline" onClick={() => setStep(1)}>← 返回分配确认</Button>
+                  <Button size="sm" variant="outline" onClick={() => setStep(1)}>← 返回修改申请</Button>
                   <Button size="sm" disabled={approved} onClick={() => { setApproved(true); setStep(3); }}>资源主管通过</Button>
-                  <Button size="sm" variant="outline" className="text-[#F53F3F]" onClick={() => alert("原型演示：驳回后退回「资源分配确认」，申请人核对后重新提交（流转记录留痕）")}>驳回</Button>
+                  <Button size="sm" variant="outline" className="text-[#F53F3F]" onClick={() => alert("原型演示：驳回后退回「资源分配申请」，申请人修改后重新提交（流转记录留痕）")}>驳回</Button>
                 </div>
               </section>
             )}
