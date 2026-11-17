@@ -34,13 +34,21 @@ export interface PoolDef {
   };
 }
 
-// 出厂池：BGP 三网互通资源池（电信/联通/移动三条出口自组）
+// 出厂池：BGP 三网互通资源池（电信/联通/移动三条出口自组）；出口 ↔ 池多对多，可有多个池
 export const POOLS: PoolDef[] = persistable("pools", () => [
   {
     id: "P-BGP-01", name: "BGP 三网互通资源池", product: "BGP 三网互通",
     exitIds: ["E-CT-1", "I-102", "I-103"],
     ipIds: ["IP-58.41.0", "IP-58.42.0", "IP-58.43.0"],
     capacityM: 2800, monthlyCost: 113000, effect: "2025-01-01", status: "生效",
+    measureCycleDays: 30,
+    dynamic: { usedM: 0, orders: [], measures: [] },
+  },
+  {
+    id: "P-BGP-02", name: "BGP 三网互通资源池（漕河泾二期 · 新池）", product: "BGP 三网互通",
+    exitIds: ["E-CT-1", "I-102"],
+    ipIds: [],
+    capacityM: 2000, monthlyCost: 85000, effect: "2026-11-01", status: "生效",
     measureCycleDays: 30,
     dynamic: { usedM: 0, orders: [], measures: [] },
   },
@@ -85,6 +93,18 @@ function migrateBgpOrders(): void {
   }
 }
 migrateBgpOrders();
+
+// 出厂池增补（幂等）：旧本地快照只有 P-BGP-01 时补入二期池——演示「系统内多个出口池可选 + 出口↔池多对多共用」
+if (!POOLS.some((p) => p.id === "P-BGP-02")) {
+  POOLS.push({
+    id: "P-BGP-02", name: "BGP 三网互通资源池（漕河泾二期 · 新池）", product: "BGP 三网互通",
+    exitIds: ["E-CT-1", "I-102"],
+    ipIds: [],
+    capacityM: 2000, monthlyCost: 85000, effect: "2026-11-01", status: "生效",
+    measureCycleDays: 30,
+    dynamic: { usedM: 0, orders: [], measures: [] },
+  });
+}
 
 // ---------- 变更订阅（实测录入 / 池订单变更后触发重渲染） ----------
 const listeners = new Set<() => void>();

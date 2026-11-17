@@ -11,7 +11,7 @@ import {
 import { getCostItems, useCostItems, SETTLE_RULE, uncoveredClasses, type CostItem } from "@/data/costItems";
 import { GET_TYPE, MAT_DEF, useCatalog } from "@/data/products";
 import { CONTRACTS, type Contract } from "@/data/contracts";
-import { POOLS, type PoolDef } from "@/data/pool";
+import { POOLS, poolExits, poolWater, type PoolDef } from "@/data/pool";
 import { ownerOfDeal } from "@/data/ownership";
 import { snapshotEsts, usePoolSettle, type PoolEst } from "@/data/poolSettle";
 import { SHEETS, SHEET_OF_CONTRACT, ensureSheetForContract, fillSheet, recordSheetEntries, recordSheetLines } from "@/data/sheets";
@@ -302,16 +302,49 @@ function EntryRow({
                   {poolCands.map((p) => <option key={p.id} value={p.id}>{p.id} · {p.name}</option>)}
                 </select>
               </div>
-              <div className="rounded-[2px] border border-[#BEDAFF] bg-[#F7FAFF] px-2.5 py-1.5 text-[11px] leading-5 text-[#4E5969]">
-                <div><span className="text-[#86909C]">业务口径：</span>客户向池采购带宽，不指向池内具体出口</div>
-                <div className="mt-0.5">
-                  <span className="text-[#86909C]">成员出口：</span><span className="font-mono">{poolPick.exitIds.join(" / ")}</span>
-                  <span className="ml-3 text-[#86909C]">池容量：</span><span className="font-mono">{fmt(poolPick.capacityM)}M</span>
-                  <span className="ml-3 text-[#86909C]">池已售：</span><span className="font-mono">{fmt(poolPick.dynamic.usedM)}M</span>
-                  <span className="ml-3 text-[#86909C]">池月成本：</span><span className="font-mono">{fmt(poolPick.monthlyCost)} 元/月</span><span className="text-[#86909C]">（成员出口合计，自动得出）</span>
-                </div>
-                <div className="mt-0.5"><span className="text-[#86909C]">计价口径：</span>池月成本 ÷（池已售 + 本单带宽）× 本单带宽</div>
-                <div className="mt-0.5"><span className="text-[#86909C]">IP 分配：</span>使用池自有广播段，以成员出口为条件搜索选择</div>
+              <div className="rounded-[4px] border border-[#BEDAFF] bg-[#F7FAFF] px-3 py-2 text-[11px]">
+                {(() => {
+                  const exits = poolExits(poolPick);
+                  const soldPct = poolWater(poolPick);
+                  const peakSum = exits.reduce((s, r) => s + (r.dynamic.peakM ?? 0), 0);
+                  const peakPct = poolPick.capacityM > 0 ? peakSum / poolPick.capacityM : 0;
+                  const lastM = exits.flatMap((r) => r.dynamic.measures ?? []).map((m) => m.at).sort().pop() ?? poolPick.dynamic.lastMeasuredAt;
+                  const barCls = (pct: number) => pct > 0.9 ? "bg-[#F53F3F]" : pct > 0.7 ? "bg-[#FF7D00]" : "bg-[#165DFF]";
+                  const peakCls = (pct: number) => pct > 0.9 ? "bg-[#F53F3F]" : pct > 0.7 ? "bg-[#FF7D00]" : "bg-[#00B42A]";
+                  return (
+                    <>
+                      {/* 当前负载：已售水位 + 成员出口实测峰值，进度条一眼可读 */}
+                      <div className="flex items-center gap-2">
+                        <span className="w-16 shrink-0 text-[#86909C]">已售水位</span>
+                        <div className="h-2 flex-1 overflow-hidden rounded-full bg-[#E5E6EB]">
+                          <div className={`h-full rounded-full ${barCls(soldPct)}`} style={{ width: `${Math.min(100, soldPct * 100)}%` }} />
+                        </div>
+                        <span className="shrink-0 font-mono text-[#1D2129]">{fmt(poolPick.dynamic.usedM)} / {fmt(poolPick.capacityM)} M · {Math.round(soldPct * 100)}%</span>
+                      </div>
+                      <div className="mt-1.5 flex items-center gap-2">
+                        <span className="w-16 shrink-0 text-[#86909C]">实测峰值</span>
+                        <div className="h-2 flex-1 overflow-hidden rounded-full bg-[#E5E6EB]">
+                          <div className={`h-full rounded-full ${peakCls(peakPct)}`} style={{ width: `${Math.min(100, peakPct * 100)}%` }} />
+                        </div>
+                        <span className="shrink-0 font-mono text-[#1D2129]">{fmt(peakSum)} / {fmt(poolPick.capacityM)} M · {Math.round(peakPct * 100)}%<span className="text-[#86909C]">（{lastM ? `实测 ${lastM.slice(0, 10)}` : "未实测"}）</span></span>
+                      </div>
+                      {/* 成员出口 + 池月成本 */}
+                      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-[#E5E6EB] pt-2">
+                        <span className="flex flex-wrap items-center gap-1">
+                          <span className="text-[#86909C]">成员出口</span>
+                          {exits.map((r) => (
+                            <span key={r.id} className="rounded-[2px] border border-[#BEDAFF] bg-white px-1.5 py-0.5 font-mono text-[10px] text-[#165DFF]">{r.id} · {r.carrier}</span>
+                          ))}
+                        </span>
+                        <span><span className="text-[#86909C]">池月成本 </span><span className="font-mono text-[13px] font-semibold text-[#1D2129]">{fmt(poolPick.monthlyCost)}</span><span className="text-[#86909C]"> 元/月</span></span>
+                      </div>
+                      {/* 口径脚注（弱化，两行合一） */}
+                      <div className="mt-1.5 text-[10px] leading-4 text-[#86909C]">
+                        计价：池月成本 ÷（池已售 + 本单带宽）× 本单带宽 ｜ IP：池自有广播段，以成员出口为条件搜索选择
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
             </div>
           )}
