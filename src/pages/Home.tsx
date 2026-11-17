@@ -1180,21 +1180,50 @@ export default function Home() {
         <section className="overflow-hidden rounded-[4px] border border-[#E5E6EB] bg-white">
           <SectionTitle no="一、">订单与合同信息</SectionTitle>
           <div className="p-4">
-          <div className="grid gap-x-8 gap-y-3 text-sm md:grid-cols-5">
-            <div><div className="text-xs text-[#86909C]">客户</div><div className="font-medium">{contract?.customer ?? "上海某科技公司"}</div></div>
-            <div>
+          {/* 订单行总览：本单卖什么（与下方逐行填报卡片一一对应）——关键信息置顶结构化 */}
+          {fromContract && contract ? (
+            <div className="flex flex-wrap gap-2">
+              {contract.lines.map((l, i) => (
+                <div key={i} className="flex items-center gap-2 rounded-[4px] border border-[#BEDAFF] bg-[#F7FAFF] px-3 py-2">
+                  <span className="font-mono text-[10px] text-[#86909C]">L{i + 1}</span>
+                  <span className="text-sm font-medium text-[#1D2129]">{l.ptype}</span>
+                  {l.spec.split("·").map((x, j) => (
+                    <span key={j} className="rounded-[2px] border border-[#E5E6EB] bg-white px-1.5 py-0.5 font-mono text-[10px] text-[#4E5969]">{x.trim()}</span>
+                  ))}
+                  <span className="ml-1 font-mono text-sm font-semibold text-[#165DFF]">¥ {fmt(l.price)}<span className="text-[10px] font-normal text-[#86909C]">/月</span></span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {lines.map((l) => (
+                <div key={l.id} className="flex items-center gap-2 rounded-[4px] border border-[#BEDAFF] bg-[#F7FAFF] px-3 py-2">
+                  <span className="font-mono text-[10px] text-[#86909C]">{l.id}</span>
+                  <span className="text-sm font-medium text-[#1D2129]">{l.name}</span>
+                  <span className="ml-1 font-mono text-sm font-semibold text-[#165DFF]">¥ {fmt(l.price)}<span className="text-[10px] font-normal text-[#86909C]">/月</span></span>
+                </div>
+              ))}
+            </div>
+          )}
+          {/* 合同要素指标带 */}
+          <div className="mt-3 grid grid-cols-2 gap-px overflow-hidden rounded-[4px] border border-[#F2F3F5] bg-[#F2F3F5] md:grid-cols-3 xl:grid-cols-6">
+            <div className="bg-white px-3 py-2.5">
+              <div className="text-xs text-[#86909C]">客户</div>
+              <div className="mt-0.5 truncate text-sm font-semibold text-[#1D2129]" title={contract?.customer ?? "上海某科技公司"}>{contract?.customer ?? "上海某科技公司"}</div>
+            </div>
+            <div className="bg-white px-3 py-2.5">
               <div className="text-xs text-[#86909C]">合同号 / 期限</div>
               {contract ? (
-                <div className="font-medium">
-                  <Link className="font-mono text-[#165DFF] hover:underline" to={`/contract/detail?id=${contract.id}`}>{contract.id}</Link>
-                  <span className="ml-1 text-xs text-[#86909C]">{contract.start} ~ {contract.end}</span>
+                <div className="mt-0.5 font-medium">
+                  <Link className="font-mono text-[13px] text-[#165DFF] hover:underline" to={`/contract/detail?id=${contract.id}`}>{contract.id}</Link>
+                  <span className="ml-1 whitespace-nowrap text-[11px] text-[#86909C]">{contract.start} ~ {contract.end}</span>
                 </div>
               ) : (
-                <div className="font-medium">HT-2026-0341 · 24 个月</div>
+                <div className="mt-0.5 text-sm font-medium">HT-2026-0341 · 24 个月</div>
               )}
             </div>
-            <div>
-              <div className="text-xs text-[#86909C]">付款方式（{fromContract ? "合同约定 · 可手工维护" : "缺失时手工维护"}）</div>
+            <div className="bg-white px-3 py-2.5">
+              <div className="text-xs text-[#86909C]">付款方式{fromContract ? "（合同约定）" : "（缺失时手工维护）"}</div>
               <select
                 value={payCycle}
                 onChange={(e) => setPayCycle(e.target.value)}
@@ -1204,8 +1233,22 @@ export default function Home() {
                 ))}
               </select>
             </div>
-            <div><div className="text-xs text-[#86909C]">订单行数（{fromContract ? "合同带入" : "演示数据"}）</div><div className="font-medium">{lines.length} 行 · 合计 {fmt(totalPrice)} 元/月</div></div>
-            <div><div className="text-xs text-[#86909C]">销售员（提成在 CRM 核算）</div><div className="font-medium">张伟</div></div>
+            <div className="bg-white px-3 py-2.5">
+              <div className="text-xs text-[#86909C]">订单合计（{fromContract ? "合同带入" : "演示数据"} · {lines.length} 行）</div>
+              <div className="mt-0.5 font-mono text-sm font-semibold text-[#1D2129]">¥ {fmt(totalPrice)}<span className="text-[10px] font-normal text-[#86909C]"> /月</span></div>
+            </div>
+            <div className="bg-white px-3 py-2.5">
+              <div className="text-xs text-[#86909C]">折扣 / 特批</div>
+              <div className="mt-0.5 text-sm font-medium text-[#1D2129]">
+                {contract?.specialId
+                  ? <>折扣 <span className="font-mono text-[#FF7D00]">{contract.discount}%</span> · <Link className="font-mono text-[13px] text-[#165DFF] hover:underline" to="/special">{contract.specialId}</Link></>
+                  : contract ? "标准合同 · 无折扣" : "—"}
+              </div>
+            </div>
+            <div className="bg-white px-3 py-2.5">
+              <div className="text-xs text-[#86909C]">销售员（提成在 CRM 核算）</div>
+              <div className="mt-0.5 text-sm font-medium text-[#1D2129]">张伟</div>
+            </div>
           </div>
           {fromContract && (
             <div className="mt-3 rounded-[2px] border border-[#7BD9A8] bg-[#E8F8F2] px-3 py-2 text-xs leading-5 text-[#00701A]">
