@@ -66,6 +66,11 @@ function titleOf(i: ApprovalInstance): string {
   return lines.length ? `${sheet?.customer ?? ""} · ${lines.join("；")} · 成本核算` : i.summary;
 }
 
+/** 选用资源串 → 逐项列表（顿号/分号分隔的多资源摊平，结构化逐条展示） */
+const splitRes = (s: string) => s.split(/[、；;]/).map((x) => x.trim()).filter(Boolean);
+/** 演算说明 → 逐项公式（按全角 ＋ 拆分行项，与选用列表同构对照） */
+const splitCalc = (s: string) => s.split(/＋/).map((x) => x.trim()).filter(Boolean);
+
 /** 审批链时间线 + 审批操作 + 流转记录（核算单专属详情与通用实例详情共用） */
 function InstancePanel({ inst, doneText }: { inst: ApprovalInstance; doneText?: ReactNode }) {
   const [comment, setComment] = useState("");
@@ -433,15 +438,29 @@ export default function Approval() {
                                     <span className="ml-auto shrink-0 font-mono text-sm font-semibold text-[#1D2129]">{fmt(e.amount)} 元</span>
                                   </div>
                                   {e.spec && (
-                                    <div className="mt-1 flex items-start gap-1.5 text-xs text-[#4E5969]">
+                                    <div className="mt-1.5 flex items-start gap-1.5 text-xs text-[#4E5969]">
                                       <span className="mt-px shrink-0 rounded-[2px] bg-[#E8F3FF] px-1 py-px text-[10px] text-[#165DFF]">选用</span>
-                                      <span className="min-w-0 break-words">{e.spec}</span>
+                                      <ul className="min-w-0 flex-1 list-none space-y-0.5 p-0">
+                                        {splitRes(e.spec).map((s, j, arr) => (
+                                          <li key={j} className="flex gap-1.5">
+                                            <span className="shrink-0 text-[#C9CDD4]">{arr.length > 1 ? (j === arr.length - 1 ? "└" : "├") : "·"}</span>
+                                            <span className="min-w-0 break-words">{s}</span>
+                                          </li>
+                                        ))}
+                                      </ul>
                                     </div>
                                   )}
                                   {e.note && (
                                     <div className="mt-1 flex items-start gap-1.5 text-xs leading-5 text-[#86909C]">
                                       <span className="mt-px shrink-0 rounded-[2px] bg-[#F2F3F5] px-1 py-px text-[10px] text-[#86909C]">演算</span>
-                                      <span className="min-w-0 break-words">{e.note}</span>
+                                      <ul className="min-w-0 flex-1 list-none space-y-0.5 p-0">
+                                        {splitCalc(e.note).map((s, j, arr) => (
+                                          <li key={j} className="flex gap-1.5">
+                                            <span className="shrink-0 text-[#C9CDD4]">{arr.length > 1 ? (j === arr.length - 1 ? "└" : "├") : "·"}</span>
+                                            <span className="min-w-0 break-words">{s}</span>
+                                          </li>
+                                        ))}
+                                      </ul>
                                     </div>
                                   )}
                                 </div>
