@@ -137,7 +137,25 @@ export const recordSheetEntries = (sheetId: string, recs: SheetEntryRec[]) => { 
 export const entriesOfSheet = (sheetId: string): SheetEntryRec[] | null => ENTRY_RECS[sheetId] ?? null;
 
 // ---------- 按单留存的订单行快照（提交审批时写入；审批通过生成开通工单时取数） ----------
-export interface SheetLineRec { id: string; name: string; cat: string; ptype?: string; price: number }
+export interface SheetLineRec { id: string; name: string; cat: string; ptype?: string; price: number; ipNeed?: number }
 const LINE_RECS: Record<string, SheetLineRec[]> = persistable("sheetLineRecs", () => ({}));
 export const recordSheetLines = (sheetId: string, ls: SheetLineRec[]) => { LINE_RECS[sheetId] = ls; };
 export const LINE_META_OF = (sheetId: string): SheetLineRec[] | null => LINE_RECS[sheetId] ?? null;
+
+// ---------- 交付资源计划快照（提交审批时写入；开通工单按此初始化并锁定，变更走变更流程） ----------
+/** 单订单行的资源选用计划：出口/出口池、IP 段与分配数、基础线路均在成本核算阶段选定 */
+export interface WoPlanItem {
+  bwM: number;                            // 本单带宽（出口带宽条目填报数）
+  ipNeed: number;                         // 订单行 IP 需求（合同带入，核算已校验）
+  poolId?: string;                        // 池化产品（BGP）：选用的出口池
+  exits?: { line: string; bw: number }[]; // 非池化：选用的出口及各自占用带宽
+  ipSegs?: string[];                      // 核算选定的 IP 段（R3 档案 id）
+  ipAlloc?: number;                       // 核算时的分配数量（默认 = ipNeed）
+  bases?: string[];                       // 核算选定的基础线路（R2 档案 id）
+}
+/** key = 订单行 id（L1 / L2 …） */
+export type WoPlan = Record<string, WoPlanItem>;
+const WO_PLAN_RECS: Record<string, WoPlan> = persistable("woPlanRecs", () => ({}));
+export const recordWoPlan = (sheetId: string, p: WoPlan) => { WO_PLAN_RECS[sheetId] = p; };
+/** 读取交付资源计划快照；无快照返回 null（调用方走旧数据兼容解析或演示默认） */
+export const woPlanOf = (sheetId: string): WoPlan | null => WO_PLAN_RECS[sheetId] ?? null;

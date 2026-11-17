@@ -14,7 +14,7 @@ import { CONTRACTS, type Contract } from "@/data/contracts";
 import { POOLS, poolExits, poolWater, type PoolDef } from "@/data/pool";
 import { ownerOfDeal } from "@/data/ownership";
 import { snapshotEsts, usePoolSettle, type PoolEst } from "@/data/poolSettle";
-import { SHEETS, SHEET_OF_CONTRACT, ensureSheetForContract, fillSheet, recordSheetEntries, recordSheetLines } from "@/data/sheets";
+import { SHEETS, SHEET_OF_CONTRACT, ensureSheetForContract, fillSheet, recordSheetEntries, recordSheetLines, recordWoPlan, type WoPlanItem } from "@/data/sheets";
 import { submitForApproval } from "@/data/approvalFlow";
 import { currentUser } from "@/data/users";
 import ArchivePicker from "@/components/SearchSelect";
@@ -138,6 +138,8 @@ const entryInfoStore: Record<string, { name: string; dept: "业务支撑部" | "
 const internetPickStore: Record<string, SourceRow[]> = {};
 /** 每行已关联的基础线路（key = 订单行 id，可多选）：供其他行（如数据专线）【共用】 */
 const basePickStore: Record<string, SourceRow[]> = {};
+/** IP 条目选用（key = 行键）：提交审批时写入交付资源计划快照（选定段 + 分配数） */
+const ipPickStore: Record<string, { segId: string; n: number }> = {};
 
 function EntryRow({
   item, rowKey, slotCarrier, locked, stale, onRemove, onAmount, internetRows, onPickInternets, ipFreeSearch, ipNeed, baseOthers, onPickBases, linePtype,
@@ -201,6 +203,11 @@ function EntryRow({
 
   /** IP 条目：本单分配数量（默认 = CRM 需求 ipNeed，选中档案后带出、可调整） */
   const effQty = item.demo === "ippool" ? (ipAlloc ?? ipNeed ?? 0) : qty;
+  // IP 条目：同步选用段 + 分配数到模块暂存（提交审批时写入交付资源计划快照，供开通工单取数锁定）
+  useEffect(() => {
+    if (item.demo !== "ippool") return;
+    ipPickStore[rowKey] = { segId: pickedRow?.id ?? "", n: effQty };
+  }, [rowKey, item.demo, pickedRow?.id, effQty]);
   const calc = useMemo(
     () => calcAmount(item, effQty, meta, pickedRow, pickedList, sharedIds, poolPick),
     [item, effQty, meta, pickedRow, pickedList, sharedIds, poolPick]
@@ -1356,7 +1363,26 @@ export default function Home() {
                     });
                   recordSheetEntries(sheet0.id, recs);
                   // 订单行快照：审批通过生成开通工单（P02）时按行取数
-                  recordSheetLines(sheet0.id, lines.map((l) => ({ id: l.id, name: l.name, cat: l.cat, ptype: l.ptype, price: l.price })));
+                  recordSheetLines(sheet0.id, lines.map((l) => ({ id: l.id, name: l.name, cat: l.cat, ptype: l.ptype, price: l.price, ipNeed: l.ipNeed })));
+                  // 交付资源计划快照：出口/出口池、IP 段与分配数、基础线路均在核算阶段选定并锁定；
+                  // 开通工单按此初始化（只读），资源变更一律走变更流程
+                  const plan: Record<string, WoPlanItem> = {};
+                  for (const l of lines) {
+                    const r0Pool = l.ptype ? POOLS.find((p) => p.product === l.ptype) : undefined;
+                    const bwKey = [...rowsOf(l).ops, ...rowsOf(l).tech].find((rk) => itemByKey[rk.split("|")[0]]?.demo === "bwinternet");
+                    const bw = bwKey ? (bwStore[bwKey] ?? 50) : 50;
+                    const ipKey = Object.keys(ipPickStore).find((k) => k.startsWith(l.id + "::") && ipPickStore[k].segId);
+                    const ipRec = ipKey ? ipPickStore[ipKey] : null;
+                    plan[l.id] = {
+                      bwM: bw, ipNeed: l.ipNeed,
+                      poolId: r0Pool?.id,
+                      exits: r0Pool ? undefined : (internetPickStore[l.id] ?? []).map((r) => ({ line: r.id, bw })),
+                      ipSegs: ipRec?.segId ? [ipRec.segId] : undefined,
+                      ipAlloc: ipRec?.n,
+                      bases: (basePickStore[l.id] ?? []).map((r) => r.id),
+                    };
+                  }
+                  recordWoPlan(sheet0.id, plan);
                   const r = submitForApproval("成本核算单 · 提交", sheet0.id, `${sheet0.customer} · ${sheet0.contract}`,
                     { monthlyCost: sheet0.monthlyCost, contractValue: sheet0.contractValue, margin: sheet0.margin, lines: sheet0.lines },
                     currentUser()?.name ?? "演示用户",
