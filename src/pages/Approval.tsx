@@ -272,7 +272,7 @@ export default function Approval() {
           </div>
 
           <main className="space-y-4 p-6">
-            {/* ① 订单行：本单核心信息——审批人首先关心「这单卖什么」，置顶并以结构化形式呈现 */}
+            {/* ① 订单行：本单核心信息——审批人首先关心「这单卖什么」，置顶呈现 */}
             {(() => {
               const contract = contractOfSheet;
               const special = contract?.specialId ? SPECIALS.find((s) => s.id === contract.specialId) : undefined;
@@ -285,37 +285,34 @@ export default function Approval() {
                     });
               const totalPrice = linesOf.reduce((s, l) => s + (l.price ?? 0), 0);
               return (
-                <section className="overflow-hidden rounded-[4px] border border-[#BEDAFF] bg-white">
-                  <div className="flex flex-wrap items-center gap-3 border-b border-[#BEDAFF] bg-[#F7FAFF] px-4 py-2.5">
+                <section className="overflow-hidden rounded-[4px] border border-[#E5E6EB] bg-white">
+                  <div className="flex flex-wrap items-center gap-3 border-b px-4 py-2.5">
                     <span className="text-sm font-semibold text-[#1D2129]">订单行</span>
                     <span className="text-[11px] text-[#86909C]">本单交付内容 · 合同生效数据带入，只读</span>
                     <span className="ml-auto text-xs text-[#4E5969]">
                       共 {linesOf.length} 行{totalPrice > 0 && <> · 月租合计 <span className="font-mono font-semibold text-[#165DFF]">¥ {fmt(totalPrice)}</span></>}
                     </span>
                   </div>
-                  <div className="divide-y divide-[#F2F3F5]">
-                    {linesOf.map((l) => (
-                      <div key={l.key} className="flex items-start gap-4 px-4 py-3">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="text-sm font-semibold text-[#1D2129]">{l.ptype}</span>
-                            {l.cat && <span className="rounded-[2px] bg-[#F2F3F5] px-1.5 py-0.5 text-[10px] text-[#86909C]">{l.cat}</span>}
-                          </div>
-                          <div className="mt-1.5 flex flex-wrap gap-1.5">
-                            {(l.spec.includes("·") ? l.spec.split("·").map((x) => x.trim()).filter(Boolean) : [l.spec]).map((chip, i) => (
-                              <span key={i} className="rounded-[2px] border border-[#E5E6EB] bg-[#F7F8FA] px-2 py-0.5 font-mono text-[11px] text-[#4E5969]">{chip}</span>
-                            ))}
-                          </div>
-                        </div>
-                        {l.price != null && (
-                          <div className="shrink-0 text-right">
-                            <div className="font-mono text-base font-semibold text-[#1D2129]">¥ {fmt(l.price)}</div>
-                            <div className="text-[10px] text-[#86909C]">元/月</div>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b bg-[#F7F8FA] text-left text-xs text-[#86909C]">
+                        <th className="w-40 px-4 py-2 font-normal">产品类型</th>
+                        <th className="w-36 px-4 py-2 font-normal">类别</th>
+                        <th className="px-4 py-2 font-normal">规格</th>
+                        <th className="w-32 px-4 py-2 text-right font-normal">月租（元/月）</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {linesOf.map((l) => (
+                        <tr key={l.key} className="border-b last:border-0">
+                          <td className="px-4 py-2.5 font-medium text-[#1D2129]">{l.ptype}</td>
+                          <td className="px-4 py-2.5 text-xs text-[#86909C]">{l.cat ?? "—"}</td>
+                          <td className="px-4 py-2.5 text-[13px] text-[#4E5969]">{l.spec}</td>
+                          <td className="px-4 py-2.5 text-right font-mono font-semibold text-[#1D2129]">{l.price != null ? fmt(l.price) : "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                   {special && (
                     <div className="border-t border-[#FFE1BA] bg-[#FFF7E8] px-4 py-2 text-xs leading-5 text-[#B25E00]">
                       关联特批 <span className="font-mono">{special.id}</span>（{special.status}）· 折扣 <span className="font-mono">{special.discount}%</span>
@@ -326,49 +323,62 @@ export default function Approval() {
               );
             })()}
 
-            {/* ② 审批概览：一屏可读的关键指标带（月成本 / 月额 / 毛利 / 一次性 / 全周期毛利） */}
-            <section className="overflow-hidden rounded-[4px] border border-[#E5E6EB] bg-white">
-              <div className="grid grid-cols-2 gap-px bg-[#F2F3F5] md:grid-cols-3 xl:grid-cols-6">
-                <div className="bg-white px-4 py-3">
-                  <div className="text-xs text-[#86909C]">客户 / 合同</div>
-                  <div className="mt-1 truncate text-sm font-semibold text-[#1D2129]" title={sheet.customer}>{sheet.customer}</div>
-                  <div className="mt-0.5 truncate font-mono text-[11px] text-[#86909C]" title={contractOfSheet ? `${contractOfSheet.id} · ${contractOfSheet.start} ~ ${contractOfSheet.end}` : sheet.contract}>
-                    {contractOfSheet ? `${contractOfSheet.id} · ${contractOfSheet.start} ~ ${contractOfSheet.end}` : sheet.contract}
+            {/* ② 审批概览：一行关键指标（无线格盒子，竖向细分隔） */}
+            <section className="rounded-[4px] border border-[#E5E6EB] bg-white px-2 py-3">
+              <div className="flex flex-wrap">
+                {[
+                  { label: "客户 / 合同", node: (
+                    <>
+                      <div className="truncate text-sm font-semibold text-[#1D2129]" title={sheet.customer}>{sheet.customer}</div>
+                      <div className="mt-0.5 truncate font-mono text-[11px] text-[#86909C]" title={contractOfSheet ? `${contractOfSheet.id} · ${contractOfSheet.start} ~ ${contractOfSheet.end}` : sheet.contract}>
+                        {contractOfSheet ? `${contractOfSheet.id} · ${contractOfSheet.start} ~ ${contractOfSheet.end}` : sheet.contract}
+                      </div>
+                    </>
+                  ) },
+                  { label: "月成本（本单核算）", node: (
+                    <>
+                      <div className="font-mono text-lg font-semibold text-[#1D2129]">¥ {fmt(sheet.monthlyCost)}</div>
+                      <div className="mt-0.5 text-[11px] text-[#86909C]">两部门填报：支撑部 ✓ · 技术部 ✓</div>
+                    </>
+                  ) },
+                  { label: "合同月额", node: (
+                    <>
+                      <div className="font-mono text-lg font-semibold text-[#1D2129]">¥ {fmt(sheet.contractValue)}</div>
+                      <div className="mt-0.5 text-[11px] text-[#86909C]">月租合计（合同约定价）</div>
+                    </>
+                  ) },
+                  { label: "月毛利（经常性）", node: (
+                    <>
+                      <div className={`font-mono text-lg font-semibold ${monthlyProfit >= 0 ? "text-[#00B42A]" : "text-[#F53F3F]"}`}>
+                        {monthlyProfit >= 0 ? "+" : "-"}¥ {fmt(Math.abs(monthlyProfit))}
+                      </div>
+                      <div className="mt-0.5 text-[11px] text-[#86909C]">毛利率 {sheet.margin}%</div>
+                    </>
+                  ) },
+                  { label: "一次性投入", node: (
+                    <>
+                      <div className="font-mono text-lg font-semibold text-[#1D2129]">¥ {fmt(oneTimeCost)}</div>
+                      <div className="mt-0.5 text-[11px] text-[#86909C]">
+                        {paybackMonths != null ? `静态回收期 ${paybackMonths.toFixed(1)} 个月` : oneTimeCost > 0 ? "CPE / 安装调测等，首月发生" : "本单无一次性投入"}
+                      </div>
+                    </>
+                  ) },
+                  { label: "合同期总毛利", node: (
+                    <>
+                      <div className={`font-mono text-lg font-semibold ${(totalProfit ?? 0) >= 0 ? "text-[#00B42A]" : "text-[#F53F3F]"}`}>
+                        {totalProfit != null ? `${totalProfit >= 0 ? "+" : "-"}¥ ${fmt(Math.abs(totalProfit))}` : "—"}
+                      </div>
+                      <div className="mt-0.5 text-[11px] text-[#86909C]">
+                        {termMonths != null ? `${termMonths} 个月 · 总毛利率 ${totalMarginPct?.toFixed(1)}%` : "合同期限未登记，无法折算"}
+                      </div>
+                    </>
+                  ) },
+                ].map((c, i) => (
+                  <div key={c.label} className={`min-w-44 flex-1 px-4 py-1 ${i > 0 ? "border-l border-[#F2F3F5]" : ""}`}>
+                    <div className="text-xs text-[#86909C]">{c.label}</div>
+                    <div className="mt-1">{c.node}</div>
                   </div>
-                </div>
-                <div className="bg-white px-4 py-3">
-                  <div className="text-xs text-[#86909C]">月成本（本单核算）</div>
-                  <div className="mt-1 font-mono text-lg font-semibold text-[#1D2129]">¥ {fmt(sheet.monthlyCost)}</div>
-                  <div className="mt-0.5 text-[11px] text-[#86909C]">两部门填报：支撑部 ✓ · 技术部 ✓</div>
-                </div>
-                <div className="bg-white px-4 py-3">
-                  <div className="text-xs text-[#86909C]">合同月额</div>
-                  <div className="mt-1 font-mono text-lg font-semibold text-[#1D2129]">¥ {fmt(sheet.contractValue)}</div>
-                  <div className="mt-0.5 text-[11px] text-[#86909C]">月租合计（合同约定价）</div>
-                </div>
-                <div className="bg-white px-4 py-3">
-                  <div className="text-xs text-[#86909C]">月毛利（经常性）</div>
-                  <div className={`mt-1 font-mono text-lg font-semibold ${monthlyProfit >= 0 ? "text-[#00B42A]" : "text-[#F53F3F]"}`}>
-                    {monthlyProfit >= 0 ? "+" : "-"}¥ {fmt(Math.abs(monthlyProfit))}
-                  </div>
-                  <div className="mt-0.5 text-[11px] text-[#86909C]">毛利率 {sheet.margin}%</div>
-                </div>
-                <div className="bg-white px-4 py-3">
-                  <div className="text-xs text-[#86909C]">一次性投入</div>
-                  <div className="mt-1 font-mono text-lg font-semibold text-[#1D2129]">¥ {fmt(oneTimeCost)}</div>
-                  <div className="mt-0.5 text-[11px] text-[#86909C]">
-                    {paybackMonths != null ? `静态回收期 ${paybackMonths.toFixed(1)} 个月` : oneTimeCost > 0 ? "CPE / 安装调测等，首月发生" : "本单无一次性投入"}
-                  </div>
-                </div>
-                <div className="bg-white px-4 py-3">
-                  <div className="text-xs text-[#86909C]">合同期总毛利</div>
-                  <div className={`mt-1 font-mono text-lg font-semibold ${(totalProfit ?? 0) >= 0 ? "text-[#00B42A]" : "text-[#F53F3F]"}`}>
-                    {totalProfit != null ? `${totalProfit >= 0 ? "+" : "-"}¥ ${fmt(Math.abs(totalProfit))}` : "—"}
-                  </div>
-                  <div className="mt-0.5 text-[11px] text-[#86909C]">
-                    {termMonths != null ? `${termMonths} 个月 · 总毛利率 ${totalMarginPct?.toFixed(1)}%` : "合同期限未登记，无法折算"}
-                  </div>
-                </div>
+                ))}
               </div>
             </section>
 
