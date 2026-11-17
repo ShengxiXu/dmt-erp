@@ -924,12 +924,12 @@ export default function Home() {
               删除行
             </button>
           )}
-          <label className="ml-auto flex items-center gap-1.5 text-xs text-[#4E5969]">
+          <label className="ml-auto flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-[#4E5969] sm:w-auto w-full sm:ml-auto">
             产品类别
             <select
               value={driverOf(l)}
               onChange={(e) => setDriver(l.id, e.target.value)}
-              className="h-8 max-w-72 rounded-[2px] border border-[#E5E6EB] bg-white px-2 text-sm text-[#4E5969]">
+              className="h-8 w-full max-w-44 min-w-0 rounded-[2px] border border-[#E5E6EB] bg-white px-2 text-sm text-[#4E5969]">
               {CATEGORIES.map((c) => (
                 <option key={c.id} value={`cat:${c.id}`}>{c.name}</option>
               ))}
@@ -1073,7 +1073,7 @@ export default function Home() {
     return (
       <ArcoShell breadcrumb="核算单录入">
         <main className="flex flex-1 items-center justify-center p-6">
-          <div className="w-[520px] rounded-[4px] border border-[#E5E6EB] bg-white p-8 text-center">
+          <div className="w-[520px] max-w-full rounded-[4px] border border-[#E5E6EB] bg-white p-8 text-center">
             <div className="text-base font-semibold text-[#1D2129]">核算单填报请从成本台账或合同详情进入</div>
             <div className="mt-2 text-xs leading-5 text-[#86909C]">
               核算单基于已生效合同建立（进入时自动建档）；CRM 签订前的商机业务不在本系统。
@@ -1092,7 +1092,7 @@ export default function Home() {
   return (
     <ArcoShell breadcrumb="核算单录入">
       {/* 单号 + 状态条 */}
-      <div className="flex items-center gap-4 border-b border-[#E5E6EB] bg-white px-6 py-2.5">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-b border-[#E5E6EB] bg-white px-6 py-2.5">
         <span className="font-mono text-[14px] text-[#1D2129]">{SHEET_OF_CONTRACT(contract.id)?.id ?? "—"}</span>
         <span className={`rounded-[2px] px-2 py-0.5 text-[12px] ${sent ? "bg-[#E8F3FF] text-[#165DFF]" : "bg-[#FFF3E8] text-[#FF7D00]"}`}>
           {sent ? "审批中（已锁定）" : "待填写"}
@@ -1117,14 +1117,14 @@ export default function Home() {
               { label: "合同号 / 期限", node: contract ? (
                   <span className="font-medium">
                     <Link className="font-mono text-[13px] text-[#165DFF] hover:underline" to={`/contract/detail?id=${contract.id}`}>{contract.id}</Link>
-                    <span className="ml-1 whitespace-nowrap text-[11px] text-[#86909C]">{contract.start} ~ {contract.end}</span>
+                    <span className="ml-1 text-[11px] text-[#86909C]">{contract.start} ~ {contract.end}</span>
                   </span>
                 ) : <span className="text-sm font-medium">HT-2026-0341 · 24 个月</span> },
               { label: `付款方式${fromContract ? "（合同约定）" : "（缺失时手工维护）"}`, node: (
                   <select
                     value={payCycle}
                     onChange={(e) => setPayCycle(e.target.value)}
-                    className="rounded-[2px] border border-[#E5E6EB] bg-white px-2 py-1 text-sm font-medium focus:border-[#165DFF] focus:outline-none">
+                    className="w-full min-w-0 rounded-[2px] border border-[#E5E6EB] bg-white px-2 py-1 text-sm font-medium focus:border-[#165DFF] focus:outline-none">
                     {["月付", "季度付", "半年付", "年付"].map((o) => (
                       <option key={o} value={o}>{o}</option>
                     ))}
@@ -1135,14 +1135,14 @@ export default function Home() {
                   : <span className="text-sm font-medium">{contract ? "标准合同 · 无折扣" : "—"}</span> },
               { label: "销售员（提成在 CRM 核算）", node: <span className="text-sm font-medium">张伟</span> },
             ].map((c, i) => (
-              <div key={c.label} className={`min-w-40 flex-1 px-4 py-1 ${i > 0 ? "border-l border-[#F2F3F5]" : ""}`}>
+              <div key={c.label} className={`min-w-0 flex-1 px-4 py-1 ${i > 0 ? "border-l border-[#F2F3F5]" : ""}`}>
                 <div className="text-xs text-[#86909C]">{c.label}</div>
                 <div className="mt-1">{c.node}</div>
               </div>
             ))}
           </div>
-          {/* 订单行总览：本单卖什么（与下方逐行填报卡片一一对应），客户要素之下 */}
-          <div className="mt-3 border-t border-[#F2F3F5] pt-3">
+          {/* 订单行总览：本单卖什么（与下方逐行填报卡片一一对应），客户要素之下；窄屏表内横向滚动 */}
+          <div className="mt-3 overflow-x-auto border-t border-[#F2F3F5] pt-3">
           {fromContract && contract ? (
             <table className="w-full text-sm">
               <thead>

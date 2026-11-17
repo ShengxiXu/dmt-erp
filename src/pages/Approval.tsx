@@ -264,11 +264,11 @@ export default function Approval() {
 
       {inst && sheet && (
         <>
-          <div className="flex items-center gap-6 border-b border-[#E5E6EB] bg-white px-6">
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-1 border-b border-[#E5E6EB] bg-white px-6">
             <button onClick={back} className="py-3 text-[13px] text-[#86909C] hover:text-[#165DFF]">← 返回列表</button>
             <span className="py-3 font-mono text-[14px] text-[#1D2129]">{inst.docId}</span>
             <Badge className={INST_COLOR[inst.status] + " hover:bg-inherit"}>{inst.status}</Badge>
-            <span className="ml-auto py-3 text-xs text-[#86909C]">审批实例 {inst.id} · 流「{inst.flowName}」分支「{inst.branchName ?? "—"}」（{inst.snapshot.branch}）· 提交人 {inst.submitter} {inst.submitAt}</span>
+            <span className="min-w-0 py-3 text-xs text-[#86909C]">审批实例 {inst.id} · 流「{inst.flowName}」分支「{inst.branchName ?? "—"}」（{inst.snapshot.branch}）· 提交人 {inst.submitter} {inst.submitAt}</span>
           </div>
 
           <main className="space-y-4 p-6">
@@ -280,13 +280,13 @@ export default function Approval() {
                   { label: "合同编号 / 期限", node: (
                       <span className="font-medium">
                         <span className="font-mono text-[13px] text-[#1D2129]">{contractOfSheet?.id ?? sheet.contract.match(/HT-\d+-\d+/)?.[0] ?? sheet.contract}</span>
-                        {contractOfSheet && <span className="ml-1 whitespace-nowrap text-[11px] text-[#86909C]">{contractOfSheet.start} ~ {contractOfSheet.end}</span>}
+                        {contractOfSheet && <span className="ml-1 text-[11px] text-[#86909C]">{contractOfSheet.start} ~ {contractOfSheet.end}</span>}
                       </span>
                     ) },
                   { label: "商机", node: <span className="text-sm font-medium">{bizOf(inst).opp}</span> },
                   { label: "提交人 / 时间", node: <span className="text-sm font-medium">{inst.submitter}<span className="ml-1 text-[11px] font-normal text-[#86909C]">{inst.submitAt}</span></span> },
                 ].map((c, i) => (
-                  <div key={c.label} className={`min-w-40 flex-1 px-4 py-1 ${i > 0 ? "border-l border-[#F2F3F5]" : ""}`}>
+                  <div key={c.label} className={`min-w-0 flex-1 px-4 py-1 ${i > 0 ? "border-l border-[#F2F3F5]" : ""}`}>
                     <div className="text-xs text-[#86909C]">{c.label}</div>
                     <div className="mt-1">{c.node}</div>
                   </div>
@@ -388,7 +388,7 @@ export default function Approval() {
                     </>
                   ) },
                 ].map((c, i) => (
-                  <div key={c.label} className={`min-w-44 flex-1 px-4 py-1 ${i > 0 ? "border-l border-[#F2F3F5]" : ""}`}>
+                  <div key={c.label} className={`min-w-0 flex-1 px-4 py-1 ${i > 0 ? "border-l border-[#F2F3F5]" : ""}`}>
                     <div className="text-xs text-[#86909C]">{c.label}</div>
                     <div className="mt-1">{c.node}</div>
                   </div>
@@ -413,7 +413,7 @@ export default function Approval() {
                         const deptSum = list.reduce((s, e) => s + e.amount, 0);
                         return (
                           <div key={dept}>
-                            <div className="flex items-center gap-2 bg-[#F7F8FA] px-4 py-2">
+                            <div className="flex flex-wrap items-center gap-2 bg-[#F7F8FA] px-4 py-2">
                               <Badge className={`${dept === "业务支撑部" ? "bg-[#FFF7E8] text-[#FF7D00]" : "bg-[#E8FFFB] text-[#0FC6C2]"} hover:bg-inherit`}>{dept}</Badge>
                               <span className="text-xs text-[#86909C]">{list.length} 个条目</span>
                               <span className="ml-auto font-mono text-sm font-semibold text-[#1D2129]">¥ {fmt(deptSum)}</span>
@@ -421,7 +421,7 @@ export default function Approval() {
                             <div className="divide-y divide-[#F7F8FA]">
                               {list.map((e, i) => (
                                 <div key={i} className="px-4 py-2.5">
-                                  <div className="flex items-baseline gap-2">
+                                  <div className="flex flex-wrap items-baseline gap-2">
                                     <span className="shrink-0 rounded-[2px] bg-[#F2F3F5] px-1.5 py-0.5 font-mono text-[10px] text-[#86909C]">{e.line.split(" · ")[0]}</span>
                                     <span className="text-sm font-medium text-[#1D2129]">{e.item}</span>
                                     {e.costType === "一次性" && (
@@ -435,13 +435,13 @@ export default function Approval() {
                                   {e.spec && (
                                     <div className="mt-1 flex items-start gap-1.5 text-xs text-[#4E5969]">
                                       <span className="mt-px shrink-0 rounded-[2px] bg-[#E8F3FF] px-1 py-px text-[10px] text-[#165DFF]">选用</span>
-                                      <span>{e.spec}</span>
+                                      <span className="min-w-0 break-words">{e.spec}</span>
                                     </div>
                                   )}
                                   {e.note && (
                                     <div className="mt-1 flex items-start gap-1.5 text-xs leading-5 text-[#86909C]">
                                       <span className="mt-px shrink-0 rounded-[2px] bg-[#F2F3F5] px-1 py-px text-[10px] text-[#86909C]">演算</span>
-                                      <span>{e.note}</span>
+                                      <span className="min-w-0 break-words">{e.note}</span>
                                     </div>
                                   )}
                                 </div>

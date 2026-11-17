@@ -123,14 +123,14 @@ export function ShellLayout() {
         </div>
       </aside>
 
-      <div className="ml-[220px] flex-1">
+      <div className="ml-[220px] min-w-0 flex-1">
         <header className="sticky top-0 z-20 flex h-14 items-center gap-4 border-b border-[#E5E6EB] bg-white px-6">
-          <div className="flex items-center gap-1.5 text-[14px]">
-            <span className="text-[#86909C]">首页</span>
-            <ChevronRight size={14} className="text-[#C9CDD4]" />
-            <span className="text-[#1D2129]">{crumb}</span>
+          <div className="flex min-w-0 items-center gap-1.5 text-[14px]">
+            <span className="shrink-0 text-[#86909C]">首页</span>
+            <ChevronRight size={14} className="shrink-0 text-[#C9CDD4]" />
+            <span className="truncate text-[#1D2129]">{crumb}</span>
           </div>
-          <div className="ml-auto flex items-center gap-4">
+          <div className="ml-auto flex shrink-0 items-center gap-4">
             <GlobalSearch />
             <NoticeBell />
             <span className="hidden rounded-[2px] bg-[#F0F5FF] px-1.5 py-0.5 text-[11px] text-[#165DFF] lg:block">{role.name}</span>
@@ -144,7 +144,7 @@ export function ShellLayout() {
               <Outlet />
             ) : (
               <main className="flex min-h-[70vh] items-center justify-center p-6">
-                <div className="w-[420px] rounded-[8px] border border-[#E5E6EB] bg-white p-8 text-center shadow-sm">
+                <div className="w-[420px] max-w-full rounded-[8px] border border-[#E5E6EB] bg-white p-8 text-center shadow-sm">
                   <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[#FFECE8] text-[#F53F3F]"><ShieldAlert size={22} /></span>
                   <div className="mt-3 text-[15px] font-semibold text-[#1D2129]">当前角色无权访问该页面</div>
                   <div className="mt-1.5 text-[12px] leading-5 text-[#86909C]">
