@@ -272,7 +272,29 @@ export default function Approval() {
           </div>
 
           <main className="space-y-4 p-6">
-            {/* ① 订单行：本单核心信息——审批人首先关心「这单卖什么」，置顶呈现 */}
+            {/* ① 客户与合同：先于订单行展示——审单先确认「谁的单、哪份合同」 */}
+            <section className="rounded-[4px] border border-[#E5E6EB] bg-white px-2 py-3">
+              <div className="flex flex-wrap">
+                {[
+                  { label: "客户", node: <span className="text-sm font-semibold text-[#1D2129]">{sheet.customer}</span> },
+                  { label: "合同编号 / 期限", node: (
+                      <span className="font-medium">
+                        <span className="font-mono text-[13px] text-[#1D2129]">{contractOfSheet?.id ?? sheet.contract.match(/HT-\d+-\d+/)?.[0] ?? sheet.contract}</span>
+                        {contractOfSheet && <span className="ml-1 whitespace-nowrap text-[11px] text-[#86909C]">{contractOfSheet.start} ~ {contractOfSheet.end}</span>}
+                      </span>
+                    ) },
+                  { label: "商机", node: <span className="text-sm font-medium">{bizOf(inst).opp}</span> },
+                  { label: "提交人 / 时间", node: <span className="text-sm font-medium">{inst.submitter}<span className="ml-1 text-[11px] font-normal text-[#86909C]">{inst.submitAt}</span></span> },
+                ].map((c, i) => (
+                  <div key={c.label} className={`min-w-40 flex-1 px-4 py-1 ${i > 0 ? "border-l border-[#F2F3F5]" : ""}`}>
+                    <div className="text-xs text-[#86909C]">{c.label}</div>
+                    <div className="mt-1">{c.node}</div>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            {/* ② 订单行：本单核心信息——订单内容随客户合同之后呈现 */}
             {(() => {
               const contract = contractOfSheet;
               const special = contract?.specialId ? SPECIALS.find((s) => s.id === contract.specialId) : undefined;
@@ -323,18 +345,10 @@ export default function Approval() {
               );
             })()}
 
-            {/* ② 审批概览：一行关键指标（无线格盒子，竖向细分隔） */}
+            {/* ③ 审批概览：一行关键指标（客户合同见上方①；无线格盒子，竖向细分隔） */}
             <section className="rounded-[4px] border border-[#E5E6EB] bg-white px-2 py-3">
               <div className="flex flex-wrap">
                 {[
-                  { label: "客户 / 合同", node: (
-                    <>
-                      <div className="truncate text-sm font-semibold text-[#1D2129]" title={sheet.customer}>{sheet.customer}</div>
-                      <div className="mt-0.5 truncate font-mono text-[11px] text-[#86909C]" title={contractOfSheet ? `${contractOfSheet.id} · ${contractOfSheet.start} ~ ${contractOfSheet.end}` : sheet.contract}>
-                        {contractOfSheet ? `${contractOfSheet.id} · ${contractOfSheet.start} ~ ${contractOfSheet.end}` : sheet.contract}
-                      </div>
-                    </>
-                  ) },
                   { label: "月成本（本单核算）", node: (
                     <>
                       <div className="font-mono text-lg font-semibold text-[#1D2129]">¥ {fmt(sheet.monthlyCost)}</div>
