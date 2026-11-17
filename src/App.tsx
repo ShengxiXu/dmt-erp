@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { Routes, Route, Navigate } from 'react-router'
 import { ShellLayout } from './components/ArcoShell'
 import Home from './pages/Home'
@@ -45,7 +46,16 @@ import Departments from './pages/Departments'
 import Claims from './pages/Claims'
 
 export default function App() {
+  // 跨标签页同步：其他页面更新了演示数据（persist.ts 已把新快照原地写进各台账）后，
+  // 整树重挂载，让所有页面重新读取最新台账（各台账导出引用不变，组件内状态随挂载重置）
+  const [syncKey, setSyncKey] = useState(0);
+  useEffect(() => {
+    const onExternalSync = () => setSyncKey((k) => k + 1);
+    window.addEventListener("dmt-erp-external-sync", onExternalSync);
+    return () => window.removeEventListener("dmt-erp-external-sync", onExternalSync);
+  }, []);
   return (
+    <div key={syncKey}>
     <Routes>
       <Route element={<ShellLayout />}>
       <Route path="/" element={<Home />} />
@@ -95,5 +105,6 @@ export default function App() {
       <Route path="/notifications" element={<Notifications />} />
       </Route>
     </Routes>
+    </div>
   )
 }

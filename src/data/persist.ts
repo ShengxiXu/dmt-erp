@@ -31,8 +31,18 @@ export function persistable<T>(name: string, init: () => T): T {
 
 /** 立即把全部台账快照写入 localStorage（自动保存兜底之外的手动触发） */
 export function saveNow(): void {
+  // 跨标签页防覆盖：别的页面写过更新的快照时，先采纳新数据再落盘，
+  // 否则本页定时快照会把内存里的旧数据整体写回，冲掉其他页面刚录入的数据
+  const cur = readBlob();
+  if (cur && typeof cur.__v === "number" && cur.__v > lastKnownV) {
+    lastKnownV = cur.__v;
+    adoptInPlace(cur);
+    window.dispatchEvent(new CustomEvent("dmt-erp-external-sync"));
+  }
   const out: Record<string, unknown> = {};
   registry.forEach((get, name) => { out[name] = get(); });
+  out.__v = Date.now();
+  lastKnownV = out.__v as number;
   try {
     localStorage.setItem(KEY, JSON.stringify(out));
   } catch {
@@ -56,8 +66,51 @@ export function hasSnapshot(name: string): boolean {
   return name in ensureLoaded();
 }
 
-// 自动保存：页面关闭 / 切后台时必存；定时兜底覆盖长时间停留不刷新的场景
+// 跨标签页同步：
+// 多标签页同时打开时，localStorage 是唯一数据源，但各页内存独立——A 页录入特批折扣 →
+// B 页 5 秒定时快照把内存旧数据整体写回 → A 页再进来数据"丢了"。
+// 方案：快照带单调版本号（__v）；其他页面写入时本页经 storage 事件立即原地采纳新数据
+//（数组清空重填 / 对象清键重赋，导出引用不变，业务代码全部原地修改），
+// 再通知应用根组件整树重挂载，全站页面重新读取最新台账。
+let lastKnownV = 0;
+
+function readBlob(): (Record<string, unknown> & { __v?: number }) | null {
+  const raw = localStorage.getItem(KEY);
+  if (!raw) return null;
+  try { return JSON.parse(raw) as Record<string, unknown> & { __v?: number }; } catch { return null; }
+}
+
+/** 用远端快照原地替换本页全部台账 */
+function adoptInPlace(remote: Record<string, unknown>): void {
+  registry.forEach((get, name) => {
+    if (!(name in remote)) return;
+    const local = get() as unknown;
+    const inc = remote[name];
+    if (Array.isArray(local) && Array.isArray(inc)) {
+      local.length = 0;
+      local.push(...inc);
+    } else if (local && inc && typeof local === "object" && typeof inc === "object") {
+      const l = local as Record<string, unknown>;
+      Object.keys(l).forEach((k) => { delete l[k]; });
+      Object.assign(l, inc);
+    }
+    // 原始类型（string/number）无法原地替换，跳过（当前台账均为数组/对象）
+  });
+  cache = { ...remote };
+}
+
 if (typeof window !== "undefined") {
+  window.addEventListener("storage", (e) => {
+    if (e.key !== KEY || !e.newValue) return;
+    try {
+      const remote = JSON.parse(e.newValue) as Record<string, unknown> & { __v?: number };
+      if (typeof remote.__v !== "number" || remote.__v <= lastKnownV) return;
+      lastKnownV = remote.__v;
+      adoptInPlace(remote);
+      window.dispatchEvent(new CustomEvent("dmt-erp-external-sync"));
+    } catch { /* 解析失败忽略 */ }
+  });
+  // 自动保存：页面关闭 / 切后台时必存；定时兜底覆盖长时间停留不刷新
   window.addEventListener("beforeunload", saveNow);
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") saveNow(); });
   setInterval(saveNow, 5000);
