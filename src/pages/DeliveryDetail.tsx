@@ -55,6 +55,14 @@ export default function DeliveryDetail() {
     const seg = r.spec?.match(/IP-\d+\.\d+\.\d+/)?.[0] ?? null;
     return { n: Number(r.note.match(/本单分配 (\d+) 个/)![1]), seg };
   })();
+  /** 旧单兼容（快照上线前提交的历史数据）：从条目快照文本解析已选基础线路 id 列表（可能多条，全部提取） */
+  const legacyBases = (() => {
+    const recs = entriesOfSheet(wo.sheetId) ?? [];
+    const ids = recs
+      .filter((x) => x.line.startsWith(`${lineId} ·`) && x.item.includes("基础线路") && x.spec)
+      .flatMap((x) => x.spec!.match(/B-\d+/g) ?? []);
+    return ids.length ? [...new Set(ids)] : null;
+  })();
   /** 本单 IP 需求：快照 → 订单行快照 → 历史条目解析 → null（老演示单无据可依） */
   const ipNeedOf = planItem?.ipAlloc ?? planItem?.ipNeed ?? LINE_META_OF(wo.sheetId)?.find((m) => m.id === lineId)?.ipNeed ?? legacyIp?.n ?? null;
   /** IP 段在本单中的展示/绑定线路（R3 档案 boundLines）；BGP 广播段仅作内部关联，不展示为「归属出口」 */
@@ -84,8 +92,8 @@ export default function DeliveryDetail() {
   };
   const [exits, setExits] = useState<ExitRes[]>(initExits);
   const [ipAsgs, setIpAsgs] = useState<IpAsg[]>(initIpAsgs);
-  /** 基础线路：核算阶段选定并锁定（唯一锁定项）；无快照时默认 B-001 */
-  const [bases] = useState<string[]>(planItem?.bases?.length ? [...planItem.bases] : ["B-001"]);
+  /** 基础线路：核算阶段选定并锁定（唯一锁定项）；快照 → 历史条目解析 → 兜底 B-001 */
+  const [bases] = useState<string[]>(planItem?.bases?.length ? [...planItem.bases] : legacyBases ?? ["B-001"]);
   const [devices, setDevices] = useState<DevRow[]>([{ id: "EQ-AR6121", mode: STOCK_MODE, n: 2 }]);
   /** 出口负载评估结论（工程师人工），按线路号记录 */
   const [verdicts, setVerdicts] = useState<Record<string, "" | "ok" | "full">>({});
@@ -953,11 +961,41 @@ export default function DeliveryDetail() {
                 <div className="rounded-[2px] border border-[#E5E6EB]">
                   <div className="grid gap-px bg-[#E5E6EB] md:grid-cols-2">
                     {([
-                      { title: "出口带宽", color: "#165DFF", rows: poolAsg ? [{ main: `${poolAsg.poolId} ${poolRow()?.name ?? ""}`, sub: `本单池占用 ${fmt(poolAsg.bw)}M（客户向池采购）` }] : exits.map((e) => ({ main: e.line, sub: `本单占用 ${fmt(e.bw)}M` })) },
-                      { title: "IP 地址", color: "#0FC6C2", rows: ipAsgs.map((a, i) => ({ main: ipOf(a.ip).segment.split("（")[0], sub: calcs[i].rangeText })) },
-                      { title: "基础线路", color: "#FF7D00", rows: bases.length ? bases.map((b) => ({ main: b })) : [{ main: "无", muted: true }] },
-                      { title: "设备", color: "#722ED1", rows: devices.map((d) => ({ main: `${devOf(d.id).name} × ${d.n} 台`, sub: d.mode })) },
-                    ] as { title: string; color: string; rows: { main: string; sub?: string; muted?: boolean }[] }[]).map((g) => (
+                      {
+                        title: "出口带宽", color: "#165DFF",
+                        rows: poolAsg
+                          ? [{ main: `${poolAsg.poolId} ${poolRow()?.name ?? ""}`, sub: `本单池占用 ${fmt(poolAsg.bw)}M（客户向池采购）`, extra: poolRow() ? `池容量 ${fmt(poolRow()!.capacityM)}M · 池已售 ${fmt(poolRow()!.dynamic.usedM)}M · 池月成本 ${fmt(poolRow()!.monthlyCost)} 元/月` : undefined }]
+                          : exits.map((e) => {
+                              const r = lineOf(e.line);
+                              return { main: `${r.id} ${r.name}`, sub: `本单占用 ${fmt(e.bw)}M`, extra: `容量 ${fmt(r.capacityM)}M · 峰值 ${fmt(r.dynamic.peakM ?? 0)}M · 已售 ${fmt(r.dynamic.usedM)}M · 月租 ${fmt(r.monthlyCost)} 元/月` };
+                            }),
+                      },
+                      {
+                        title: "IP 地址", color: "#0FC6C2",
+                        rows: ipAsgs.map((a, i) => {
+                          const row = ipOf(a.ip);
+                          return { main: `${a.ip} · ${row.segment.split("（")[0]}`, sub: calcs[i].rangeText, extra: `绑定线路 ${row.boundLines?.join("、") ?? "—"} · 段总量 ${row.total} · 已分配 ${row.dynamic.allocated}` };
+                        }),
+                      },
+                      {
+                        title: "基础线路", color: "#FF7D00",
+                        rows: bases.length
+                          ? bases.map((b) => {
+                              const r = R2_ROWS.find((x) => x.id === b);
+                              return r
+                                ? { main: `${r.id} ${r.name}`, sub: `${r.carrier} · ${fmt(r.bwM)}M`, extra: `整线月租 ${fmt(r.price)} 元/月 · 采购合同 ${r.contractNo}` }
+                                : { main: b };
+                            })
+                          : [{ main: "无", muted: true }],
+                      },
+                      {
+                        title: "设备", color: "#722ED1",
+                        rows: devices.map((d) => {
+                          const dev = devOf(d.id);
+                          return { main: `${dev.id} ${dev.name} × ${d.n} 台`, sub: d.mode, extra: `库存 ${dev.dynamic.stock} 台（可用 ${dev.dynamic.stock - dev.dynamic.locked}）· 成本价 ${fmt(dev.costPrice)} 元/台` };
+                        }),
+                      },
+                    ] as { title: string; color: string; rows: { main: string; sub?: string; extra?: string; muted?: boolean }[] }[]).map((g) => (
                       <div key={g.title} className="bg-white px-4 py-3">
                         <div className="mb-2 flex items-center gap-1.5">
                           <span className="h-3 w-1 rounded-full" style={{ background: g.color }} />
@@ -966,9 +1004,12 @@ export default function DeliveryDetail() {
                         </div>
                         <div className="space-y-1.5">
                           {g.rows.map((r, i) => (
-                            <div key={i} className="flex items-baseline justify-between gap-3 text-xs">
-                              <span className={`min-w-0 truncate ${r.muted ? "text-[#C9CDD4]" : "font-medium text-[#1D2129]"}`}>{r.main}</span>
-                              {r.sub && <span className="shrink-0 font-mono text-[#4E5969]">{r.sub}</span>}
+                            <div key={i} className="text-xs">
+                              <div className="flex items-baseline justify-between gap-3">
+                                <span className={`min-w-0 truncate ${r.muted ? "text-[#C9CDD4]" : "font-medium text-[#1D2129]"}`}>{r.main}</span>
+                                {r.sub && <span className="shrink-0 font-mono text-[#4E5969]">{r.sub}</span>}
+                              </div>
+                              {r.extra && <div className="mt-0.5 text-[11px] leading-4 text-[#86909C]">{r.extra}</div>}
                             </div>
                           ))}
                         </div>
