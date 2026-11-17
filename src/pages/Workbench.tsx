@@ -2,8 +2,7 @@ import { useMemo } from "react";
 import { Link } from "react-router";
 import { DEMO_TODAY } from "@/data/settings";
 import {
-  PencilLine, CheckSquare, Wrench, Calculator, ReceiptText, Receipt, Banknote, RefreshCcw,
-  TrendingUp, TrendingDown, CircleAlert, ArrowUpRight,
+  CheckSquare, Wrench, Calculator, ReceiptText, Receipt, Banknote, RefreshCcw,  TrendingUp, TrendingDown, CircleAlert, ArrowUpRight,
 } from "lucide-react";
 import ArcoShell from "@/components/ArcoShell";
 import { SHEETS } from "@/data/sheets";
@@ -226,7 +225,7 @@ export default function Workbench() {
   const oppMax = Math.max(...oppByStage.map((g) => g.count), 1);
 
   const quick = [
-    { to: "/", label: "核算单录入", icon: PencilLine, desc: "合同流程带入 · 无新建入口", tone: "bg-[#EEF2FF] text-[#4F46E5]" },
+    { to: "/cost", label: "成本台账", icon: Calculator, desc: "核算单总览 · 填报入口", tone: "bg-[#EEF2FF] text-[#4F46E5]" },
     { to: "/approval", label: "审批中心", icon: CheckSquare, desc: `${approving.length} 单待审`, tone: "bg-[#F0FDFA] text-[#0D9488]" },
     { to: "/delivery", label: "开通工单", icon: Wrench, desc: `${woOnway} 个在途`, tone: "bg-[#FFFBEB] text-[#B45309]" },
     { to: "/finance/settle", label: "月结", icon: Calculator, desc: latest ? `最近 ${latest.period}` : "本月待跑", tone: "bg-[#F5F3FF] text-[#7C3AED]" },
@@ -285,7 +284,7 @@ export default function Workbench() {
               </div>
               <h1 className="mt-4 text-[34px] font-semibold leading-tight tracking-tight">{greet}，许晟熙</h1>
               <p className="mt-2 max-w-[560px] text-[15px] leading-7 text-white/70">
-                {role === "业务支撑部" && <>今天有 {todos.length} 项待办：起草核算单、补关联。核算单由合同流程带入，从下方待办或「核算单录入」进入处理。</>}
+                {role === "业务支撑部" && <>今天有 {todos.length} 项待办：起草核算单、补关联。核算单由合同流程带入，从下方待办或「成本台账」进入处理。</>}
                 {role === "技术部" && <>{todos.length} 项待办：核算单技术条目、在途工单处理。工单从「开通工单」列表按 deadline 推进。</>}
                 {role === "财务" && <>{approving.length} 张核算单待审批，逾期应收 {fmtWan(overdueSum)} 元。审批在「审批中心」处理，月结在「月结」页跑批。</>}
                 {role === "管理层" && <>经营概览：逾期应收 {fmtWan(overdueSum)} 元，{SHEETS.filter((s) => s.margin < 45).length} 张核算单毛利低于阈值。</>}

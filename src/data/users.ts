@@ -50,9 +50,10 @@ for (const g of NAV_GROUPS) {
 export const ALL_MENUS = [...seen.values()];
 const ALL_PATHS = ALL_MENUS.map((m) => m.to);
 
-/** 路径是否命中菜单授权（"/" 仅精确匹配；其余支持前缀匹配详情页） */
+/** 路径是否命中菜单授权：「/」核算单录入表单已并入成本台账（持 /cost 即可进入）；其余菜单含其下所有详情页（前缀匹配） */
 export function pathAllowed(menus: string[], path: string): boolean {
-  return menus.some((m) => (m === "/" ? path === "/" : path === m || path.startsWith(m + "/")));
+  if (path === "/") return menus.includes("/cost");
+  return menus.some((m) => path === m || path.startsWith(m + "/"));
 }
 
 // ---------- 角色（内置，可改权限不可删） ----------

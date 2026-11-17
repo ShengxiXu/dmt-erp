@@ -416,7 +416,7 @@ function MatrixTab({ groups, activeRole, matrixRole, setMatrixRole }: {
       <div className="grid gap-4 lg:grid-cols-2">
         <div className="rounded-[4px] border border-[#E5E6EB] bg-white px-4 py-2.5 text-[11px] leading-5 text-[#86909C]">
           勾选即时生效：左侧导航按新权限过滤，已打开的页面刷新后由路由守卫校验；内置角色不可删除。
-          「/」= 核算单录入（仅精确匹配），其余菜单含其下所有详情页（前缀匹配）——新增详情页请挂在已有菜单路径下。
+          「/」= 核算单录入表单页（已并入成本台账授权：勾选 /cost 即可进入，无独立菜单），其余菜单含其下所有详情页（前缀匹配）——新增详情页请挂在已有菜单路径下。
         </div>
         <div className="rounded-[4px] border border-[#E5E6EB] bg-white">
           <div className="border-b px-4 py-2 text-[12px] font-semibold text-[#1D2129]">最近变更（操作留痕）</div>

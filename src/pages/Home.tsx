@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { useSearchParams, useNavigate, Link } from "react-router";
+import { useSearchParams, Link } from "react-router";
 import {
   CATEGORIES,
   RESOURCE_TAGS,
@@ -12,7 +12,6 @@ import { getCostItems, useCostItems, SETTLE_RULE, uncoveredClasses, type CostIte
 import { GET_TYPE, MAT_DEF, useCatalog } from "@/data/products";
 import { CONTRACTS, type Contract } from "@/data/contracts";
 import { POOLS, poolExits, poolWater, type PoolDef } from "@/data/pool";
-import { ownerOfDeal } from "@/data/ownership";
 import { snapshotEsts, usePoolSettle, type PoolEst } from "@/data/poolSettle";
 import { SHEETS, SHEET_OF_CONTRACT, ensureSheetForContract, fillSheet, recordSheetEntries, recordSheetLines, recordWoPlan, type WoPlanItem } from "@/data/sheets";
 import { submitForApproval } from "@/data/approvalFlow";
@@ -1069,100 +1068,21 @@ export default function Home() {
     );
   };
 
-  const navigate = useNavigate();
-  /** 启动页筛选：搜索词 / 核算单状态分组 / 归属销售 */
-  const [pickKw, setPickKw] = useState("");
-  const [pickStatus, setPickStatus] = useState<"全部" | "待处理" | "进行中" | "已通过" | "未建档">("全部");
-  const [pickSales, setPickSales] = useState("");
-
-  // ---------- 未指定合同：先选合同，再进入录入 ----------
-  // 核算单必须基于「已生效」合同建立（合同详情「进入成本核算」可带 ?contract= 直达本页）；
-  // 从导航菜单进入时没有合同上下文 → 展示合同启动页，避免对着演示数据盲填
+  // ---------- 无合同上下文：填报入口已收敛到成本台账 / 合同详情（均带 ?contract= 直达本页） ----------
   if (!contract) {
-    const SHEET_STATUS_CLS: Record<string, string> = {
-      待填写: "bg-[#FFF3E8] text-[#FF7D00]",
-      待对方提交: "bg-[#E8F3FF] text-[#165DFF]",
-      审批中: "bg-[#E8F3FF] text-[#165DFF]",
-      已通过: "bg-[#E8F8F2] text-[#00B42A]",
-      已驳回: "bg-[#FFECE8] text-[#F53F3F]",
-      变更中: "bg-[#F5E8FF] text-[#722ED1]",
-      未建档: "bg-[#F2F3F5] text-[#86909C]",
-    };
-    const rank = (s?: string) => (s === "待填写" || s === "待对方提交" || s === "已驳回" ? 0 : s === "审批中" || s === "变更中" ? 1 : 2);
-    const groupOf = (s?: string) => (!s ? "未建档" : rank(s) === 0 ? "待处理" : rank(s) === 1 ? "进行中" : "已通过");
-    const activesAll = CONTRACTS.filter((c) => c.status === "已生效")
-      .map((c) => ({ c, sheet: SHEET_OF_CONTRACT(c.id), sales: ownerOfDeal(c.dealId, c.customer) ?? "—" }));
-    const salesOptions = [...new Set(activesAll.map((a) => a.sales))];
-    const actives = activesAll
-      .filter((a) => !pickKw || a.c.id.includes(pickKw) || a.c.customer.includes(pickKw))
-      .filter((a) => pickStatus === "全部" || groupOf(a.sheet?.status) === pickStatus)
-      .filter((a) => !pickSales || a.sales === pickSales)
-      .sort((a, b) => rank(a.sheet?.status) - rank(b.sheet?.status));
-    const todoN = activesAll.filter((a) => rank(a.sheet?.status) === 0).length;
-    const STATUS_GROUPS = ["全部", "待处理", "进行中", "已通过", "未建档"] as const;
-    const countOf = (g: (typeof STATUS_GROUPS)[number]) => g === "全部" ? activesAll.length : activesAll.filter((a) => groupOf(a.sheet?.status) === g).length;
     return (
       <ArcoShell breadcrumb="核算单录入">
-        <main className="space-y-4 p-6">
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded-[4px] border border-[#E5E6EB] bg-white px-4 py-3">
-            <div>
-              <div className="text-sm font-semibold text-[#1D2129]">选择合同，开始成本核算填报</div>
-              <div className="mt-0.5 text-xs leading-5 text-[#86909C]">
-                核算单基于已生效合同建立（进入时自动建档）；CRM 签订前的商机业务不在本系统。
-                也可以从 <Link to="/contract" className="text-[#165DFF] hover:underline">合同管理</Link> 的合同详情点「进入成本核算」直达。
-              </div>
+        <main className="flex flex-1 items-center justify-center p-6">
+          <div className="w-[520px] rounded-[4px] border border-[#E5E6EB] bg-white p-8 text-center">
+            <div className="text-base font-semibold text-[#1D2129]">核算单填报请从成本台账或合同详情进入</div>
+            <div className="mt-2 text-xs leading-5 text-[#86909C]">
+              核算单基于已生效合同建立（进入时自动建档）；CRM 签订前的商机业务不在本系统。
+              成本台账「去填写」与合同详情「进入成本核算」都会带入合同上下文直达本页。
             </div>
-            {todoN > 0 && <span className="rounded-[2px] bg-[#FFF7E8] px-2 py-1 text-xs text-[#B25E00]">⏳ {todoN} 份核算单待处理</span>}
-          </div>
-
-          {/* 筛选：状态分组 / 归属销售 / 搜索 */}
-          <div className="flex flex-wrap items-center gap-2 rounded-[4px] border border-[#E5E6EB] bg-white px-4 py-2.5">
-            <div className="flex rounded-[2px] border border-[#E5E6EB] p-0.5">
-              {STATUS_GROUPS.map((g) => (
-                <button key={g} onClick={() => setPickStatus(g)}
-                  className={`rounded-[2px] px-2.5 py-1 text-xs ${pickStatus === g ? "bg-[#165DFF] text-white" : "text-[#4E5969] hover:bg-[#F2F3F5]"}`}>
-                  {g}{g !== "全部" ? `（${countOf(g)}）` : ""}
-                </button>
-              ))}
+            <div className="mt-5 flex justify-center gap-2">
+              <Link to="/cost"><Button>去成本台账</Button></Link>
+              <Link to="/contract"><Button variant="outline">去合同管理</Button></Link>
             </div>
-            <select className="rounded-[2px] border border-[#E5E6EB] bg-white px-2 py-1.5 text-xs" value={pickSales} onChange={(e) => setPickSales(e.target.value)}>
-              <option value="">全部归属销售</option>
-              {salesOptions.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
-            <Input className="w-56" placeholder="搜索合同号 / 客户" value={pickKw} onChange={(e) => setPickKw(e.target.value)} />
-            <span className="ml-auto text-[11px] text-[#86909C]">共 {actives.length} 份已生效合同</span>
-          </div>
-          <div className="overflow-x-auto rounded-[4px] border border-[#E5E6EB] bg-white">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b bg-[#F7F8FA] text-left text-[#4E5969]">
-                  <th className="px-3 py-2">合同号</th><th className="px-3 py-2">客户</th><th className="px-3 py-2">订单内容</th>
-                  <th className="px-3 py-2 text-right">月租合计（元）</th><th className="px-3 py-2">付款方式</th>
-                  <th className="px-3 py-2">合同期限</th><th className="px-3 py-2">核算单状态</th><th className="px-3 py-2 text-right">操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {actives.map(({ c, sheet }) => {
-                  const st = sheet?.status ?? "未建档";
-                  return (
-                    <tr key={c.id} className="cursor-pointer border-b last:border-0 hover:bg-[#F7F8FA]" onClick={() => navigate(`/?contract=${c.id}`)}>
-                      <td className="px-3 py-2.5 font-mono text-[#165DFF]">{c.id}</td>
-                      <td className="px-3 py-2.5 font-medium text-[#1D2129]">{c.customer}</td>
-                      <td className="max-w-[240px] truncate px-3 py-2.5 text-[#4E5969]">{c.lines.map((l) => l.ptype).join(" + ")}</td>
-                      <td className="px-3 py-2.5 text-right font-mono">{c.amount.toLocaleString()}</td>
-                      <td className="px-3 py-2.5 text-[#4E5969]">{c.pay}</td>
-                      <td className="px-3 py-2.5 text-[#86909C]">{c.start} ~ {c.end}</td>
-                      <td className="px-3 py-2.5">
-                        <span className={`rounded-[2px] px-1.5 py-0.5 text-[10px] ${SHEET_STATUS_CLS[st]}`}>{st}</span>
-                        {sheet && <span className="ml-1 font-mono text-[10px] text-[#86909C]">{sheet.id}</span>}
-                      </td>
-                      <td className="px-3 py-2.5 text-right"><span className="rounded-[2px] border border-[#94BFFF] px-2 py-0.5 text-[11px] text-[#165DFF]">进入填报 →</span></td>
-                    </tr>
-                  );
-                })}
-                {!actives.length && <tr><td colSpan={8} className="px-3 py-10 text-center text-[#86909C]">暂无已生效合同（合同生效后才能成本核算）</td></tr>}
-              </tbody>
-            </table>
           </div>
         </main>
       </ArcoShell>
@@ -1178,7 +1098,7 @@ export default function Home() {
           {sent ? "审批中（已锁定）" : "待填写"}
         </span>
         <div className="ml-auto flex items-center gap-4 text-[13px] text-[#86909C]">
-          <Link to="/" className="hover:text-[#165DFF]">更换合同</Link>
+          <Link to="/cost" className="hover:text-[#165DFF]">更换合同（去成本台账）</Link>
           <span className="cursor-pointer hover:text-[#165DFF]"
             onClick={() => alert("原型演示：对部门填报进度（未开始 / 填写中 / 已提交）+ 最后更新时间")}>查看对方进度</span>
           <span className="cursor-pointer hover:text-[#165DFF]"

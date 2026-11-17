@@ -1,7 +1,7 @@
 // 导航配置（分组）：ArcoShell 侧边栏与用户/角色权限矩阵共用的唯一出处
 // 权限粒度 = 菜单 path（含子菜单）；角色可见性过滤与路由守卫都以这里为准
 import {
-  LayoutGrid, FileText, Calculator, CheckSquare, Wrench, FolderOpen, ReceiptText,
+  LayoutGrid, FileText, CheckSquare, Wrench, FolderOpen, ReceiptText,
   Users, Lightbulb, Package, ListChecks, Boxes, Coins, Layers, Warehouse,
   FileSignature, ShoppingCart, ClipboardList, RefreshCcw, CalendarCheck,
   Settings2, Building2, TrendingUp, Wallet, ShieldCheck, Banknote, CreditCard,
@@ -61,7 +61,6 @@ export const NAV_GROUPS: { group: string; items: NavItem[] }[] = [
   {
     group: "交付与核算",
     items: [
-      { to: "/", label: "核算单录入", icon: Calculator },
       { to: "/approval", label: "审批中心", icon: CheckSquare },
       { to: "/delivery", label: "开通工单", icon: Wrench },
       { to: "/cost", label: "成本台账", icon: FileText },
