@@ -192,7 +192,7 @@ const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
 const ISP_FIELDS: SpecField[] = [
   { key: "bw", label: "带宽", type: "select", options: ["50M", "100M", "200M", "500M", "1G", "10G"], required: true },
   { key: "ip", label: "IP", type: "select", options: ["1 个", "4 个", "8 个", "16 个", "32 个", "64 个", "128 个", "256 个（一个 C）"] },
-  { key: "line", label: "基础线路", type: "text", placeholder: "如：1 条、2 条（冗余）" },
+  { key: "line", label: "基础线路数量", type: "number", placeholder: "条" },
 ];
 const LINE_FIELDS: SpecField[] = [
   { key: "bw", label: "波道带宽", type: "select", options: ["10G", "100G"], required: true },
@@ -284,15 +284,25 @@ if (bgpTypeSeed && !(bgpTypeSeed.materials ?? []).some((m) => m.libKey === "mat_
   bgpTypeSeed.asmHistory.push({ v: bgpTypeSeed.asmVersion, date: "2026-11-16", items: [...bgpTypeSeed.costItems], note: "池化回填：组成补「出口池」资源行（成本口径不变，出口带宽费仍经出口线路推导）" });
 }
 
-// 基础线路字段手动填入（幂等迁移）：ISP 类订单行的基础线路数量不再限定 1 / 2 条，
-// 存量快照中仍是下拉结构的 line 字段原地迁移为文本输入（带填写示例）；OTN「两端各一，固定」属工程事实，不动。
+// 基础线路数量字段（幂等迁移）：统一为「基础线路数量」、数字填入（单位：条）。
+// 存量快照三种旧结构原地迁移——①下拉（1 条 / 2 条冗余）②上一版文本（带示例占位）③套餐值带「条」字样；
+// OTN / SD-WAN「两端各一，固定」属工程事实，不动。
 cats.forEach((c) => c.types.forEach((t) => {
   const f = (t.specFields ?? []).find((x) => x.key === "line");
-  if (f && f.type === "select" && (f.options ?? []).includes("1 条")) {
-    f.type = "text";
-    f.placeholder = "如：1 条、2 条（冗余）";
-    delete f.options;
+  if (f && f.key === "line") {
+    const oldSelect = f.type === "select" && (f.options ?? []).includes("1 条");
+    const prevText = f.type === "text" && f.label === "基础线路";
+    if (oldSelect || prevText) {
+      f.label = "基础线路数量";
+      f.type = "number";
+      f.placeholder = "条";
+      delete f.options;
+    }
   }
+  (t.plans ?? []).forEach((p) => {
+    const v = p.values?.line;
+    if (v && !/^\d+$/.test(v)) p.values.line = v.match(/^\s*(\d+)/)?.[1] ?? v;
+  });
 }));
 
 // 装配一致性回填（幂等）：成本条目库后续演进新增条目（光模块 / 交付杂项等）后，各产品类型

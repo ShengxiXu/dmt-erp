@@ -268,6 +268,17 @@ export const CONTRACTS: Contract[] = persistable("contracts", () => [
   },
 ]);
 
+// 基础线路数量改数字填入（幂等迁移）：订单行 specs.line 旧值（"1 条" / "2 条（冗余）"）取首段数字；
+// 规格摘要中「基础线路 …」段同步改为「基础线路数量 N」。历史核算单 / 工单快照留痕不动。
+CONTRACTS.forEach((ct) => ct.lines.forEach((l) => {
+  const v = l.specs?.line;
+  if (!v || /^\d+$/.test(v)) return;
+  const n = v.match(/^\s*(\d+)/)?.[1];
+  if (!n) return;
+  if (l.specs) l.specs.line = n;
+  l.spec = l.spec.replace(/基础线路\s*[^·]*?(?=\s*·\s*|$)/, `基础线路数量 ${n}`);
+}));
+
 // 折扣校验规则（上传合同附件时执行）：非标折扣必须关联已通过的特批单且折扣率一致
 export const checkDiscount = (discount: number, specialId?: string): string | null => {
   if (discount > 0 && !specialId) return "折扣率 > 0 属于非标内容，必须先关联已通过的特批单";
