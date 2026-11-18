@@ -318,21 +318,24 @@ export default function DeliveryDetail() {
   };
   const setDevice = (i: number, patch: Partial<DevRow>) => setDevices((ds) => ds.map((d, j) => (j === i ? { ...d, ...patch } : d)));
 
+  /** 绑定扣减写入清单：分类标签 + 主文案 + 补充说明，避免一排浅蓝小字平铺不可读 */
   const logs = useMemo(() => {
     if (!bound) return [];
-    return [
-      ...(expanded ? [`②层写入 · 扩容生效：I-101 池容量 500M → ${fmt(pool101.capacityM)}M，月租 75,000 → ${fmt(pool101.monthlyCost)} 元`] : []),
+    type LogRow = { tag: string; color: string; bg: string; title: string; detail?: string };
+    const rows: LogRow[] = [
+      ...(expanded ? [{ tag: "出口带宽", color: "#165DFF", bg: "#E8F3FF", title: `I-101 扩容生效：池容量 500M → ${fmt(pool101.capacityM)}M`, detail: `月租 75,000 → ${fmt(pool101.monthlyCost)} 元/月` }] : []),
       ...(poolAsg ? (() => {
         const pool = POOLS.find((p) => p.id === poolAsg.poolId);
-        return [`②层写入 · 出口池 ${poolAsg.poolId} 已售带宽 +${fmt(poolAsg.bw)}M（现 ${fmt(pool?.dynamic.usedM ?? 0)}M / ${fmt(pool?.capacityM ?? 0)}M，客户向池采购、不指向具体出口）`];
-      })() : exits.map((e) => `②层写入 · 出口池 ${e.line} 已售带宽 +${fmt(e.bw)}M（现 ${fmt(lineOf(e.line).dynamic.usedM)}M / ${fmt(lineOf(e.line).capacityM)}M）`)),
-      ...ipAsgs.map((a, i) => `②层写入 · IP 精确分配：本单 ${calcs[i].rangeText}，已记入 ${ipOf(a.ip).segment.split("（")[0]} 占用区间`),
+        return [{ tag: "出口带宽", color: "#165DFF", bg: "#E8F3FF", title: `出口池 ${poolAsg.poolId} 已售带宽 +${fmt(poolAsg.bw)}M`, detail: `现 ${fmt(pool?.dynamic.usedM ?? 0)}M / ${fmt(pool?.capacityM ?? 0)}M · 客户向池采购、不指向具体出口` }];
+      })() : exits.map((e) => ({ tag: "出口带宽", color: "#165DFF", bg: "#E8F3FF", title: `出口 ${e.line} 已售带宽 +${fmt(e.bw)}M`, detail: `现 ${fmt(lineOf(e.line).dynamic.usedM)}M / ${fmt(lineOf(e.line).capacityM)}M` }))),
+      ...ipAsgs.map((a, i) => ({ tag: "IP 地址", color: "#0FC6C2", bg: "#E8FFFB", title: `本单分配 ${calcs[i].rangeText}`, detail: `已记入 ${ipOf(a.ip).segment.split("（")[0]} 占用区间` })),
       ...devices.map((d) => d.mode === STOCK_MODE
-        ? `②层写入 · ${devOf(d.id).name}：锁定 ${d.n} 台 → 出库（现存量 ${devOf(d.id).dynamic.stock + d.n} → ${devOf(d.id).dynamic.stock} 台）`
-        : `采购执行 · ${devOf(d.id).name} × ${d.n} 台按单采购，到货后直发客户现场（不占库存，一次性成本计入本单核算）`),
-      `②层写入 · 上联端口 #3 已用 3,200M → 3,250M`,
-      `档案页 R1/R3/R4 的蓝色实时区已同步更新（只读展示，无人工写入口）`,
+        ? { tag: "设备", color: "#722ED1", bg: "#F5E8FF", title: `${devOf(d.id).name} 锁定 ${d.n} 台 → 出库`, detail: `现存量 ${devOf(d.id).dynamic.stock + d.n} → ${devOf(d.id).dynamic.stock} 台` }
+        : { tag: "设备采购", color: "#D25F00", bg: "#FFF7E8", title: `${devOf(d.id).name} × ${d.n} 台 · 按单采购`, detail: "到货直发客户现场，不占库存，一次性成本计入本单核算" }),
+      { tag: "端口", color: "#4E5969", bg: "#F2F3F5", title: "上联端口 #3 已用 3,200M → 3,250M", detail: "占用量随本单带宽计入" },
+      { tag: "档案同步", color: "#00B42A", bg: "#E8F8F2", title: "R1 / R3 / R4 档案实时区已同步更新", detail: "只读展示，无人工写入口" },
     ];
+    return rows;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bound, r1, r3, r4, exits, ipAsgs, devices, expanded]);
 
@@ -1043,9 +1046,20 @@ export default function DeliveryDetail() {
                 {!bound ? (
                   <Button size="sm" onClick={bind}>执行绑定与扣减</Button>
                 ) : (
-                  <div className="space-y-1.5">
-                    {logs.map((l) => <div key={l} className="rounded-[2px] border border-[#BEDAFF] bg-[#E8F3FF] px-3 py-1.5 font-mono text-[11px] text-[#165DFF]">{l}</div>)}
-                    <div className="pt-2"><Button size="sm" onClick={() => setStep(4)}>进入开通实施 →</Button></div>
+                  <div className="space-y-3">
+                    <div className="overflow-hidden rounded-[2px] border border-[#E5E6EB]">
+                      {logs.map((l, i) => (
+                        <div key={i} className="flex items-start gap-3 border-b border-[#F2F3F5] bg-white px-4 py-2.5 last:border-0">
+                          <span className="mt-0.5 shrink-0 rounded-[2px] px-1.5 py-0.5 text-[11px] font-medium" style={{ color: l.color, background: l.bg }}>{l.tag}</span>
+                          <div className="min-w-0 flex-1">
+                            <div className="text-[13px] font-medium leading-5 text-[#1D2129]">{l.title}</div>
+                            {l.detail && <div className="mt-0.5 text-xs leading-4 text-[#86909C]">{l.detail}</div>}
+                          </div>
+                          <span className="mt-0.5 shrink-0 text-sm font-medium text-[#00B42A]">✓</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div><Button size="sm" onClick={() => setStep(4)}>进入开通实施 →</Button></div>
                   </div>
                 )}
               </section>
