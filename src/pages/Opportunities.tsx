@@ -6,7 +6,7 @@ import { useNavigate, useSearchParams } from "react-router";
 import { Download } from "lucide-react";
 import { useOpps, getOpps, addOpp, updateOpp, CUSTOMERS, OPP_STAGES, OPP_SOURCES, type Opportunity, type OppProduct, type OppStage } from "@/data/customers";
 import { useFollowups, pendingFollowups, confirmWithOpp, closeWithoutOpp, type ExpireFollowup } from "@/data/followups";
-import { CONTRACTS } from "@/data/contracts";
+import { dealContractBlock, ensureContractDealLink } from "@/data/contracts";
 import { inDataScope, scopeBanner, currentUser } from "@/data/users";
 import { useCatalog, CATS, PTYPES } from "@/data/products";
 import { DEMO_TODAY } from "@/data/settings";
@@ -167,6 +167,7 @@ function OppForm({ initial, presetCustomer, preset, onSaved, onClose }: {
 export default function Opportunities() {
   useOpps();
   useFollowups();
+  ensureContractDealLink(); // 老快照合同补 dealId 关联（「去签约」守卫的数据前提）
   const [sp] = useSearchParams();
   const navigate = useNavigate();
   const customerFilter = sp.get("customer"); // 从客户档案带入
@@ -272,7 +273,7 @@ export default function Opportunities() {
                   <td className="px-3 py-2.5 text-[#4E5969]">{d.source ?? "—"}</td>
                   <td className="px-3 py-2.5 text-[#4E5969]">{d.sales}</td>
                   <td className="px-3 py-2.5 text-right">
-                    {d.stage === "赢单" && !CONTRACTS.some((c) => c.dealId === d.id) && (
+                    {d.stage === "赢单" && !dealContractBlock(d.id) && (
                       <button onClick={() => navigate(`/contract/edit?customer=${encodeURIComponent(CUSTOMER_NAME(d.customerId))}&deal=${d.id}`)}
                         className="mr-1 rounded-[2px] bg-[#165DFF] px-2 py-0.5 text-[11px] text-white hover:bg-[#4080FF]">去签约 →</button>
                     )}

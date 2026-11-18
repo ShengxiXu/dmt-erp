@@ -2,7 +2,7 @@
 // 分步：① 合同要素（选择客户 / 关联特批单带出锁定折扣）→ ② 订单行（规格来自产品基础数据选项）→ ③ 确认并提交申请
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
-import { SPECIALS, CONTRACTS, checkDiscount, fmtMoney, initContractApproval, type OrderLine } from "@/data/contracts";
+import { SPECIALS, CONTRACTS, checkDiscount, fmtMoney, initContractApproval, dealContractBlock, ensureContractDealLink, type OrderLine } from "@/data/contracts";
 import { GET_OPP, CUSTOMERS, OPPS_OF } from "@/data/customers";
 import { ENTITIES, ENTITY_BY_ID } from "@/data/entities";
 import { DEMO_TODAY } from "@/data/settings";
@@ -13,9 +13,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 const emptyLine = (): OrderLine => ({ cat: CATS()[0] ?? "", ptype: PTYPES(CATS()[0] ?? "")[0] ?? "", spec: "", specs: {}, price: 0 });
+/** 合同状态文案：已生效与在途状态统一表述，用于拦截提示 */
+const CONTRACT_INFLIGHT_LBL = (s: string) => (s === "已生效" ? "已生效" : "在途");
 
 export default function ContractEdit() {
   useCatalog(); // 订阅产品目录：产品定义页的改动实时反映到订单行
+  ensureContractDealLink(); // 老快照合同补 dealId 关联（在途唯一拦截的数据前提）
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [step, setStep] = useState(0);
@@ -104,6 +107,11 @@ export default function ContractEdit() {
       if (missing.length) return alert(`订单行（${l.ptype}）存在必填规格未填：${missing.join("、")}`);
       if (!(Number(l.price) > 0)) return alert(`订单行（${l.ptype}）请填写月租`);
     }
+    // 商机维度在途单据唯一：已关联在途 / 生效合同的商机不允许重复发起（已驳回 / 已终止不占商机，可重新签约）
+    if (!renewSrc && base.dealId) {
+      const blk = dealContractBlock(base.dealId);
+      if (blk) return alert(`该商机已关联${blk.status === "已生效" ? "已生效" : "在途"}合同 ${blk.id}（${blk.status}），不允许重复签约。\n如原合同已驳回 / 终止，请先在合同详情页处理后重新发起。`);
+    }
     const id = `HT-2026-0${30 + CONTRACTS.length}`;
     const discount = Number(base.discount) || 0;
     CONTRACTS.unshift({
@@ -161,11 +169,25 @@ export default function ContractEdit() {
                   value={base.dealId} disabled={!base.customer || !!base.specialId || !!renewSrc}
                   onChange={(e) => applyDeal(e.target.value)}>
                   <option value="">{renewSrc ? `续签来源 ${renewSrc}（续签无需关联新商机）` : base.customer ? (oppsOfCust.length ? "选择该客户名下的商机（选定后按意向产品自动预填订单行）" : "该客户暂无可签商机（请到商机管理创建）") : "请先选择客户"}</option>
-                  {oppsOfCust.map((d) => (
-                    <option key={d.id} value={d.id}>{d.id} · {d.name} · {d.products.map((p) => p.ptype).join(" + ")} · 预计合同 {fmtMoney(d.expectAmount)} 元{d.expectMonths ? `（${d.expectMonths} 个月 · 月均 ${fmtMoney(Math.round(d.expectAmount / d.expectMonths))}）` : ""}{d.stage === "赢单" ? "（已赢单）" : ""}</option>
-                  ))}
+                  {oppsOfCust.map((d) => {
+                    const blk = dealContractBlock(d.id);
+                    return (
+                      <option key={d.id} value={d.id} disabled={!!blk}>
+                        {d.id} · {d.name} · {d.products.map((p) => p.ptype).join(" + ")} · 预计合同 {fmtMoney(d.expectAmount)} 元{d.expectMonths ? `（${d.expectMonths} 个月 · 月均 ${fmtMoney(Math.round(d.expectAmount / d.expectMonths))}）` : ""}{d.stage === "赢单" ? "（已赢单）" : ""}
+                        {blk ? ` · 已有${CONTRACT_INFLIGHT_LBL(blk.status)}合同 ${blk.id}，不可再签` : ""}
+                      </option>
+                    );
+                  })}
                 </select>
                 <div className="mt-0.5 text-[10px] text-[#C9CDD4]">形成 客户 → 商机 → 特批 → 合同 链路；合同生效后商机自动关闭并转生成订单</div>
+                {(() => {
+                  const blk = dealContractBlock(base.dealId);
+                  return blk ? (
+                    <div className="mt-1 rounded-[2px] border border-[#FFE1B3] bg-[#FFF7E8] px-2 py-1 text-[10px] leading-4 text-[#B25E00]">
+                      ⚠ 该商机已关联{blk.status === "已生效" ? "已生效" : "在途"}合同 <span className="font-mono">{blk.id}</span>（{blk.status}），不允许重复签约。若原合同已驳回 / 终止，请先在合同详情页处理后再发起。
+                    </div>
+                  ) : null;
+                })()}
               </div>
               <div>
                 <div className="mb-0.5 text-xs text-[#4E5969]">关联特批单（该商机有且仅有一张已通过的特批单时自动锁定；多张时手动选择）</div>

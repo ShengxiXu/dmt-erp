@@ -3,7 +3,7 @@
 // 特批必须挂在「商机」上（客户 → 商机 → 特批 → 合同），发起时先选客户再选该客户的商机
 import { useState } from "react";
 import { useNavigate } from "react-router";
-import { SPECIALS, useSpecials, addSpecial, decideSpecial, SPECIAL_LEVELS, type Special } from "@/data/contracts";
+import { SPECIALS, useSpecials, addSpecial, decideSpecial, SPECIAL_LEVELS, dealSpecialInflight, dealContractBlock, type Special } from "@/data/contracts";
 import { CUSTOMERS, useOpps, getOpps, GET_OPP, type Opportunity } from "@/data/customers";
 import { inDataScope, scopeBanner } from "@/data/users";
 import { ownerOfDeal } from "@/data/ownership";
@@ -107,6 +107,11 @@ export default function Special() {
   const submitNew = () => {
     if (!form.customer || !form.dealId) return alert("请选择客户及其商机（特批必须针对具体机会发起）");
     if (!form.discount || !form.terms) return alert("请填写折扣率、特殊条款");
+    // 商机维度唯一性：在途特批单唯一（已驳回可重新发起）；已有在途 / 已生效合同的商机不再发起特批
+    const inflight = dealSpecialInflight(form.dealId);
+    if (inflight) return alert(`该商机已有一张在途特批申请（${inflight.id}），请勿重复发起；如条款变更请先由原单走完审批（或驳回后重新发起）`);
+    const blk = dealContractBlock(form.dealId);
+    if (blk) return alert(`该商机已关联合同 ${blk.id}（${blk.status}），折扣与条款应在合同发起前完成特批，请勿再发起特批申请`);
     addSpecial({ customer: form.customer, dealId: form.dealId, discount: Number(form.discount), terms: form.terms, reason: form.reason });
     setCreating(false);
     setForm({ customer: "", dealId: "", discount: "", terms: "", reason: "" });
@@ -179,7 +184,12 @@ export default function Special() {
               <select className="w-full rounded-[2px] border border-[#E5E6EB] bg-white px-2 py-1.5 text-sm disabled:bg-[#F7F8FA]" disabled={!form.customer}
                 value={form.dealId} onChange={(e) => setForm({ ...form, dealId: e.target.value })}>
                 <option value="">{form.customer ? "选择该客户下的商机" : "—"}</option>
-                {dealOptions.map((d) => <option key={d.id} value={d.id}>{d.name} · {d.products.map((p) => `${p.cat}/${p.ptype}`).join("、")} · 预计合同 {d.expectAmount.toLocaleString("zh-CN")} 元{d.expectMonths ? `（${d.expectMonths} 个月）` : ""}（{d.stage}）</option>)}
+                {dealOptions.map((d) => {
+                  const spInflight = dealSpecialInflight(d.id);
+                  const blk = dealContractBlock(d.id);
+                  const reason = spInflight ? `在途特批 ${spInflight.id}` : blk ? `已关联合同 ${blk.id}（${blk.status}）` : "";
+                  return <option key={d.id} value={d.id} disabled={!!reason}>{d.name} · {d.products.map((p) => `${p.cat}/${p.ptype}`).join("、")} · 预计合同 {d.expectAmount.toLocaleString("zh-CN")} 元{d.expectMonths ? `（${d.expectMonths} 个月）` : ""}（{d.stage}{reason ? ` · ${reason}，不可再发起` : ""}）</option>;
+                })}
               </select>
               {form.customer && !dealOptions.length && (
                 <div className="mt-1 text-[10px] leading-4 text-[#FF7D00]">该客户暂无商机，请先到商机管理创建后再发起特批</div>

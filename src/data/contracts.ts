@@ -2,7 +2,7 @@
 // 依据《特批与合同管理模块设计-v1.0》：合同+订单合二为一，合同生效即订单生效
 import { useSyncExternalStore } from "react";
 import { DEMO_TODAY } from "@/data/settings";
-import { persistable } from "@/data/persist";
+import { persistable, hasSnapshot } from "@/data/persist";
 
 export const SPECIAL_LEVELS = ["业务支撑部（业务条款）", "财务负责人（折扣与账期）", "管理层（例外与风险）"];
 
@@ -136,7 +136,7 @@ export interface Contract {
 
 export const CONTRACTS: Contract[] = persistable("contracts", () => [
   {
-    id: "HT-2026-021", entityId: "ENT-HQ", customer: "云启数据科技", specialId: "SA-2026-011", discount: 12,
+    id: "HT-2026-021", entityId: "ENT-HQ", customer: "云启数据科技", dealId: "CJ-2026-001", specialId: "SA-2026-011", discount: 12,
     terms: "AI 专线 99.99% SLA + 突发带宽弹性扩容条款",
     seal: "online", pay: "月付", start: "2026-11-01", end: "2027-10-31", amount: 84480,
     status: "签署中", step: 1,
@@ -173,7 +173,7 @@ export const CONTRACTS: Contract[] = persistable("contracts", () => [
     versions: [{ v: 1, note: "初始版本（标准合同）", at: "2026-10-26" }],
   },
   {
-    id: "HT-2026-020", entityId: "ENT-HQ", customer: "凯瑞传媒", specialId: "SA-2026-013", discount: 15,
+    id: "HT-2026-020", entityId: "ENT-HQ", customer: "凯瑞传媒", dealId: "CJ-2026-004", specialId: "SA-2026-013", discount: 15,
     terms: "半年付改为月付",
     seal: "online", pay: "月付", start: "2026-11-01", end: "2027-10-31", amount: 25500,
     status: "待修订", step: 0,
@@ -315,3 +315,25 @@ export const nearestActiveEnd = (customer: string): { end: string; days: number 
   const nearest = actives.reduce((a, b) => (daysToEnd(a) <= daysToEnd(b) ? a : b));
   return { end: nearest.end, days: daysToEnd(nearest) };
 };
+
+// ---------- 商机维度唯一性约束（客户 → 商机 → 特批 → 合同，在途单据唯一） ----------
+/** 在途合同状态：审批中 / 待出合同 / 待用章 / 签署中 / 待修订（终态：已生效 / 已驳回 / 已终止） */
+export const CONTRACT_INFLIGHT: ContractStatus[] = ["审批中", "待出合同", "待用章", "签署中", "待修订"];
+/** 商机被既有合同占用（在途或已生效）→ 不允许再发起合同申请；已驳回 / 已终止的合同不占商机，可重新签约 */
+export const dealContractBlock = (dealId: string): Contract | null =>
+  dealId ? (CONTRACTS.find((c) => c.dealId === dealId && (CONTRACT_INFLIGHT.includes(c.status) || c.status === "已生效")) ?? null) : null;
+/** 商机已有在途特批申请 → 不允许重复发起（已驳回的可重新发起） */
+export const dealSpecialInflight = (dealId: string): Special | null =>
+  dealId ? (SPECIALS.find((s) => s.dealId === dealId && s.status === "审批中") ?? null) : null;
+
+// 版本迁移（2026-11-18）：早前快照里的合同缺 dealId 关联（当时数据未回填），
+// 启动时经「合同 → 特批单 → 商机」链路原地补齐（导出引用不变，5 秒快照自动落盘）。
+// 必须在组件体内调用，禁止模块加载时执行（与台账初始化时序解耦）。
+export function ensureContractDealLink(): void {
+  if (!hasSnapshot("contracts")) return;
+  for (const c of CONTRACTS) {
+    if (c.dealId || !c.specialId) continue;
+    const sp = SPECIALS.find((s) => s.id === c.specialId);
+    if (sp?.dealId) c.dealId = sp.dealId;
+  }
+}
