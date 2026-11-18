@@ -7,6 +7,7 @@ import { CONTRACTS, ONLINE_STEPS, OFFLINE_STEPS, fmtMoney, expiringContracts, da
 import { ENTITY_NAME } from "@/data/entities";
 import { inDataScope, scopeBanner } from "@/data/users";
 import { ownerOfDeal } from "@/data/ownership";
+import { GET_OPP } from "@/data/customers";
 import { DEMO_TODAY } from "@/data/settings";
 import { exportCsv } from "@/utils/exportCsv";
 import ArcoShell from "@/components/ArcoShell";
@@ -68,8 +69,8 @@ export default function ContractList() {
               className={`rounded-[2px] border px-2.5 py-1.5 text-xs transition-colors ${onlyExpiring ? "border-[#FF7D00] bg-[#FFF7E8] font-medium text-[#FF7D00]" : "border-[#E5E6EB] text-[#4E5969] hover:border-[#FF7D00] hover:text-[#FF7D00]"}`}>
               ⏳ 临期预警{expiringScoped.length ? `（${expiringScoped.length}）` : ""}
             </button>
-            <button onClick={() => exportCsv(`合同台账_${DEMO_TODAY}`, ["合同号", "客户", "订单内容", "月租合计(元)", "付款方式", "折扣", "签约主体", "状态", "合同期限"],
-              shown.map((c) => [c.id, c.customer, c.lines.map((l) => l.ptype).join("+"), c.amount, c.pay, c.discount ? `${c.discount}%` : "标准", ENTITY_NAME(c.entityId), c.status, `${c.start} ~ ${c.end}`]))}
+            <button onClick={() => exportCsv(`合同台账_${DEMO_TODAY}`, ["合同号", "客户", "商机名称", "订单内容", "月租合计(元)", "付款方式", "折扣", "签约主体", "状态", "合同期限"],
+              shown.map((c) => [c.id, c.customer, GET_OPP(c.dealId ?? "")?.name ?? "", c.lines.map((l) => l.ptype).join("+"), c.amount, c.pay, c.discount ? `${c.discount}%` : "标准", ENTITY_NAME(c.entityId), c.status, `${c.start} ~ ${c.end}`]))}
               className="flex items-center gap-1 rounded-[2px] border border-[#E5E6EB] px-2.5 py-1.5 text-xs text-[#4E5969] hover:border-[#165DFF] hover:text-[#165DFF]">
               <Download size={12} /> 导出
             </button>
@@ -85,7 +86,7 @@ export default function ContractList() {
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b bg-[#F7F8FA] text-left text-[#4E5969]">
-                <th className="px-3 py-2">合同号</th><th className="px-3 py-2">客户</th><th className="px-3 py-2">订单内容摘要</th>
+                <th className="px-3 py-2">合同号</th><th className="px-3 py-2">客户</th><th className="px-3 py-2">商机名称</th><th className="px-3 py-2">订单内容摘要</th>
                 <th className="px-3 py-2 text-right">月租合计（元）</th><th className="px-3 py-2">付款方式</th><th className="px-3 py-2">折扣</th>
                 <th className="px-3 py-2">签约主体</th><th className="px-3 py-2">用章方式</th><th className="px-3 py-2">状态 / 签署进度</th><th className="px-3 py-2">合同期限</th><th className="px-3 py-2 text-right">操作</th>
               </tr>
@@ -97,6 +98,7 @@ export default function ContractList() {
                   <tr key={c.id} className="cursor-pointer border-b last:border-0 hover:bg-[#F7F8FA]" onClick={() => navigate(`/contract/detail?id=${c.id}`)}>
                     <td className="px-3 py-2.5 font-mono text-[#165DFF]">{c.id}</td>
                     <td className="px-3 py-2.5 font-medium text-[#1D2129]">{c.customer}</td>
+                    <td className="max-w-[180px] truncate px-3 py-2.5 text-[#4E5969]" title={GET_OPP(c.dealId ?? "")?.name ?? ""}>{GET_OPP(c.dealId ?? "")?.name ?? <span className="text-[#C9CDD4]">—</span>}</td>
                     <td className="max-w-[220px] truncate px-3 py-2.5 text-[#4E5969]">{c.lines.map((l) => l.ptype).join(" + ")}</td>
                     <td className="px-3 py-2.5 text-right font-mono">{fmtMoney(c.amount)}</td>
                     <td className="px-3 py-2.5 text-[#4E5969]">{c.pay}</td>
@@ -115,7 +117,7 @@ export default function ContractList() {
                   </tr>
                 );
               })}
-              {!shown.length && <tr><td colSpan={11} className="px-3 py-10 text-center text-[#86909C]">该状态下暂无合同</td></tr>}
+              {!shown.length && <tr><td colSpan={12} className="px-3 py-10 text-center text-[#86909C]">该状态下暂无合同</td></tr>}
             </tbody>
           </table>
         </div>
