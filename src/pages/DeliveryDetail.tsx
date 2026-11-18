@@ -92,8 +92,11 @@ export default function DeliveryDetail() {
   };
   const [exits, setExits] = useState<ExitRes[]>(initExits);
   const [ipAsgs, setIpAsgs] = useState<IpAsg[]>(initIpAsgs);
-  /** 基础线路：核算阶段选定并锁定（唯一锁定项）；快照 → 历史条目解析 → 兜底 B-001 */
-  const [bases] = useState<string[]>(planItem?.bases?.length ? [...planItem.bases] : legacyBases ?? ["B-001"]);
+  /** 基础线路：核算阶段选定并锁定（唯一锁定项）；快照与条目快照取并集（防历史数据不一致丢条），无据时兜底 B-001 */
+  const [bases] = useState<string[]>(() => {
+    const merged = [...new Set([...(planItem?.bases ?? []), ...(legacyBases ?? [])])];
+    return merged.length ? merged : ["B-001"];
+  });
   const [devices, setDevices] = useState<DevRow[]>([{ id: "EQ-AR6121", mode: STOCK_MODE, n: 2 }]);
   /** 出口负载评估结论（工程师人工），按线路号记录 */
   const [verdicts, setVerdicts] = useState<Record<string, "" | "ok" | "full">>({});

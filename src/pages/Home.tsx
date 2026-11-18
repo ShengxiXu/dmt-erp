@@ -141,7 +141,7 @@ const basePickStore: Record<string, SourceRow[]> = {};
 const ipPickStore: Record<string, { segId: string; n: number }> = {};
 
 function EntryRow({
-  item, rowKey, slotCarrier, locked, stale, onRemove, onAmount, internetRows, onPickInternets, ipFreeSearch, ipNeed, baseOthers, onPickBases, linePtype,
+  item, rowKey, slotCarrier, locked, stale, onRemove, onAmount, internetRows, onPickInternets, ipFreeSearch, ipNeed, lineBwM, baseOthers, onPickBases, linePtype,
 }: {
   item: CatalogItem;
   /** 行唯一键：含资源位后缀（如 op1|电信），同一条目可因模板展开多个资源位 */
@@ -161,6 +161,8 @@ function EntryRow({
   ipFreeSearch?: boolean;
   /** 本行客户需求的 IP 地址数量（合同行带入），选中绑定 IP 后与之校验 */
   ipNeed?: number;
+  /** 本行合同带宽（合同行带入）：「本单带宽」类条目数量默认值同步来源，避免按演示值核算 */
+  lineBwM?: number;
   /** 本行订单行 id（共用基础线路时标识来源） */
   lineId?: string;
   /** 本行订单的产品类型（合同行带入）：选资源时按它自动过滤（归属该类型 + 可共享给该类型） */
@@ -171,7 +173,9 @@ function EntryRow({
   onPickBases?: (rs: SourceRow[]) => void;
 }) {
   const qf = qtyField(item);
-  const [qty, setQty] = useState<number>(DEFAULT_QTY[item.demo] ?? 1);
+  /** 「本单带宽」类条目：数量默认同步合同行带宽（如合同 500M 即默认填 500），合同未填带宽时回退演示默认值 */
+  const bwQtyDemo = ["bwinternet", "bgpplat", "port", "resale"].includes(item.demo);
+  const [qty, setQty] = useState<number>(bwQtyDemo && lineBwM ? lineBwM : (DEFAULT_QTY[item.demo] ?? 1));
   // 本行填报数量同步到 bwStore：提交审批时锁存出口池预估快照用
   useEffect(() => { bwStore[rowKey] = qty; }, [rowKey, qty]);
   const [meta, setMeta] = useState<number>(0);
@@ -377,8 +381,10 @@ function EntryRow({
                     <button key={lid + row.id} type="button"
                       className="rounded-[2px] border border-[#7BD9A8] bg-[#E8F8F2] px-1.5 py-0.5 text-[#00B42A] hover:bg-[#A9E8CD]"
                       onClick={() => {
-                        setPickedList((ls) => (ls.some((x) => x.id === row.id) ? ls : [...ls, row]));
+                        const next = pickedList.some((x) => x.id === row.id) ? pickedList : [...pickedList, row];
+                        setPickedList(next);
                         setSharedIds((ls) => (ls.includes(row.id) ? ls : [...ls, row.id]));
+                        onPickBases?.(next);
                       }}>
                       {lid} · {row.id} 共用
                     </button>
@@ -388,7 +394,14 @@ function EntryRow({
               <ArchivePicker
                 sourceKey="linebase"
                 multi
-                onPickMulti={(rs) => { setPickedList(rs); setSharedIds((ls) => ls.filter((id) => rs.some((r) => r.id === id))); onPickBases?.(rs); }}
+                onPickMulti={(rs) => {
+                  // 保留当前标记为「共用」的行（档案选择器返回的是重新选择的清单，直接替换会丢掉共用行）
+                  const kept = pickedList.filter((r) => sharedIds.includes(r.id) && !rs.some((x) => x.id === r.id));
+                  const next = [...rs, ...kept];
+                  setPickedList(next);
+                  setSharedIds((ls) => ls.filter((id) => next.some((r) => r.id === id)));
+                  onPickBases?.(next);
+                }}
               />
               {pickedList.length > 0 && (
                 <div className="flex flex-wrap gap-1.5 text-xs">
@@ -620,14 +633,15 @@ interface OrderLine {
   cat: string;           // 产品类别（ISP 互联网接入 / 数据专线 / IDC / 云 / 安全 / 转售业务）
   ptype?: string;        // 产品类型（AI 专线 / BGP 三网互通 / OTN …，成本条目按产品类型「装配」加载）
   ipNeed: number;        // 客户需求的 IP 地址数量（合同行带入，只读；成本核算选中绑定 IP 后与之校验）
+  bwM?: number;          // 合同行带宽（成本核算「本单带宽」类条目数量的默认值同步来源，避免按演示值 50 核算）
 }
 
 const INIT_LINES: OrderLine[] = [
-  { id: "L1", name: "BGP 三网互通 50M（ISP 互联网接入）", price: 12000, cat: "isp", ptype: "BGP 三网互通", ipNeed: 1 },
-  { id: "L2", name: "国内精品网专线 50M（ISP 互联网接入）", price: 9000, cat: "isp", ptype: "国内精品网", ipNeed: 4 },
+  { id: "L1", name: "BGP 三网互通 50M（ISP 互联网接入）", price: 12000, cat: "isp", ptype: "BGP 三网互通", ipNeed: 1, bwM: 50 },
+  { id: "L2", name: "国内精品网专线 50M（ISP 互联网接入）", price: 9000, cat: "isp", ptype: "国内精品网", ipNeed: 4, bwM: 50 },
   { id: "L3", name: "OTN 上海—北京 专线（数据专线）", price: 18000, cat: "otn", ptype: "OTN", ipNeed: 0 },
   { id: "L4", name: "SD-WAN 组网专线（数据专线）", price: 6000, cat: "otn", ptype: "SD-WAN", ipNeed: 0 },
-  { id: "L5", name: "电信线路转售 100M（转售业务 · 转买转卖）", price: 8000, cat: "resale", ptype: "运营商线路/裸光纤/设备转售", ipNeed: 0 },
+  { id: "L5", name: "电信线路转售 100M（转售业务 · 转买转卖）", price: 8000, cat: "resale", ptype: "运营商线路/裸光纤/设备转售", ipNeed: 0, bwM: 100 },
 ];
 
 // ---------- 合同 → 核算：订单行由已生效合同带入（合同与订单合二为一，2026-10-26） ----------
@@ -643,6 +657,8 @@ const SHORT_TO_CAT: Record<string, string> = Object.fromEntries(
 function linesFromContract(c: Contract): OrderLine[] {
   return c.lines.map((l, i) => {
     const ip = l.spec.match(/IP\s*(\d+)\s*个/);
+    // 带宽取合同行规格：「500M」「200M ×2」（×N 为多条同规格线路时按合计带宽）
+    const bw = l.spec.match(/(\d+)\s*M(?:\s*[×x]\s*(\d+))?/);
     return {
       id: `L${i + 1}`,
       name: `${l.ptype}${l.spec ? ` · ${l.spec}` : ""}（${l.cat}）`,
@@ -650,6 +666,7 @@ function linesFromContract(c: Contract): OrderLine[] {
       cat: CAT_MAP[l.cat] ?? "isp",
       ptype: l.ptype,
       ipNeed: ip ? Number(ip[1]) : 0,
+      bwM: bw ? Number(bw[1]) * (bw[2] ? Number(bw[2]) : 1) : undefined,
     };
   });
 }
@@ -961,6 +978,7 @@ export default function Home() {
                 onPickInternets={(rs) => { internetPickStore[l.id] = rs; bump((x) => x + 1); }}
                 ipFreeSearch={!rows.ops.some((k) => k.split("|")[0] === "op1b")}
                 ipNeed={l.ipNeed}
+                lineBwM={l.bwM}
                 lineId={l.id}
                 linePtype={l.ptype}
                 baseOthers={baseOthers}
