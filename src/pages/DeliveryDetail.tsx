@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { WORK_ORDERS, STEP_NAMES, TECH_PARAMS, CATS, IP_OCCUPIED, CAT_DESC } from "@/data/delivery";
+import { ensureArchiveSync } from "@/data/catalog"; // 资源选择器 ↔ R1/R2 台账一致性回填（历史快照缺行时补齐，如 B-003 / PN-PON）
 import { R1_ROWS, R2_ROWS, R3_ROWS, R4_ROWS, untilOf } from "@/data/resources";
 import { POOLS, usePools, poolWater, poolMeasureDue, addPoolOrder, removePoolOrder } from "@/data/pool";
 import { entriesOfSheet, LINE_META_OF, woPlanOf } from "@/data/sheets";
@@ -40,6 +41,7 @@ const STOCK_MODE = "库存直绑（P02）";
 
 export default function DeliveryDetail() {
   usePurchaseFlow();
+  ensureArchiveSync(); // 组件运行时执行（模块已全部初始化）：补齐历史快照缺失的档案行，保证已选资源可查
   const [sp] = useSearchParams();
   const id = sp.get("id") ?? "WO-2026-052";
   const wo = WORK_ORDERS.find((w) => w.id === id) ?? WORK_ORDERS[0];
@@ -862,7 +864,12 @@ export default function DeliveryDetail() {
                       {bases.length === 0 && <div className="rounded-[2px] border border-dashed border-[#E5E6EB] px-3 py-1.5 text-xs text-[#86909C]">核算单未选定基础线路</div>}
                       {bases.map((bid) => {
                         const r = R2_ROWS.find((x) => x.id === bid);
-                        if (!r) return null;
+                        if (!r) return (
+                          <div key={bid} className="rounded-[2px] border border-dashed border-[#FFCF8B] bg-[#FFF7E8] px-2.5 py-1.5 text-left text-xs text-[#D25F00]">
+                            <span className="font-mono font-semibold">{bid}</span>
+                            <span className="ml-1">基础线路档案中未找到该线路（请核对资源清单与档案一致性）</span>
+                          </div>
+                        );
                         return (
                           <div key={bid} className="rounded-[2px] border border-[#165DFF] bg-[#E8F3FF] px-2.5 py-1.5 text-left text-xs text-[#165DFF]">
                             <span className="font-mono font-semibold">{r.id}</span>

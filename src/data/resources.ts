@@ -193,6 +193,18 @@ export const R1_ROWS: R1Row[] = persistable("r1Rows", () => [
       ],
     },
   },
+  {
+    id: "PN-PON", name: "PON汇聚上联通道-10G", product: "OPON", sharedWith: "",
+    carrier: "三方", region: "上海市徐汇区漕河泾机房", contractNo: "PON-2026-006",
+    capacityM: 10000, monthlyCost: 180000, effect: "2025-06-01", status: "生效",
+    dynamic: {
+      usedM: 6500, peakM: 7200,
+      orders: [
+        { customer: "智慧园区接入（批量 260 户）", bw: 3900, since: "2025-06" },
+        { customer: "酒店集团客房宽带", bw: 2600, since: "2025-11" },
+      ],
+    },
+  },
 ]);
 
 // ---------- R2 基础线路 ----------
@@ -210,6 +222,7 @@ export const R2: ArchiveDef = {
 export const R2_ROWS: R2Row[] = persistable("r2Rows", () => [
   { id: "B-001", name: "电信-CN2GIA-客户侧↔漕河泾机房-100M", carrier: "电信", bwM: 100, billing: "周期性（月）", price: 1000, contractNo: "CT-2026-063", shareable: "是", effect: "2026-01-01", status: "生效", dynamic: { usedBy: "本单 ISP 行已关联（核算中）" } },
   { id: "B-002", name: "联通-169-客户侧↔漕河泾机房-200M", carrier: "联通", bwM: 200, billing: "周期性（月）", price: 1600, contractNo: "CU-2026-042", shareable: "是", effect: "2025-12-01", status: "生效" },
+  { id: "B-003", name: "移动-CMNET-客户侧↔漕河泾机房-100M", carrier: "移动", bwM: 100, billing: "周期性（月）", price: 700, contractNo: "CM-2026-015", shareable: "是", effect: "2026-06-01", status: "生效" },
   { id: "B-201", name: "电信-上海↔北京-OTN波道10G（含两端）", carrier: "电信", bwM: 10000, billing: "周期性（月）", price: 6000, contractNo: "OT-2026-009", shareable: "是", effect: "2026-03-01", status: "生效", dynamic: { usedBy: "数据专线行关联（核算中）" } },
   { id: "B-202", name: "电信-上海↔广州-OTN波道10G（含两端）", carrier: "电信", bwM: 10000, billing: "周期性（月）", price: 5200, contractNo: "OT-2026-015", shareable: "是", effect: "2026-05-01", status: "生效" },
 ]);

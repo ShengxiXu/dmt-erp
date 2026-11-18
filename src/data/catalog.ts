@@ -647,3 +647,36 @@ const MODE_DEFS: DeliveryModeDef[] = [
   { key: "PT-INTL", name: "国际精品网", resourceNote: "出口资源选国际精品网出口（境外运营商采购，如 PN-INTL）" },
 ];
 export const MODES: DeliveryMode[] = MODE_DEFS.map((m) => ({ ...m, rows: buildRows(m) }));
+
+// ---------- 档案一致性兜底（资源选择器 ↔ R1/R2 台账） ----------
+// 核算可选项（SOURCES）与资源台账（R1 出口 / R2 基础线路）必须同集：
+// 历史本地快照里的台账可能缺行（如旧快照无 B-003 / PN-PON），导致工单页按 id 查档案查不到、已选 N 条只显 N-1 条。
+// 注意：resources → products → catalog 存在模块环，本函数不得在本模块加载时执行（会踩 TDZ）；
+// 由消费页面在组件体内调用（此时全部模块已初始化），按选择器清单回填缺失行（原地 push，下一次定时快照持久化）。
+import { R1_ROWS, R2_ROWS } from "./resources";
+import type { R1Row, R2Row } from "./resources";
+
+const CARRIER_OF = (t: string) => t.match(/电信|联通|移动/)?.[0] ?? (t.includes("境外") || t.includes("香港") ? "境外运营商" : "三方");
+const CONTRACT_OF = (s: string) => s.match(/合同\s*([A-Z]+-[\d-]+)/)?.[1] ?? "";
+const BW_OF = (t: string) => Number(t.match(/(\d+)\s*M/)?.[1] ?? 0);
+
+export function ensureArchiveSync(): void {
+  for (const r of SOURCES.linebase.rows) {
+    if (R2_ROWS.some((x) => x.id === r.id)) continue;
+    R2_ROWS.push({
+      id: r.id, name: r.title, carrier: CARRIER_OF(r.title),
+      bwM: BW_OF(r.title), billing: "周期性（月）", price: Number(r.meta ?? 0),
+      contractNo: CONTRACT_OF(r.sub), shareable: r.sub.includes("可跨产品类型共用") ? "是" : "否",
+      effect: "", status: "生效",
+    } satisfies R2Row);
+  }
+  for (const r of SOURCES.lineinternet.rows) {
+    if (R1_ROWS.some((x) => x.id === r.id)) continue;
+    R1_ROWS.push({
+      id: r.id, name: r.title.split("｜")[0], product: r.ptag ?? "", sharedWith: (r.shareTo ?? []).join("、"),
+      carrier: CARRIER_OF(r.title), region: "", contractNo: CONTRACT_OF(r.sub),
+      capacityM: r.pool?.capacityM ?? 0, monthlyCost: Number(r.meta ?? 0), effect: "", status: "生效",
+      dynamic: { usedM: r.pool?.usedM ?? 0, orders: r.pool?.orders ?? [] },
+    } satisfies R1Row);
+  }
+}
