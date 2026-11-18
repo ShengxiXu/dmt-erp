@@ -6,7 +6,7 @@ import { useNavigate, useSearchParams } from "react-router";
 import { SHEETS, SHEET_ENTRIES, entriesOfSheet, fmt } from "@/data/sheets";
 import { CONTRACTS, SPECIALS } from "@/data/contracts";
 import { GET_OPP } from "@/data/customers";
-import { useApprovalFlow, getInstances, approveInstance, rejectInstance, nodeLabel, FIELD_DEFS, type ApprovalInstance } from "@/data/approvalFlow";
+import { useApprovalFlow, getInstances, approveInstance, rejectInstance, submitForApproval, nodeLabel, FIELD_DEFS, type ApprovalInstance } from "@/data/approvalFlow";
 import { currentUser } from "@/data/users";
 import ArcoShell from "@/components/ArcoShell";
 import { Button } from "@/components/ui/button";
@@ -76,6 +76,7 @@ function InstancePanel({ inst, doneText }: { inst: ApprovalInstance; doneText?: 
   const [comment, setComment] = useState("");
   const [rejectOpen, setRejectOpen] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const [reMsg, setReMsg] = useState<string | null>(null);
   const act = (fn: (id: string, by: string, cmt: string) => string | null, cmt: string) => {
     const err = fn(inst.id, currentUser()?.name ?? "当前登录人", cmt);
     setMsg(err);
@@ -130,7 +131,16 @@ function InstancePanel({ inst, doneText }: { inst: ApprovalInstance; doneText?: 
           ) : inst.status === "已通过" ? (
             <div className="w-full rounded-[2px] bg-[#E8F8F2] px-3 py-2 text-center text-xs text-[#00B42A]">{doneText ?? "审批完成 · 结果已写回业务单据"}</div>
           ) : inst.status === "已驳回" ? (
-            <div className="w-full rounded-[2px] bg-[#FFECE8] px-3 py-2 text-center text-xs text-[#F53F3F]">已驳回 · 单据按「{inst.snapshot.rejectPolicy}」退回发起人</div>
+            <div className="w-full space-y-2">
+              <div className="w-full rounded-[2px] bg-[#FFECE8] px-3 py-2 text-center text-xs text-[#F53F3F]">已驳回 · 单据按「{inst.snapshot.rejectPolicy}」退回发起人</div>
+              <Button size="sm" className="w-full" onClick={() => {
+                // 原样重报：按本实例的快照上下文发起新审批实例（引擎幂等——在途实例不重复建；原驳回实例保留留痕）
+                const r = submitForApproval(inst.docType, inst.docId, inst.summary, inst.ctx, currentUser()?.name ?? inst.submitter, inst.title);
+                if (r.hit && r.instance) setReMsg(`已重新提交 → 新审批实例 ${r.instance.id}（原实例 ${inst.id} 保留留痕；如需修改填报内容，请回业务单据页调整后提交）`);
+                else setReMsg(r.reason ?? "未命中审批流，请检查审批流配置");
+              }}>重新提交（原样重报）</Button>
+              {reMsg && <div className="rounded-[2px] bg-[#E8F8F2] px-2 py-1.5 text-[11px] leading-4 text-[#00701A]">{reMsg}</div>}
+            </div>
           ) : (
             <div className="w-full rounded-[2px] bg-[#F7F8FA] px-3 py-2 text-center text-xs text-[#4E5969]">当前状态不可审批</div>
           )}
@@ -257,6 +267,15 @@ export default function Approval() {
                       <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); open(i.id); }}>
                         {i.status === "审批中" ? "去审批" : "查看"}
                       </Button>
+                      {i.status === "已驳回" && (
+                        <Button size="sm" className="ml-1.5" onClick={(e) => {
+                          e.stopPropagation();
+                          // 快捷重报：按该实例快照上下文原样重新提交，成功后直接打开新审批实例（原实例保留留痕）
+                          const r = submitForApproval(i.docType, i.docId, i.summary, i.ctx, currentUser()?.name ?? i.submitter, i.title);
+                          if (r.hit && r.instance) open(r.instance.id);
+                          else alert(r.reason ?? "未命中审批流，请检查审批流配置");
+                        }}>重新提交</Button>
+                      )}
                     </td>
                   </tr>
                 ))}

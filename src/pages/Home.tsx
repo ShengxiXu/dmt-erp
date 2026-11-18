@@ -11,7 +11,7 @@ import {
 import { getCostItems, useCostItems, SETTLE_RULE, uncoveredClasses, type CostItem } from "@/data/costItems";
 import { GET_TYPE, MAT_DEF, useCatalog } from "@/data/products";
 import { CONTRACTS, type Contract } from "@/data/contracts";
-import { POOLS, poolExits, poolWater, type PoolDef } from "@/data/pool";
+import { POOLS, poolExits, poolWater, usePools, type PoolDef } from "@/data/pool";
 import { snapshotEsts, usePoolSettle, type PoolEst } from "@/data/poolSettle";
 import { SHEETS, SHEET_OF_CONTRACT, ensureSheetForContract, fillSheet, recordSheetEntries, recordSheetLines, recordWoPlan, type WoPlanItem } from "@/data/sheets";
 import { submitForApproval } from "@/data/approvalFlow";
@@ -49,10 +49,9 @@ function calcAmount(item: CatalogItem, qty: number, meta: number, picked?: Sourc
         groups.set(r.ptag ?? "", g);
       });
       const parts = Array.from(groups.entries()).map(([ptag, rs]) => {
-        // BGP 三网互通：挂「出口池」计价（客户向池采购、不指向具体出口）——以选定的 R0 池实体为准
-        if (ptag === "BGP 三网互通") {
-          const pool = poolPick ?? POOLS.find((p) => p.product === "BGP 三网互通");
-          if (!pool) return { t: `${ptag}（未找到出口池档案）`, v: 0 };
+        // 池化条目（产品组成含出口池的类型，如 BGP 三网互通）：挂「出口池」计价（客户向池采购、不指向具体出口）——以选定的 R0 池实体为准
+        if (poolPick) {
+          const pool = poolPick;
           const sold = pool.dynamic.usedM + qty;
           const v = sold > 0 ? (pool.monthlyCost / sold) * qty : 0;
           return { t: `${pool.id}（成员出口 ${pool.exitIds.join(" / ")}）：${fmt(pool.monthlyCost)} ÷（${fmt(pool.dynamic.usedM)} + ${qty}）× ${qty} = ${fmt(v)} 元/月`, v };
@@ -135,13 +134,15 @@ const entryInfoStore: Record<string, { name: string; dept: "业务支撑部" | "
 
 /** 每行已选定的出口线路（key = 订单行 id，可多选）：作为「绑定 IP 地址」条目的查询条件（IP 与线路绑定） */
 const internetPickStore: Record<string, SourceRow[]> = {};
+/** 每行已选定的出口池（key = 订单行 id → 池档案 id）：提交审批时按池锁存预估快照（AI 专线等池化类型成员出口归属他类，不能用成员 ptag 反推池） */
+const poolPickStore: Record<string, string> = {};
 /** 每行已关联的基础线路（key = 订单行 id，可多选）：供其他行（如数据专线）【共用】 */
 const basePickStore: Record<string, SourceRow[]> = {};
 /** IP 条目选用（key = 行键）：提交审批时写入交付资源计划快照（选定段 + 分配数） */
 const ipPickStore: Record<string, { segId: string; n: number }> = {};
 
 function EntryRow({
-  item, rowKey, slotCarrier, locked, stale, onRemove, onAmount, internetRows, onPickInternets, ipFreeSearch, ipNeed, lineBwM, baseOthers, onPickBases, linePtype,
+  item, rowKey, slotCarrier, locked, stale, onRemove, onAmount, internetRows, onPickInternets, ipFreeSearch, ipNeed, lineBwM, baseOthers, onPickBases, linePtype, lineCat,
 }: {
   item: CatalogItem;
   /** 行唯一键：含资源位后缀（如 op1|电信），同一条目可因模板展开多个资源位 */
@@ -167,6 +168,8 @@ function EntryRow({
   lineId?: string;
   /** 本行订单的产品类型（合同行带入）：选资源时按它自动过滤（归属该类型 + 可共享给该类型） */
   linePtype?: string;
+  /** 本行订单的产品类别短码（合同行带入）：与 linePtype 一起定位产品类型定义，判断组成是否含出口池 */
+  lineCat?: string;
   /** 他行已关联的基础线路（数据专线等可共用） */
   baseOthers?: { lid: string; row: SourceRow }[];
   /** 基础线路多选完成时上抛（按订单行记录） */
@@ -190,14 +193,19 @@ function EntryRow({
   const hasText = item.methods.some((m) => m.kind === "text");
   const opts = enumOptions(item);
 
-  /** 池化产品线（如 BGP 三网互通）：出口带宽行不再逐条选出口，改选「出口池」（客户向池采购、不指向具体出口） */
+  /** 池化由「产品组成含出口池」驱动（资源清单 → 产品组成里配置），不再写死 BGP：
+   *  组成含 mat_pool → 出口带宽行走「选池」模式（客户向池采购、不指向具体出口）；
+   *  候选 = R0 出口池档案中归属该产品类型的池；组成已配池但暂无档案 → 提示去 R0 建档，不静默回退 */
+  const typeHasPool = !!linePtype && !!(GET_TYPE(SHORT_TO_CAT[lineCat ?? ""] ?? "", linePtype)?.materials ?? []).some((m) => m.libKey === "mat_pool");
   const poolCands = item.demo === "bwinternet" && linePtype ? POOLS.filter((p) => p.product === linePtype) : [];
-  const poolMode = poolCands.length > 0;
+  const poolMode = typeHasPool && poolCands.length > 0;
+  const poolMissing = item.demo === "bwinternet" && typeHasPool && poolCands.length === 0;
   const [poolId, setPoolId] = useState<string>(poolCands[0]?.id ?? "");
   const poolPick = poolMode ? (poolCands.find((p) => p.id === poolId) ?? poolCands[0]) : null;
-  // 选定池 → 同步成员出口为已选线路（计价 / IP 查询条件 / 提交快照复用原链路）
+  // 选定池 → 同步成员出口为已选线路（计价 / IP 查询条件 / 提交快照复用原链路），并把池选择记入本行（提交快照用）
   useEffect(() => {
     if (!poolPick) return;
+    poolPickStore[rowKey.split("::")[0]] = poolPick.id;
     const members = SOURCES.lineinternet.rows.filter((r) => poolPick.exitIds.includes(r.id));
     setPickedList(members);
     onPickInternets?.(members);
@@ -361,7 +369,22 @@ function EntryRow({
               </div>
             </div>
           )}
-          {item.demo === "bwinternet" && !poolMode && (
+          {item.demo === "bwinternet" && poolMissing && (
+            <div className="w-full min-w-80 max-w-2xl space-y-1.5">
+              <div className="rounded-[4px] border border-[#FFE1B3] bg-[#FFF7E8] px-3 py-2 text-[11px] leading-5 text-[#B25E00]">
+                该产品类型的组成已配置「出口池」，但出口池档案（资源中心 → R0）中暂无归属「{linePtype}」的池——
+                请先到 <strong>R0 出口池档案</strong>新建归属「{linePtype}」的池并选定成员出口，本行将自动切换为选池模式；未建档前暂按逐条选出口填报。
+              </div>
+              <ArchivePicker
+                sourceKey="lineinternet"
+                multi
+                ptags={RESOURCE_TAGS}
+                orderPtype={linePtype}
+                onPickMulti={(rs) => { setPickedList(rs); onPickInternets?.(rs); }}
+              />
+            </div>
+          )}
+          {item.demo === "bwinternet" && !poolMode && !poolMissing && (
             <div className="w-full min-w-80 max-w-2xl">
               <ArchivePicker
                 sourceKey="lineinternet"
@@ -691,6 +714,7 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [contract?.id]);
   usePoolSettle(); // 出口池月结数据变更时重渲染
+  usePools();      // 出口池档案（R0）新增 / 变更时重渲染：组成含出口池的类型实时切换选池模式
   /** 提交审批那一刻：锁存出口池预估快照（当时的池状态 + 每单预估，事后池子变化不改这张核算单） */
   const lockPoolEsts = () => {
     const snaps: Omit<PoolEst, "at">[] = [];
@@ -706,7 +730,17 @@ export default function Home() {
       for (const [ptag, rs] of groups) {
         const bwKey = [...rowsOf(l).ops, ...rowsOf(l).tech].find((rk) => itemByKey[rk.split("|")[0]]?.demo === "bwinternet");
         const bw = bwKey ? (bwStore[bwKey] ?? 50) : 50;
-        // BGP 三网互通：以 R0 出口池实体为准（客户向池采购；成员出口月租聚合在池上）
+        // 行内选定出口池（组成含出口池的类型，如 BGP / AI 专线）：以选定的 R0 池实体为准锁存（客户向池采购；成员出口月租聚合在池上）
+        const pickedPool = poolPickStore[l.id] ? POOLS.find((p) => p.id === poolPickStore[l.id]) : undefined;
+        if (pickedPool) {
+          snaps.push({
+            orderId: l.id, orderName: l.name, pool: pickedPool.name, lineIds: pickedPool.exitIds,
+            bw, rentTotal: pickedPool.monthlyCost, soldTotal: pickedPool.dynamic.usedM,
+            est: pickedPool.dynamic.usedM + bw > 0 ? (pickedPool.monthlyCost / (pickedPool.dynamic.usedM + bw)) * bw : 0,
+          });
+          continue;
+        }
+        // 兜底：按成员出口归属产品类型反查池（存量单无行内选池记录时的兼容）
         const r0Pool = POOLS.find((p) => p.product === ptag);
         if (r0Pool) {
           snaps.push({
@@ -956,7 +990,7 @@ export default function Home() {
         </div>
         {l.cat === "isp" && (
           <div className="border-b bg-[#E8F3FF] px-4 py-2 text-xs leading-5 text-[#165DFF]">
-            出口 = 向运营商采购的线路，可多家客户共用。成本按<strong>归属产品类型</strong>合并计收（边际计价）：同类型所有出口月租合计 ÷（已售带宽 + 本单带宽）× 本单带宽——回答「新增这一单的成本」；月结按平均分摊（池成本 ÷ 已售带宽）做实际归属。<strong>例外：BGP 三网互通不逐条选出口，改选「出口池」</strong>（客户向池采购、不指向具体出口，池已售/池月成本以 R0 出口池档案为准；选池即自动带出成员出口，作为 IP 搜索条件与快照留痕）。AI 专线、D-MAN 共享 BGP 出口按归属类型边际计价；一单可选多条线路。
+            出口 = 向运营商采购的线路，可多家客户共用。成本按<strong>归属产品类型</strong>合并计收（边际计价）：同类型所有出口月租合计 ÷（已售带宽 + 本单带宽）× 本单带宽——回答「新增这一单的成本」；月结按平均分摊（池成本 ÷ 已售带宽）做实际归属。<strong>例外：产品组成含「出口池」的类型（如 BGP 三网互通）不逐条选出口，改选「出口池」</strong>（由产品组成配置驱动：资源清单 → 产品组成加「出口池」即生效；客户向池采购、不指向具体出口，池已售/池月成本以 R0 出口池档案为准；选池即自动带出成员出口，作为 IP 搜索条件与快照留痕）。AI 专线、D-MAN 共享 BGP 出口按归属类型边际计价；一单可选多条线路。
           </div>
         )}
         {(() => {
@@ -981,6 +1015,7 @@ export default function Home() {
                 lineBwM={l.bwM}
                 lineId={l.id}
                 linePtype={l.ptype}
+                lineCat={l.cat}
                 baseOthers={baseOthers}
                 onPickBases={(rs) => { basePickStore[l.id] = rs; bump((x) => x + 1); }}
               />
