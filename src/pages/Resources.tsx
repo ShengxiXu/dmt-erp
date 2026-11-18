@@ -13,7 +13,7 @@ import {
   type ArchiveDef, type FieldDef,
 } from "@/data/resources";
 import { POOLS, usePools, poolExits, poolWater, poolMeasureDue, exitMeasureDue, measurePool, measureExit, addPool, setPoolAllocWeight, type PoolDef } from "@/data/pool";
-import { poolAllocOnExit, poolAllocText } from "@/data/exitPricing";
+import { poolAllocOnExit, poolAllocText, exitTotalSold } from "@/data/exitPricing";
 import { DEMO_TODAY } from "@/data/settings";
 import { currentUser } from "@/data/users";
 import { MAT_DEF, useCatalog } from "@/data/products";
@@ -1191,9 +1191,22 @@ export default function Resources() {
             </div>
             <div>
               <div className="mb-2 font-semibold text-[#4E5969]">成员出口（多对多；可同时被其他产品类型共用）· 分摊权重默认 ＝ 容量占比，可按路由策略修正</div>
+              {(() => {
+                const exits = poolExits(detail);
+                const sumCap = exits.reduce((s, e) => s + e.capacityM, 0);
+                const sumUsed = exits.reduce((s, e) => s + exitTotalSold(e), 0);
+                const pct = sumCap > 0 ? Math.round((sumUsed / sumCap) * 100) : 0;
+                return (
+                  <div className="mb-2 rounded-[2px] border border-[#BEDAFF] bg-[#F7FBFF] px-2.5 py-1.5 text-[11px] leading-5">
+                    <span className="font-semibold text-[#1D2129]">成员出口合计占用（含直挂类型与全部池分摊）：{fmt(Math.round(sumUsed * 10) / 10)} / {fmt(sumCap)} M · {pct}%</span>
+                    <span className="ml-2 text-[#86909C]">＝ 各出口直挂订单 ＋ 所有挂在本出口的池分摊；判断出口余量请看此水位，勿只看池已售</span>
+                  </div>
+                );
+              })()}
               <div className="space-y-1.5">
                 {poolExits(detail).map((e) => {
-                  const epct = e.capacityM > 0 ? Math.round((e.dynamic.usedM / e.capacityM) * 100) : 0;
+                  const totalUsed = exitTotalSold(e);
+                  const epct = e.capacityM > 0 ? Math.round((totalUsed / e.capacityM) * 100) : 0;
                   const due = exitMeasureDue(e.id, DEMO_TODAY);
                   const alloc = poolAllocOnExit(detail, e.id);
                   return (
@@ -1202,7 +1215,7 @@ export default function Resources() {
                         <span className="font-mono text-[11px] text-[#4E5969]">{e.id}</span>
                         <span className="min-w-0 flex-1 truncate text-[#1D2129]">{e.name}</span>
                         {due && <span className="shrink-0 rounded-[2px] bg-[#FFECE8] px-1 py-0.5 text-[10px] text-[#F53F3F]">待实测</span>}
-                        <span className="shrink-0 font-mono text-[11px]" style={{ color: utilColor(epct) }}>已售 {fmt(e.dynamic.usedM)}/{fmt(e.capacityM)}M · {epct}%</span>
+                        <span className="shrink-0 font-mono text-[11px]" style={{ color: utilColor(epct) }}>占用 {fmt(Math.round(totalUsed * 10) / 10)}/{fmt(e.capacityM)}M · {epct}%</span>
                         <button className="shrink-0 rounded-[2px] border border-[#E5E6EB] px-1.5 py-0.5 text-[10px] text-[#4E5969] hover:border-[#165DFF] hover:text-[#165DFF]"
                           onClick={() => { setMeasure({ kind: "exit", id: e.id }); }}>负载实测</button>
                       </div>
