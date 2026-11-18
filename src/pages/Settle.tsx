@@ -1,4 +1,4 @@
-// P07 月结（/finance/settle）：跑月结 → 出口成本两阶段分摊 + 测算差异比对 + 间接费用分配 → 客户毛利；跑完锁账
+// P07 月结（/finance/settle）：跑月结 → 出口带宽直接成本按签单锁定快照归集（口径设计 v1.4 前提 1：不重算）+ 测算差异比对 + 间接费用分配 → 客户毛利；跑完锁账
 import { useState } from "react";
 import ArcoShell from "@/components/ArcoShell";
 import CenterModal from "@/components/CenterModal";
@@ -31,7 +31,7 @@ function RunForm({ onClose, onDone }: { onClose: () => void; onDone: (b: SettleB
           <div className="mt-1 text-[10px] text-[#86909C]">预填 = 成本中心当月归集数（无当月归集时取各中心最近一次），可按实际调整；按各客户收入占比分配。</div>
         </div>
         <div className="rounded-[2px] bg-[#FFF7E8] px-2 py-1.5 text-[10px] leading-4 text-[#4E5969]">
-          算法：① 出口月租按各产品类型占用带宽占比拆进类型池（共用出口同算法）；② 类型池成本 ÷ 池内已售带宽 = 统一单位成本，逐订单分摊；
+          算法：① 出口带宽直接成本取签单锁定快照（不重算，与台账口径一致）；② 间接费用按分配动因分配；
           ③ 无订单出口的月租进该类型「空载成本」，不摊给客户；④ 核算单测算 vs 实际差异超阈值标黄/标红，只记录说明、不自动调账。
         </div>
         <div className="rounded-[2px] bg-[#F2F3F5] px-2 py-1.5 text-[10px] leading-4 text-[#86909C]">
@@ -267,7 +267,7 @@ export default function Settle() {
         </div>
 
         <div className="rounded-[4px] border border-[#E5E6EB] bg-white px-4 py-2.5 text-[11px] leading-5 text-[#86909C]">
-          ① 出口成本两阶段分摊：出口月租按各产品类型占用带宽占比拆进类型池（同一出口挂多产品类型的共用出口同算法）→ 类型池成本 ÷ 池内已售带宽 = 统一单位成本 → 逐订单分摊；
+          ① 出口带宽直接成本：按签单锁定快照归集（口径设计 v1.4 前提 1：月结不重算，成本口径唯一）；间接费用：按分配动因分配；
           成本与物理出口解耦，避免「负载高的出口摊薄、负载低的出口摊高」的扭曲；② 无订单出口的月租进「空载成本」不摊给客户（扩容/缩容信号）；
           ③ 核算单测算 vs 实际直接成本差异超阈值（A5：黄 {cfgNum("settle.diffYellow")}% / 红 {cfgNum("settle.diffRed")}%）标黄/标红，只记录说明、不自动调账；
           ④ 间接费用按客户收入占比分配；⑤ 月结完成即锁账，改动只能红冲。月结日在 A5（当前：每月 {cfgNum("settle.closeDay")} 号）。

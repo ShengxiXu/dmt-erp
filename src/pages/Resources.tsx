@@ -41,7 +41,7 @@ const CELL: Record<string, (row: any, f: FieldDef) => string> = {
     if (f.key === "sharedWith") return r.sharedWith || "—（专属）";
     if (f.key === "monthlyCost") return `${fmt(r.monthlyCost)} 元/月`;
     if (f.key === "capacityM") return `${fmt(r.capacityM)} M（商用参考）`;
-    if (f.key === "usedM") return `${fmt(r.dynamic.usedM)} M（商用指标）`;
+    if (f.key === "usedM") return `${fmt(Math.round(exitTotalSold(r) * 10) / 10)} M（直挂＋全部池分摊）`;
     if (f.key === "orders") return r.dynamic.orders.length ? `${r.dynamic.orders.length} 单` : "—";
     return String(r[f.key] ?? "—");
   },
@@ -469,7 +469,8 @@ function ArchiveForm({ archive, initial, onSave, onDisable, onClose }: {
 
 // ---------- R1 资源池卡片 ----------
 function PoolCard({ row, onOpen, onEdit }: { row: any; onOpen: () => void; onEdit: () => void }) {
-  const pct = Math.round((row.dynamic.usedM / row.capacityM) * 100);
+  const used = exitTotalSold(row);
+  const pct = row.capacityM > 0 ? Math.round((used / row.capacityM) * 100) : 0;
   return (
     <div onClick={onOpen} className="cursor-pointer rounded-[4px] border border-[#E5E6EB] bg-white p-4 transition-colors hover:border-[#94BFFF]">
       <div className="flex items-start justify-between gap-2">
@@ -479,14 +480,14 @@ function PoolCard({ row, onOpen, onEdit }: { row: any; onOpen: () => void; onEdi
       <div className="mt-1 font-mono text-[11px] text-[#86909C]">{row.id} · {row.carrier} · {row.region}</div>
       <div className="mt-3">
         <div className="mb-1 flex items-baseline justify-between text-xs">
-          <span className="text-[#4E5969]">已售 {fmt(row.dynamic.usedM)} M / 容量 {fmt(row.capacityM)} M</span>
+          <span className="text-[#4E5969]">占用 {fmt(Math.round(used * 10) / 10)} M / 容量 {fmt(row.capacityM)} M</span>
           <span className="font-mono font-semibold" style={{ color: utilColor(pct) }}>{pct}%</span>
         </div>
         <div className="h-2 overflow-hidden rounded-[2px] bg-[#F2F3F5]">
           <div className="h-full rounded-[2px]" style={{ width: `${Math.min(pct, 100)}%`, background: utilColor(pct) }} />
         </div>
         <div className="mt-1 flex items-center justify-between text-[11px] text-[#86909C]">
-          <span>承载订单 {row.dynamic.orders.length} 单{row.sharedWith ? ` · 可共享：${row.sharedWith}` : " · 专属"}</span>
+          <span>直挂订单 {row.dynamic.orders.length} 单 · 占用含全部池分摊{row.sharedWith ? ` · 可共享：${row.sharedWith}` : " · 专属"}</span>
           <span className="font-medium" style={{ color: utilColor(pct) }}>{utilLabel(pct)}</span>
         </div>
       </div>
@@ -758,12 +759,13 @@ function ExitPoolCard({ pool, onOpen, onMeasure }: { pool: PoolDef; onOpen: () =
       </div>
       <div className="mt-3 space-y-1 border-t border-[#F2F3F5] pt-2.5">
         {exits.map((e) => {
-          const epct = e.capacityM > 0 ? Math.round((e.dynamic.usedM / e.capacityM) * 100) : 0;
+          const eused = exitTotalSold(e);
+          const epct = e.capacityM > 0 ? Math.round((eused / e.capacityM) * 100) : 0;
           return (
             <div key={e.id} className="flex items-center gap-2 text-[11px]">
               <span className="shrink-0 rounded-[2px] bg-[#F2F3F5] px-1.5 py-0.5 font-mono text-[10px] text-[#4E5969]">{e.carrier}</span>
               <span className="min-w-0 flex-1 truncate text-[#4E5969]" title={e.name}>{e.name}</span>
-              <span className="shrink-0 font-mono text-[#86909C]">已售 {fmt(e.dynamic.usedM)}/{fmt(e.capacityM)}M · 峰 {fmt(e.dynamic.peakM ?? 0)}M</span>
+              <span className="shrink-0 font-mono text-[#86909C]">占用 {fmt(Math.round(eused * 10) / 10)}/{fmt(e.capacityM)}M · 峰 {fmt(e.dynamic.peakM ?? 0)}M</span>
               <span className="shrink-0 font-semibold" style={{ color: utilColor(epct) }}>{epct}%</span>
             </div>
           );
@@ -955,7 +957,7 @@ export default function Resources() {
 
   // 顶部健康总览
   usePools();
-  const avgUtil = Math.round(R1_ROWS.reduce((s, r) => s + r.dynamic.usedM / r.capacityM, 0) / R1_ROWS.length * 100);
+  const avgUtil = Math.round(R1_ROWS.reduce((s, r) => s + exitTotalSold(r) / r.capacityM, 0) / R1_ROWS.length * 100);
   const ipTotal = R3_ROWS.reduce((s, r) => s + r.total, 0);
   const ipUsed = R3_ROWS.reduce((s, r) => s + r.dynamic.allocated, 0);
   const lowStock = R4_ROWS.filter((r) => r.dynamic.stock - r.dynamic.locked <= 2);
@@ -1150,7 +1152,7 @@ export default function Resources() {
                   <div className="mt-1 flex justify-between font-semibold text-[#0E42D2]">
                     <span>{detail.product === "BGP 三网互通"
                       ? "BGP 订单统一记在「出口池」上（客户向池采购、不指向本线）；本线已售仅含直挂订单"
-                      : `本线已售 ${fmt(detail.dynamic.usedM)} M（仅直挂订单）· 本线租金按各类型已售占比切分（两步法第 ① 步），订单成本按「订单产品类型租金池」边际计价（签单锁定；月结按签单快照归档，不重算）`}</span>
+                      : `本线占用 ${fmt(Math.round(exitTotalSold(detail) * 10) / 10)} M（直挂订单 ＋ 全部池分摊）· 本线租金按各类型已售占比切分（两步法第 ① 步），订单成本按「订单产品类型租金池」边际计价（签单锁定；月结按签单快照归档，不重算）`}</span>
                     <span className="font-mono">容量 {fmt(detail.capacityM)} M（商用参考）</span>
                   </div>
                 </div>

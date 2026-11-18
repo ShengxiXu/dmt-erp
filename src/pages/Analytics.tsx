@@ -10,6 +10,7 @@ import { RECEIVABLES } from "@/data/receivables";
 import { agingBuckets, dsoDays, badDebtRisk, financeKPIs, FIN_TODAY } from "@/data/finance";
 import { R1_ROWS } from "@/data/resources";
 import { POOLS } from "@/data/pool";
+import { exitTotalSold } from "@/data/exitPricing";
 import { getBatches } from "@/data/settle";
 import { DEMO_TODAY } from "@/data/settings";
 
@@ -65,9 +66,9 @@ export default function Analytics() {
     const grossMargin = monthlyRevenue - monthlyExitCost;
     const marginRate = monthlyRevenue ? Math.round((grossMargin / monthlyRevenue) * 1000) / 10 : 0;
 
-    // ④ 出口池利用率：出口线路（直挂订单水位）+ 出口池（池订单水位，BGP 类客户向池采购）
+    // ④ 出口水位：出口线路（直挂订单 + 全部池分摊的合计占用）+ 出口池（池订单水位，BGP 类客户向池采购）
     const pools = [
-      ...R1_ROWS.map((r) => ({ label: r.name, kind: "出口", value: r.capacityM ? Math.round((r.dynamic.usedM / r.capacityM) * 1000) / 10 : 0, used: r.dynamic.usedM, cap: r.capacityM })),
+      ...R1_ROWS.map((r) => ({ label: r.name, kind: "出口", value: r.capacityM ? Math.round((exitTotalSold(r) / r.capacityM) * 1000) / 10 : 0, used: Math.round(exitTotalSold(r) * 10) / 10, cap: r.capacityM })),
       ...POOLS.filter((p) => p.status === "生效").map((p) => ({ label: `${p.name}（${p.id}）`, kind: "出口池", value: p.capacityM ? Math.round((p.dynamic.usedM / p.capacityM) * 1000) / 10 : 0, used: p.dynamic.usedM, cap: p.capacityM })),
     ];
 
@@ -219,10 +220,10 @@ export default function Analytics() {
             </div>
           </div>
 
-          {/* 出口池利用率 */}
+          {/* 出口水位 */}
           <div className="rounded-[4px] border border-[#E5E6EB] bg-white p-4">
             <div className="mb-3 flex items-center justify-between">
-              <span className="text-sm font-semibold text-[#1D2129]">出口池利用率</span>
+              <span className="text-sm font-semibold text-[#1D2129]">出口水位<span className="ml-1 text-[10px] font-normal text-[#86909C]">出口=直挂＋全部池分摊 ｜ 出口池=池订单</span></span>
               <Link to="/resources/r0" className="text-[11px] text-[#165DFF] hover:underline">R0 出口池 →</Link>
             </div>
             <div className="space-y-2.5">

@@ -3,6 +3,7 @@ import { Link, useSearchParams } from "react-router";
 import { WORK_ORDERS, STEP_NAMES, TECH_PARAMS, CATS, IP_OCCUPIED, CAT_DESC } from "@/data/delivery";
 import { ensureArchiveSync } from "@/data/catalog"; // 资源选择器 ↔ R1/R2 台账一致性回填（历史快照缺行时补齐，如 B-003 / PN-PON）
 import { R1_ROWS, R2_ROWS, R3_ROWS, R4_ROWS, untilOf } from "@/data/resources";
+import { exitTotalSold } from "@/data/exitPricing";
 import { POOLS, usePools, poolWater, poolMeasureDue, addPoolOrder, removePoolOrder } from "@/data/pool";
 import { entriesOfSheet, LINE_META_OF, woPlanOf } from "@/data/sheets";
 import { DEMO_TODAY } from "@/data/settings";
@@ -185,7 +186,7 @@ export default function DeliveryDetail() {
         key: `line:${lid}`, type: "manual" as const,
         name: `出口负载评估（${pool.id} ${pool.name.split("（")[0]}）`,
         rule: "工程师查看该出口流量负载是否饱和，决定本出口能否继续使用（按实际流量负载判断，不按已售带宽做减法）",
-        dataText: `当前承载 ${pool.dynamic.orders.length} 家客户业务 · 近 30 日峰值流量 ${fmt(pool.dynamic.peakM ?? 0)}M / 容量 ${fmt(pool.capacityM)}M（利用率 ${utilOf(lid)}%）· 已售带宽 ${fmt(pool.dynamic.usedM)}M（仅商用参考，余量不做递减判定）`,
+        dataText: `当前承载 ${pool.dynamic.orders.length} 家客户业务（直挂）· 近 30 日峰值流量 ${fmt(pool.dynamic.peakM ?? 0)}M / 容量 ${fmt(pool.capacityM)}M（利用率 ${utilOf(lid)}%）· 占用 ${fmt(Math.round(exitTotalSold(pool) * 10) / 10)}M（直挂＋全部池分摊，仅商用参考，余量不做递减判定）`,
       };
     })),
     // IP 余量：每一对「出口 + IP 段」一行，系统自动定量校验
@@ -329,7 +330,7 @@ export default function DeliveryDetail() {
       ...(poolAsg ? (() => {
         const pool = POOLS.find((p) => p.id === poolAsg.poolId);
         return [{ tag: "出口带宽", color: "#165DFF", bg: "#E8F3FF", title: `出口池 ${poolAsg.poolId} 已售带宽 +${fmt(poolAsg.bw)}M`, detail: `现 ${fmt(pool?.dynamic.usedM ?? 0)}M / ${fmt(pool?.capacityM ?? 0)}M · 客户向池采购、不指向具体出口` }];
-      })() : exits.map((e) => ({ tag: "出口带宽", color: "#165DFF", bg: "#E8F3FF", title: `出口 ${e.line} 已售带宽 +${fmt(e.bw)}M`, detail: `现 ${fmt(lineOf(e.line).dynamic.usedM)}M / ${fmt(lineOf(e.line).capacityM)}M` }))),
+      })() : exits.map((e) => ({ tag: "出口带宽", color: "#165DFF", bg: "#E8F3FF", title: `出口 ${e.line} 直挂占用 +${fmt(e.bw)}M`, detail: `直挂现 ${fmt(lineOf(e.line).dynamic.usedM)}M / ${fmt(lineOf(e.line).capacityM)}M · 出口合计占用（含池分摊）${fmt(Math.round(exitTotalSold(lineOf(e.line)) * 10) / 10)}M` }))),
       ...ipAsgs.map((a, i) => ({ tag: "IP 地址", color: "#0FC6C2", bg: "#E8FFFB", title: `本单分配 ${calcs[i].rangeText}`, detail: `已记入 ${ipOf(a.ip).segment.split("（")[0]} 占用区间` })),
       ...devices.map((d) => d.mode === STOCK_MODE
         ? { tag: "设备", color: "#722ED1", bg: "#F5E8FF", title: `${devOf(d.id).name} 锁定 ${d.n} 台 → 出库`, detail: `现存量 ${devOf(d.id).dynamic.stock + d.n} → ${devOf(d.id).dynamic.stock} 台` }
@@ -678,7 +679,7 @@ export default function DeliveryDetail() {
                           <div className="mt-2 rounded-[2px] bg-[#F7F8FA] px-2 py-1.5 text-[10px] leading-4 text-[#86909C]">
                             成员出口负载（供工程师参考，系统不做流量分摊预测）：{pool.exitIds.map((eid) => {
                               const e = R1_ROWS.find((r) => r.id === eid);
-                              return e ? `${e.id} ${e.carrier} 已售 ${fmt(e.dynamic.usedM)}/${fmt(e.capacityM)}M · 实测峰 ${fmt(e.dynamic.peakM ?? 0)}M` : eid;
+                              return e ? `${e.id} ${e.carrier} 占用 ${fmt(Math.round(exitTotalSold(e) * 10) / 10)}/${fmt(e.capacityM)}M（含池分摊）· 实测峰 ${fmt(e.dynamic.peakM ?? 0)}M` : eid;
                             }).join("；")}
                           </div>
                         </div>
@@ -980,7 +981,7 @@ export default function DeliveryDetail() {
                           ? [{ main: `${poolAsg.poolId} ${poolRow()?.name ?? ""}`, sub: `本单池占用 ${fmt(poolAsg.bw)}M（客户向池采购）`, extra: poolRow() ? `池容量 ${fmt(poolRow()!.capacityM)}M · 池已售 ${fmt(poolRow()!.dynamic.usedM)}M · 池月成本 ${fmt(poolRow()!.monthlyCost)} 元/月` : undefined }]
                           : exits.map((e) => {
                               const r = lineOf(e.line);
-                              return { main: `${r.id} ${r.name}`, sub: `本单占用 ${fmt(e.bw)}M`, extra: `容量 ${fmt(r.capacityM)}M · 峰值 ${fmt(r.dynamic.peakM ?? 0)}M · 已售 ${fmt(r.dynamic.usedM)}M · 月租 ${fmt(r.monthlyCost)} 元/月` };
+                              return { main: `${r.id} ${r.name}`, sub: `本单占用 ${fmt(e.bw)}M`, extra: `容量 ${fmt(r.capacityM)}M · 占用 ${fmt(Math.round(exitTotalSold(r) * 10) / 10)}M（含池分摊）· 实测峰 ${fmt(r.dynamic.peakM ?? 0)}M · 月租 ${fmt(r.monthlyCost)} 元/月` };
                             }),
                       },
                       {
@@ -1146,8 +1147,8 @@ export default function DeliveryDetail() {
                   const bw = exits.filter((e) => e.line === lid).reduce((s, e) => s + e.bw, 0);
                   return (
                     <div key={lid}>
-                      <div className="mb-1 flex justify-between text-[#4E5969]"><span>{lid} 已售带宽（池 {fmt(p.capacityM)}M，本单 +{fmt(bw)}M）</span><span className="font-mono">{fmt(p.dynamic.usedM)} / {fmt(p.capacityM)} M</span></div>
-                      <div className="h-2 overflow-hidden rounded-[2px] bg-[#F2F3F5]"><div className="h-full bg-[#165DFF] transition-all" style={{ width: `${(p.dynamic.usedM / p.capacityM) * 100}%` }} /></div>
+                      <div className="mb-1 flex justify-between text-[#4E5969]"><span>{lid} 占用（容量 {fmt(p.capacityM)}M，含直挂＋全部池分摊，本单 +{fmt(bw)}M）</span><span className="font-mono">{fmt(Math.round(exitTotalSold(p) * 10) / 10)} / {fmt(p.capacityM)} M</span></div>
+                      <div className="h-2 overflow-hidden rounded-[2px] bg-[#F2F3F5]"><div className="h-full bg-[#165DFF] transition-all" style={{ width: `${(exitTotalSold(p) / p.capacityM) * 100}%` }} /></div>
                     </div>
                   );
                 })}

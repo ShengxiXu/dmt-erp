@@ -10,6 +10,7 @@ import { WORK_ORDERS, STEP_NAMES } from "@/data/delivery";
 import { RECEIVABLES } from "@/data/receivables";
 import { promiseBroken, promiseOverDays, dueFollowUps } from "@/data/finance";
 import { R1_ROWS } from "@/data/resources";
+import { exitTotalSold } from "@/data/exitPricing";
 import { POOLS, poolMeasureDue } from "@/data/pool";
 import { getBatches, useSettle } from "@/data/settle";
 import { useSessionRole, setSessionRole, USERS } from "@/data/users";
@@ -53,10 +54,10 @@ function buildTodos(role: Role): Todo[] {
       [...WORK_ORDERS].filter((w) => w.step < 6).sort((a, b) => a.deadline.localeCompare(b.deadline))
         .forEach((w, i) =>
           t.push({ title: `工单 ${w.id} · ${w.customer}`, sub: `当前节点：${STEP_NAMES[w.step]} · 要求 ${w.deadline.slice(5)} 前完成`, link: `/delivery/detail?id=${w.id}`, cta: "去处理", hot: i === 0 }));
-      const top = [...R1_ROWS].sort((a, b) => b.dynamic.usedM / b.capacityM - a.dynamic.usedM / a.capacityM)[0];
+      const top = [...R1_ROWS].sort((a, b) => exitTotalSold(b) / b.capacityM - exitTotalSold(a) / a.capacityM)[0];
       if (top) {
-        const pct = Math.round((top.dynamic.usedM / top.capacityM) * 100);
-        t.push({ title: `${top.id} ${top.carrier}出口利用率 ${pct}%（当前最高）`, sub: `${top.product}${top.sharedWith ? ` · 与 ${top.sharedWith} 共用` : ""} · 关注扩容节奏`, link: "/resources/r1", cta: "查看" });
+        const pct = Math.round((exitTotalSold(top) / top.capacityM) * 100);
+        t.push({ title: `${top.id} ${top.carrier}出口水位 ${pct}%（当前最高）`, sub: `占用 ${Math.round(exitTotalSold(top) * 10) / 10}M / ${top.capacityM}M${top.sharedWith ? ` · 与 ${top.sharedWith} 共用` : ""} · 关注扩容节奏`, link: "/resources/r1", cta: "查看" });
       }
       // 负载实测到期未录（R0 出口池档案的「待实测」徽标同源）：工程师定期人工实测录入
       POOLS.filter((p) => p.status === "生效" && poolMeasureDue(p, DEMO_TODAY)).forEach((p) =>
@@ -90,7 +91,7 @@ function buildTodos(role: Role): Todo[] {
           link: s.status === "审批中" ? `/approval?id=${s.id}` : `/cost?kw=${s.id}`, cta: "查看", hot: s.margin < 30,
         }));
       const e = R1_ROWS.find((r) => r.id === "E-CT-1");
-      if (e) t.push({ title: `${e.id} 已售 ${e.dynamic.usedM}M / ${e.capacityM}M`, sub: `${e.product} · 与 ${e.sharedWith} 共用，扩容采购可提前排期`, link: "/resources/r1", cta: "查看" });
+      if (e) t.push({ title: `${e.id} 占用 ${Math.round(exitTotalSold(e) * 10) / 10}M / ${e.capacityM}M（含池分摊）`, sub: `${e.product} · 与 ${e.sharedWith} 共用，扩容采购可提前排期`, link: "/resources/r1", cta: "查看" });
       if (overdueInv.length)
         t.push({ title: `逾期 / 欠停应收合计 ${fmtWan(overdueSum)} 元`, sub: `${overdueInv.length} 笔 · ${overdueInv.map((r) => r.customer).join("、")}`, link: "/finance/overdue", cta: "查看" });
       return t;
@@ -156,9 +157,9 @@ export default function Workbench() {
   const linkCnt = SHEETS.reduce((s, x) => s + (x.pendingLink ?? 0), 0);
   const techPending = SHEETS.filter((s) => !s.techDone && s.status === "待对方提交").length;
   const lowMargin = SHEETS.filter((s) => s.margin < 45).length;
-  const avgPool = Math.round((R1_ROWS.reduce((s, r) => s + r.dynamic.usedM / r.capacityM, 0) / R1_ROWS.length) * 100);
-  const maxPool = [...R1_ROWS].sort((a, b) => b.dynamic.usedM / b.capacityM - a.dynamic.usedM / a.capacityM)[0];
-  const maxPoolPct = maxPool ? Math.round((maxPool.dynamic.usedM / maxPool.capacityM) * 100) : 0;
+  const avgPool = Math.round((R1_ROWS.reduce((s, r) => s + exitTotalSold(r) / r.capacityM, 0) / R1_ROWS.length) * 100);
+  const maxPool = [...R1_ROWS].sort((a, b) => exitTotalSold(b) / b.capacityM - exitTotalSold(a) / a.capacityM)[0];
+  const maxPoolPct = maxPool ? Math.round((exitTotalSold(maxPool) / maxPool.capacityM) * 100) : 0;
   const nearestWo = WORK_ORDERS.filter((w) => w.step < 6).map((w) => w.deadline).sort()[0];
 
   const kpis: Record<Role, { label: string; value: string; delta: string; good: boolean; to: string }[]> = {
@@ -172,7 +173,7 @@ export default function Workbench() {
       { label: "我的待办", value: `${todos.length} 项`, delta: "按紧急度排序", good: true, to: "#todo" },
       { label: "在途工单", value: `${woOnway} 个`, delta: nearestWo ? `最近 deadline ${nearestWo.slice(5)}` : "无在途工单", good: true, to: "/delivery" },
       { label: "待填技术条目", value: `${techPending} 单`, delta: "支撑部已提交，等你方填报", good: techPending === 0, to: "/cost?status=待对方提交" },
-      { label: "出口池最高利用率", value: `${maxPoolPct}%`, delta: maxPool ? `${maxPool.id} ${maxPool.carrier} · ${maxPool.product}` : "—", good: maxPoolPct <= 70, to: "/resources/r1" },
+      { label: "出口最高水位", value: `${maxPoolPct}%`, delta: maxPool ? `${maxPool.id} ${maxPool.carrier} · ${maxPool.product}` : "—", good: maxPoolPct <= 70, to: "/resources/r1" },
     ],
     财务: [
       { label: "我的待办", value: `${todos.length} 项`, delta: "按紧急度排序", good: true, to: "#todo" },
@@ -184,7 +185,7 @@ export default function Workbench() {
       { label: "低毛利核算单", value: `${lowMargin} 张`, delta: "阈值 45%，审批时关注", good: lowMargin === 0, to: "/cost" },
       { label: "审批中月成本", value: `${fmtWan(approvingCost)} 元/月`, delta: `${approving.length} 单在审`, good: true, to: "/approval" },
       { label: "逾期应收", value: `${fmtWan(overdueSum)} 元`, delta: `${overdueInv.length} 笔逾期 / 欠停`, good: false, to: "/finance/overdue" },
-      { label: "出口池平均利用率", value: `${avgPool}%`, delta: `${R1_ROWS.length} 条出口`, good: true, to: "/resources/r1" },
+      { label: "出口平均水位", value: `${avgPool}%`, delta: `${R1_ROWS.length} 条出口`, good: true, to: "/resources/r1" },
     ],
     系统管理员: [
       { label: "启用账号", value: `${USERS.filter((u) => u.status === "启用").length} 个`, delta: `共 ${USERS.length} 个账号`, good: true, to: "/system/users" },
@@ -235,7 +236,7 @@ export default function Workbench() {
     { to: "/lifecycle", label: "变更与退订", icon: RefreshCcw, desc: "生命周期", tone: "bg-[#FFF7ED] text-[#C2410C]" },
   ];
 
-  const pools = useMemo(() => [...R1_ROWS].sort((a, b) => b.dynamic.usedM / b.capacityM - a.dynamic.usedM / a.capacityM).slice(0, 4), []);
+  const pools = useMemo(() => [...R1_ROWS].sort((a, b) => exitTotalSold(b) / b.capacityM - exitTotalSold(a) / a.capacityM).slice(0, 4), []);
   const bannerStats = [
     { label: "我的待办", value: `${todos.length} 项`, alert: false },
     { label: "审批中核算单", value: `${approving.length} 单`, alert: false },
@@ -512,13 +513,13 @@ export default function Workbench() {
             <section className="rounded-[14px] border border-[#E5E6EB] bg-white p-6">
               <div className="mb-4 flex items-center justify-between">
                 <h2 className="flex items-center gap-2.5 text-[17px] font-semibold tracking-tight text-[#1D2129]">
-                  <span className="h-4 w-1 rounded-full bg-gradient-to-b from-[#6366F1] to-[#A78BFA]" />出口资源池水位
+                  <span className="h-4 w-1 rounded-full bg-gradient-to-b from-[#6366F1] to-[#A78BFA]" />出口水位<span className="ml-1 text-[10px] font-normal text-[#86909C]">占用＝直挂＋全部池分摊</span>
                 </h2>
                 <Link to="/resources/r1" className="text-[13px] text-[#165DFF] hover:underline">全部</Link>
               </div>
               <div className="space-y-4">
                 {pools.map((p) => {
-                  const pct = (p.dynamic.usedM / p.capacityM) * 100;
+                  const pct = (exitTotalSold(p) / p.capacityM) * 100;
                   const barColor = pct > 85 ? "bg-gradient-to-r from-[#E11D48] to-[#F43F5E]" : "bg-gradient-to-r from-[#6366F1] to-[#818CF8]";
                   const textColor = pct > 85 ? "text-[#E11D48]" : "text-[#1D2129]";
                   return (

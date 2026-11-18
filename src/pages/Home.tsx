@@ -346,7 +346,7 @@ function EntryRow({
                       </div>
                       {/* 口径脚注（弱化，两行合一） */}
                       <div className="mt-1.5 text-[10px] leading-4 text-[#86909C]">
-                        计价：池月成本 ÷（池已售 + 本单带宽）× 本单带宽 ｜ IP：池自有广播段，以成员出口为条件搜索选择
+                        计价：两步法（成员出口租金按各类型占用占比切分 → 类型租金池边际）｜ IP：池自有广播段，以成员出口为条件搜索选择
                       </div>
                     </>
                   );
@@ -1328,7 +1328,7 @@ export default function Home() {
                 {sent ? "已提交审批" : "提交审批"}
               </Button>
               {sent && (
-                <span className="text-[11px] text-[#165DFF]">出口池预估快照已锁定（签单时的池状态，事后不改本单）→ 月结按实际已售重算，见「成本中心」页 · 出口池月结</span>
+                <span className="text-[11px] text-[#165DFF]">出口池预估快照已锁定（签单时的池状态，事后不改本单）→ 月结按签单快照归档、不重算（《出口带宽成本计价口径设计 v1.4》前提 1）</span>
               )}
             </div>
           </div>
