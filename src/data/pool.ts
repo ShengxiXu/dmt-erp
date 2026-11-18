@@ -26,6 +26,8 @@ export interface PoolDef {
   effect: string;      // 生效日期
   status: string;      // 生效 / 停用
   measureCycleDays: number;  // 负载实测周期（天），到期未录提醒
+  /** 成员出口分摊权重（前提 2）：默认 ＝ 各成员容量占比，可按路由策略手工修正（调整留痕）；键 = 出口 id */
+  allocWeights?: Record<string, number>;
   dynamic: {
     usedM: number;     // 池已售带宽（池订单合计）
     orders: PoolOrder[];        // 池订单（客户向池采购，不指向具体出口）
@@ -35,7 +37,7 @@ export interface PoolDef {
 }
 
 // 出厂池：BGP 三网互通资源池（电信/联通/移动三条出口自组）；出口 ↔ 池多对多，可有多个池
-export const POOLS: PoolDef[] = persistable("pools", () => [
+export const POOLS: PoolDef[] = persistable("poolsV2", () => [
   {
     id: "P-BGP-01", name: "BGP 三网互通资源池", product: "BGP 三网互通",
     exitIds: ["E-CT-1", "I-102", "I-103"],
@@ -50,7 +52,11 @@ export const POOLS: PoolDef[] = persistable("pools", () => [
     ipIds: [],
     capacityM: 2000, monthlyCost: 85000, effect: "2026-11-01", status: "生效",
     measureCycleDays: 30,
-    dynamic: { usedM: 0, orders: [], measures: [] },
+    dynamic: {
+      usedM: 100,
+      orders: [{ customer: "明州电商（BGP）", bw: 100, since: "2026-11" }],
+      measures: [],
+    },
   },
 ]);
 
@@ -104,6 +110,14 @@ if (!POOLS.some((p) => p.id === "P-BGP-02")) {
     measureCycleDays: 30,
     dynamic: { usedM: 0, orders: [], measures: [] },
   });
+}
+// 二期池演示订单（幂等）：新池承接真实客户，演示多池共存时 BGP 已售的跨池叠加与成员出口分摊
+{
+  const p2 = POOLS.find((p) => p.id === "P-BGP-02");
+  if (p2 && !p2.dynamic.orders.some((o) => o.customer === "明州电商（BGP）")) {
+    p2.dynamic.orders.push({ customer: "明州电商（BGP）", bw: 100, since: "2026-11" });
+    p2.dynamic.usedM += 100;
+  }
 }
 
 // ---------- 变更订阅（实测录入 / 池订单变更后触发重渲染） ----------
@@ -215,4 +229,13 @@ export function addPool(input: Omit<PoolDef, "id" | "capacityM" | "monthlyCost" 
   POOLS.push(pool);
   bump();
   return pool;
+}
+
+/** 调整某成员出口的分摊权重（前提 2：默认容量占比，可按路由策略手工修正，调整留痕） */
+export function setPoolAllocWeight(poolId: string, exitId: string, weight: number): void {
+  const pool = POOLS.find((p) => p.id === poolId);
+  if (!pool || !pool.exitIds.includes(exitId)) return;
+  pool.allocWeights ??= {};
+  pool.allocWeights[exitId] = weight;
+  bump();
 }

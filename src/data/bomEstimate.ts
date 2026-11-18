@@ -5,7 +5,7 @@
 import { CATS, PTYPES, GET_TYPE } from "@/data/products";
 import { getCostItems } from "@/data/costItems";
 import { SOURCES } from "@/data/catalog";
-import { R1_ROWS } from "@/data/resources";
+import { marginalCost } from "@/data/exitPricing";
 import { cfgNum } from "@/data/settings";
 
 export interface BomLine { key: string; name: string; monthly: number; note: string }
@@ -26,13 +26,11 @@ function carriersOf(ptype: string): number {
   return carriers.size || 1;
 }
 
-/** R1 出口池边际计价：归属该产品类型（含可共享）的出口月租合计 ÷（已售 + 本单带宽）× 本单带宽 */
+/** 类型租金池边际计价（两步法，见 @/data/exitPricing）：① 出口租金按各类型占用占比切分 ② 类型跨出口叠加 */
 export function poolMarginal(ptype: string, bwM: number): { cost: number; poolCost: number; soldM: number } | null {
-  const rows = R1_ROWS.filter((r) => r.status === "生效" && (r.product === ptype || r.sharedWith.split(/[、,，]/).map((s) => s.trim()).includes(ptype)));
-  if (!rows.length) return null;
-  const poolCost = rows.reduce((s, r) => s + r.monthlyCost, 0);
-  const soldM = rows.reduce((s, r) => s + r.dynamic.usedM, 0);
-  return { cost: Math.round((poolCost / (soldM + bwM)) * bwM), poolCost, soldM };
+  const { cost, pool } = marginalCost(ptype, bwM);
+  if (!pool.details.length) return null;
+  return { cost: Math.round(cost), poolCost: Math.round(pool.rent), soldM: Math.round(pool.sold * 10) / 10 };
 }
 
 /** 基础线路月租参考值：档案均值 × 产品类型运营商数 */
@@ -64,7 +62,7 @@ export function bomMonthlyCost(ptype: string, bwM: number, ipN: number): BomCost
     switch (it.demo) {
       case "bwinternet": {
         const p = bwM > 0 ? poolMarginal(ptype, bwM) : null;
-        if (p) lines.push({ key, name: it.name, monthly: p.cost, note: `出口池边际计价：池月租 ${p.poolCost.toLocaleString()} ÷（已售 ${p.soldM}M + 本单 ${bwM}M）× ${bwM}M` });
+        if (p) lines.push({ key, name: it.name, monthly: p.cost, note: `两步法边际计价：${ptype} 租金池 ${p.poolCost.toLocaleString()}（出口租金按各类型占用占比切分后跨出口叠加）÷（已售 ${p.soldM}M + 本单 ${bwM}M）× ${bwM}M` });
         else if (bwM > 0) lines.push({ key, name: it.name, monthly: Math.round(bwM * cfgNum("cost.exitPerM")), note: `无 ${ptype} 出口池档案，A5 兜底单价 ${cfgNum("cost.exitPerM")} 元/M/月 × ${bwM}M` });
         break;
       }

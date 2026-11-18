@@ -12,7 +12,8 @@ import {
   useInventory, stockIn, stockOut,
   type ArchiveDef, type FieldDef,
 } from "@/data/resources";
-import { POOLS, usePools, poolExits, poolWater, poolMeasureDue, exitMeasureDue, measurePool, measureExit, addPool, type PoolDef } from "@/data/pool";
+import { POOLS, usePools, poolExits, poolWater, poolMeasureDue, exitMeasureDue, measurePool, measureExit, addPool, setPoolAllocWeight, type PoolDef } from "@/data/pool";
+import { poolAllocOnExit, poolAllocText } from "@/data/exitPricing";
 import { DEMO_TODAY } from "@/data/settings";
 import { currentUser } from "@/data/users";
 import { MAT_DEF, useCatalog } from "@/data/products";
@@ -1149,7 +1150,7 @@ export default function Resources() {
                   <div className="mt-1 flex justify-between font-semibold text-[#0E42D2]">
                     <span>{detail.product === "BGP 三网互通"
                       ? "BGP 订单统一记在「出口池」上（客户向池采购、不指向本线）；本线已售仅含直挂订单"
-                      : `本线已售 ${fmt(detail.dynamic.usedM)} M · 本单成本按「${detail.product}出口池」边际计价：池月租合计 ÷（池已售合计 + 本单带宽）× 本单带宽（月结按平均分摊做实际归属）`}</span>
+                      : `本线已售 ${fmt(detail.dynamic.usedM)} M（仅直挂订单）· 本线租金按各类型已售占比切分（两步法第 ① 步），订单成本按「订单产品类型租金池」边际计价（签单锁定；月结按签单快照归档，不重算）`}</span>
                     <span className="font-mono">容量 {fmt(detail.capacityM)} M（商用参考）</span>
                   </div>
                 </div>
@@ -1157,7 +1158,7 @@ export default function Resources() {
               <div className="mt-3 text-[11px] leading-5 text-[#86909C]">
                 {detail.product === "BGP 三网互通"
                   ? "「出口带宽租用费」对 BGP 三网订单改为选「出口池」并填池占用带宽（见 R0 出口池档案）；本页承载明细只列直挂在本线上的订单。"
-                  : "「出口带宽租用费」从本档案选线（按归属产品类型过滤、可多选）；同类型出口合并计收（边际计价）：月租合计 ÷（已售 + 本单带宽）× 本单带宽。选线后，「IP 地址使用费」以所选线路为条件从 IP 地址段档案挑选。"}
+                  : "「出口带宽租用费」从本档案选线（按订单产品类型过滤、可多选）；两步法计收：① 本线租金按各类型已售占比切分 ② 订单产品类型跨出口叠加为租金池，边际计价 ＝ 池租金 ÷（已售＋本单带宽）× 本单带宽。选线后，「IP 地址使用费」以所选线路为条件从 IP 地址段档案挑选。"}
               </div>
               <Button size="sm" variant="outline" className="mt-3" onClick={() => { setEditing(detail); setDetail(null); }}>编辑该资源</Button>
               <RelatedList archiveKey="r1" />
@@ -1189,11 +1190,12 @@ export default function Resources() {
               </dl>
             </div>
             <div>
-              <div className="mb-2 font-semibold text-[#4E5969]">成员出口（多对多；可同时被其他产品类型共用）</div>
+              <div className="mb-2 font-semibold text-[#4E5969]">成员出口（多对多；可同时被其他产品类型共用）· 分摊权重默认 ＝ 容量占比，可按路由策略修正</div>
               <div className="space-y-1.5">
                 {poolExits(detail).map((e) => {
                   const epct = e.capacityM > 0 ? Math.round((e.dynamic.usedM / e.capacityM) * 100) : 0;
                   const due = exitMeasureDue(e.id, DEMO_TODAY);
+                  const alloc = poolAllocOnExit(detail, e.id);
                   return (
                     <div key={e.id} className="rounded-[2px] border border-[#E5E6EB] px-2.5 py-1.5">
                       <div className="flex items-center gap-2">
@@ -1204,10 +1206,30 @@ export default function Resources() {
                         <button className="shrink-0 rounded-[2px] border border-[#E5E6EB] px-1.5 py-0.5 text-[10px] text-[#4E5969] hover:border-[#165DFF] hover:text-[#165DFF]"
                           onClick={() => { setMeasure({ kind: "exit", id: e.id }); }}>负载实测</button>
                       </div>
-                      <div className="mt-1 text-[10px] text-[#86909C]">
-                        {e.carrier} · 合同 {e.contractNo} · 月租 {fmt(e.monthlyCost)} 元 · 实测峰值 {e.dynamic.peakM != null ? `${fmt(e.dynamic.peakM)} M` : "—"}
-                        {e.dynamic.orders.length > 0 && ` · 直挂订单：${e.dynamic.orders.map((o) => `${o.customer} ${o.bw}M`).join("、")}`}
+                      <div className="mt-1 flex flex-wrap items-center gap-x-3 text-[10px] text-[#86909C]">
+                        <span>{e.carrier} · 合同 {e.contractNo} · 月租 {fmt(e.monthlyCost)} 元 · 实测峰值 {e.dynamic.peakM != null ? `${fmt(e.dynamic.peakM)} M` : "—"}</span>
+                        <span className="text-[#4E5969]">池分摊 {fmt(Math.round(alloc * 10) / 10)}M（池已售 {fmt(detail.dynamic.usedM)}M × 权重占比）</span>
+                        <label className="flex items-center gap-1">
+                          分摊权重
+                          <input
+                            type="number"
+                            min={0}
+                            className="w-20 rounded-[2px] border border-[#E5E6EB] px-1 py-0.5 font-mono text-[11px]"
+                            defaultValue={detail.allocWeights?.[e.id] ?? e.capacityM}
+                            title={poolAllocText(detail, e.id)}
+                            onBlur={(ev) => {
+                              const w = Number(ev.target.value) || 0;
+                              if (w < 0) return;
+                              setPoolAllocWeight(detail.id, e.id, w);
+                            }}
+                          />
+                        </label>
+                        <button className="rounded-[2px] border border-[#E5E6EB] px-1.5 py-0.5 text-[10px] text-[#86909C] hover:border-[#F53F3F] hover:text-[#F53F3F]"
+                          onClick={() => { setPoolAllocWeight(detail.id, e.id, e.capacityM); }}>恢复容量占比</button>
                       </div>
+                      {e.dynamic.orders.length > 0 && (
+                        <div className="mt-1 text-[10px] text-[#86909C]">直挂订单：{e.dynamic.orders.map((o) => `${o.customer} ${o.bw}M`).join("、")}</div>
+                      )}
                     </div>
                   );
                 })}
@@ -1236,7 +1258,7 @@ export default function Resources() {
                       </div>
                     ))}
                     <div className="mt-1 flex justify-between font-semibold text-[#0E42D2]">
-                      <span>池已售 {fmt(detail.dynamic.usedM)} M · 边际计价 = 池月租 ÷（池已售 + 本单带宽）× 本单带宽</span>
+                      <span>池已售 {fmt(detail.dynamic.usedM)} M · 两步法计价：池按分摊权重摊到成员出口（默认容量占比），租金随各类型占用占比切分后跨出口叠加</span>
                       <span className="font-mono">池容量 {fmt(detail.capacityM)} M（商用参考）</span>
                     </div>
                   </>

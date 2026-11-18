@@ -116,8 +116,8 @@ function FragmentRow({ r, selected, onPick }: { r: SourceRow; selected?: boolean
           <td colSpan={5} className="px-3 py-2">
             <div className="text-xs font-medium text-[#4E5969]">
               {p.orders.length > 0
-                ? <>本单按<strong>归属产品类型出口池</strong>计收：产品类型出口月租合计 ÷（池内已售合计＋本单带宽）× 本单带宽；本线当前已售 {p.usedM}M、承载 {p.orders.length} 家客户</>
-                : <>本线尚未承载客户（容量 {p.capacityM}M，商用指标）；成本仍按归属产品类型出口池计收</>}
+                ? <>本线当前已售 {p.usedM}M、承载 {p.orders.length} 家客户（明细见下表）；租金按<strong>各类型在本线上的已售占比</strong>切分（两步法第 ① 步），订单成本按「订单产品类型租金池」边际计价</>
+                : <>本线尚未承载客户（容量 {p.capacityM}M，商用指标）；租金暂全额归归属产品类型，有单后按各类型已售占比切分</>}
             </div>
             {p.orders.length > 0 && <OrderTable orders={p.orders} capacityM={p.capacityM} />}
           </td>
@@ -246,7 +246,7 @@ export default function ArchivePicker({ sourceKey, label, filterText, ptags, ord
             <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
               <span className="text-[#4E5969]">
                 本线已售 {picked.pool.usedM}/{picked.pool.capacityM}M（余 {picked.pool.capacityM - picked.pool.usedM}M · 已承载 {picked.pool.orders.length} 单：
-                {picked.pool.orders.map((o) => `${o.customer} ${o.bw}M`).join("、")}）；成本按归属产品类型出口池计收
+                {picked.pool.orders.map((o) => `${o.customer} ${o.bw}M`).join("、")}）；本线租金按各类型已售占比切分（两步法第 ① 步），本单按订单产品类型租金池边际计价
               </span>
               <span className="rounded-[2px] bg-amber-100 px-1.5 py-0.5 text-[#FF7D00]">余量由工程师人工确认</span>
             </div>

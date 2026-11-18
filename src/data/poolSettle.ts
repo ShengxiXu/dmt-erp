@@ -1,23 +1,27 @@
-// 出口池直接成本 · 两阶段计收（共用计收模式的完整闭环）
-//   ① 签单（提交审批那一刻）：锁定「预估快照」——当时池月租合计 / 已售带宽合计 / 本单预估成本，作为报价与审批依据，事后不改；
-//   ② 月结：真实账期到了，按当月实际已售带宽重算每一单的结算成本；差异进当月，不追溯改已签核算单；
-//   ③ 未售出的闲置容量由全池客户按带宽占比共担（新单进来，老单分摊自然下降，这是共用模式的正常表现）。
+// 出口带宽直接成本 · 计价与归档（《出口带宽成本计价口径设计 v1.4》定稿）
+//   签单（提交审批那一刻）：锁定「预估快照」——当时产品类型租金池 / 已售带宽 / 各出口切分明细 / 本单预估，
+//   作为报价与审批依据，事后不追改；
+//   月结：按签单锁定快照归集归档（前提 1：不重算）；签单快照是月结的唯一依据。
+//   两步法口径见 @/data/exitPricing：① 出口租金按各类型已售占比切分 ② 类型跨出口叠加边际计价。
 import { persistable } from "@/data/persist";
 import { useSyncExternalStore } from "react";
-import { SOURCES } from "./catalog";
 import { POOLS } from "./pool";
+import { R1_ROWS } from "./resources";
+import { typeRentPool, typeOrders } from "./exitPricing";
 import { demoNow } from "./settings";
 
-/** 签单时锁定的预估快照（一条 = 一单在一个出口池的占用） */
+/** 签单时锁定的预估快照（一条 = 一单在一个产品类型租金池的占用） */
 export interface PoolEst {
   orderId: string;          // 订单行 id
   orderName: string;        // 订单行名称（客户 + 带宽）
-  pool: string;             // 出口池 = 归属产品类型
-  lineIds: string[];        // 选中的出口线路
+  pool: string;             // 租金池键 ＝ 订单产品类型（两步法跨出口叠加；非出口归属类型、非池名称）
+  lineIds: string[];        // 选中的出口线路（选池模式 = 池成员出口）
   bw: number;               // 本单带宽（M）
-  rentTotal: number;        // 签单时池月租合计
-  soldTotal: number;        // 签单时池已售带宽合计
+  rentTotal: number;        // 签单时类型租金池合计
+  soldTotal: number;        // 签单时类型已售带宽合计
   est: number;              // 预估月成本 = rentTotal ÷ (soldTotal + bw) × bw
+  /** 各出口切分明细（月结归档 / 对账依据；存量快照无此字段） */
+  splits?: { exitId: string; rent: number; sold: number }[];
   at: string;               // 锁存时间
 }
 
@@ -25,13 +29,13 @@ export interface PoolSettleLine {
   orderId: string; orderName: string; bw: number;
   /** 签单预估（存量单没有快照则为 null） */
   est: number | null;
-  settle: number;           // 结算 = 当月实际 rent ÷ sold × bw
-  diff: number | null;      // 结算 − 预估（未结算过才有差异概念）
+  settle: number;           // 结算 ＝ 签单锁定快照 est（前提 1：月结不重算）
+  diff: number | null;      // 预留：未来如启用实际成本口径时的差异位
 }
 
 export interface PoolSettleRun {
   id: string; period: string; pool: string;
-  rentTotal: number; soldTotal: number;   // 当月实际口径
+  rentTotal: number; soldTotal: number;   // 归档时快照口径
   lines: PoolSettleLine[];
   totalSettle: number; totalDiff: number;
   runAt: string; status: "已结算";
@@ -59,40 +63,30 @@ export function snapshotEsts(list: Omit<PoolEst, "at">[]) {
   bump();
 }
 
-/** 从出口线路档案聚合出口池（同归属产品类型的所有线路合并：月租合计 / 已售合计） */
+/** 结算单元列表（按产品类型租金池聚合：两步法口径的租金合计 / 已售合计 / 在役订单）
+ *  数据来自 exitPricing 的台账口径（出口直挂订单 + 池化分摊），随单据实时沉淀、无需人工维护 */
 export interface PoolAgg {
   pool: string;
-  rentTotal: number;      // 池月租合计
-  soldTotal: number;      // 已售带宽合计（档案当前值）
-  lineCount: number;
-  /** 存量订单（档案里已承载的客户，无签单快照） */
+  rentTotal: number;      // 类型租金池合计（各出口切给该类型的租金加总）
+  soldTotal: number;      // 类型已售带宽合计（直挂 + 池化分摊，档案当前值）
+  lineCount: number;      // 贡献租金的出口数
+  /** 在役订单（无签单快照的存量订单；含直挂与池订单） */
   stockOrders: { orderId: string; orderName: string; bw: number }[];
 }
 export function poolList(): PoolAgg[] {
-  const map = new Map<string, PoolAgg>();
-  for (const r of SOURCES.lineinternet.rows) {
-    if (!r.ptag || !r.pool) continue;
-    const g = map.get(r.ptag) ?? { pool: r.ptag, rentTotal: 0, soldTotal: 0, lineCount: 0, stockOrders: [] };
-    g.rentTotal += Number(r.meta || 0);
-    g.soldTotal += r.pool.usedM;
-    g.lineCount += 1;
-    r.pool.orders.forEach((o, i) => g.stockOrders.push({
-      orderId: `${r.id}#${i}`, orderName: o.customer, bw: o.bw,
-    }));
-    map.set(r.ptag, g);
-  }
-  const agg = [...map.values()];
-  // BGP 三网互通：已售与存量订单以出口池一等实体为准（客户向池采购、不指向具体出口；
-  // 成员出口上的直挂订单（AI 专线 / D-MAN）属于各自产品类型，不计入 BGP 池已售）
-  const bgpPoolEnt = POOLS.find((p) => p.product === "BGP 三网互通");
-  const bgpAgg = agg.find((g) => g.pool === "BGP 三网互通");
-  if (bgpPoolEnt && bgpAgg) {
-    bgpAgg.soldTotal = bgpPoolEnt.dynamic.usedM;
-    bgpAgg.stockOrders = bgpPoolEnt.dynamic.orders.map((o, i) => ({
-      orderId: `${bgpPoolEnt.id}#${i}`, orderName: o.customer, bw: o.bw,
-    }));
-  }
-  return agg;
+  const types = new Set<string>([...R1_ROWS.map((r) => r.product), ...POOLS.map((p) => p.product)]);
+  return [...types]
+    .map((t) => {
+      const agg = typeRentPool(t);
+      return {
+        pool: t,
+        rentTotal: Math.round(agg.rent),
+        soldTotal: Math.round(agg.sold * 10) / 10,
+        lineCount: agg.details.length,
+        stockOrders: typeOrders(t).map((o, i) => ({ orderId: `${t}#${i}`, orderName: o.customer, bw: o.bw })),
+      };
+    })
+    .filter((a) => a.lineCount > 0 || a.stockOrders.length > 0);
 }
 
 /** 该池的签单快照（含已结算过的，供明细查看） */

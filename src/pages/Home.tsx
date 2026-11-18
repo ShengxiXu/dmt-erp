@@ -11,7 +11,8 @@ import {
 import { getCostItems, useCostItems, SETTLE_RULE, uncoveredClasses, type CostItem } from "@/data/costItems";
 import { GET_TYPE, MAT_DEF, useCatalog } from "@/data/products";
 import { CONTRACTS, type Contract } from "@/data/contracts";
-import { POOLS, poolExits, poolWater, usePools, type PoolDef } from "@/data/pool";
+import { marginalCost } from "@/data/exitPricing";
+import { POOLS, poolExits, poolWater, usePools } from "@/data/pool";
 import { snapshotEsts, usePoolSettle, type PoolEst } from "@/data/poolSettle";
 import { SHEETS, SHEET_OF_CONTRACT, ensureSheetForContract, fillSheet, recordSheetEntries, recordSheetLines, recordWoPlan, type WoPlanItem } from "@/data/sheets";
 import { submitForApproval } from "@/data/approvalFlow";
@@ -26,7 +27,7 @@ import { Badge } from "@/components/ui/badge";
 const fmt = (n: number) => n.toLocaleString("zh-CN", { maximumFractionDigits: 1 });
 
 /** 各类条目的金额计算：qty=手工输入，meta=档案带出值，lines=枚举条数，picked=单选档案行；pickedList=出口资源多选 */
-function calcAmount(item: CatalogItem, qty: number, meta: number, picked?: SourceRow | null, pickedList?: SourceRow[], sharedIds?: string[], poolPick?: PoolDef | null) {
+function calcAmount(item: CatalogItem, qty: number, meta: number, picked?: SourceRow | null, pickedList?: SourceRow[], sharedIds?: string[], linePtype?: string) {
   switch (item.demo) {
     case "bwbase": {
       if (!pickedList?.length) return { text: "选择基础线路后自动计算（可多选，数量不限）", v: 0 };
@@ -38,33 +39,17 @@ function calcAmount(item: CatalogItem, qty: number, meta: number, picked?: Sourc
       return { text: parts.map((pp) => pp.t).join(" + "), v: parts.reduce((a2, pp) => a2 + pp.v, 0) };
     }
     case "bwinternet": {
-      if (!pickedList?.length) return { text: "选择出口资源后自动计算（支持多选：一单可含多条线路）", v: 0 };
-      // 产品类型级池化：按归属产品类型分组，同池多条只计一次
-      // 边际计价（录入决策口径）：本单成本 = 产品类型出口月租合计 ÷（该产品类型已售带宽合计 + 本单带宽）× 本单带宽
-      // ——回答「新增这一单要花多少钱」；月结则按平均分摊（池成本 ÷ 已售带宽）做实际归属，两者分工见页底说明
-      const groups = new Map<string, SourceRow[]>();
-      pickedList.forEach((r) => {
-        const g = groups.get(r.ptag ?? "") ?? [];
-        g.push(r);
-        groups.set(r.ptag ?? "", g);
-      });
-      const parts = Array.from(groups.entries()).map(([ptag, rs]) => {
-        // 池化条目（产品组成含出口池的类型，如 BGP 三网互通）：挂「出口池」计价（客户向池采购、不指向具体出口）——以选定的 R0 池实体为准
-        if (poolPick) {
-          const pool = poolPick;
-          const sold = pool.dynamic.usedM + qty;
-          const v = sold > 0 ? (pool.monthlyCost / sold) * qty : 0;
-          return { t: `${pool.id}（成员出口 ${pool.exitIds.join(" / ")}）：${fmt(pool.monthlyCost)} ÷（${fmt(pool.dynamic.usedM)} + ${qty}）× ${qty} = ${fmt(v)} 元/月`, v };
-        }
-        const poolRows = SOURCES.lineinternet.rows.filter((r) => r.ptag === ptag);
-        const costSum = poolRows.reduce((s2, r) => s2 + Number(r.meta || 0), 0);
-        const soldSum = poolRows.reduce((s2, r) => s2 + (r.pool?.usedM ?? 0), 0);
-        const sold = soldSum + qty;
-        const v = sold > 0 ? (costSum / sold) * qty : 0;
-        const ids = rs.map((r) => r.id).join("+");
-        return { t: `${ptag}池（${ids}）${fmt(costSum)}÷${fmt(sold)}×${qty} = ${fmt(v)}`, v };
-      });
-      return { text: parts.map((pp) => pp.t).join(" + ") + "　· 签单预估（边际成本口径），月结按平均分摊重算", v: parts.reduce((a2, pp) => a2 + pp.v, 0) };
+      if (!pickedList?.length) return { text: "选择出口资源后自动计算（支持多选：一单可含多条线路；选池模式自动带出成员出口）", v: 0 };
+      // 两步法（《出口带宽成本计价口径设计 v1.4》定稿）：
+      // ① 出口租金按「各产品类型在该出口上的已售带宽占比」切分（含池化类型的成员出口分摊）
+      // ② 同类型跨出口叠加为「产品类型租金池」，边际计价 ＝ 池租金 ÷（类型已售 + 本单带宽）× 本单带宽
+      // 成本跟着「订单产品类型」走（linePtype），不按所选出口的归属类型；选池只决定资源分配与快照留痕
+      const tp = linePtype || pickedList[0]?.ptag || "";
+      const { cost, pool } = marginalCost(tp, qty);
+      if (!pool.details.length) return { text: `${tp || "本单类型"}：暂无生效的出口档案，无法计价`, v: 0 };
+      const splitTxt = pool.details.map((d) => `${d.exitId} 切分 ${fmt(Math.round(d.rent))}`).join(" ＋ ");
+      const v = Math.round(cost);
+      return { text: `${tp} 租金池 ${fmt(Math.round(pool.rent))} 元/月（${splitTxt}）÷（已售 ${fmt(pool.sold)}M ＋ 本单 ${qty}M）× ${qty}M ＝ ${fmt(v)} 元/月　· 签单预估（两步法边际计价，签单锁定；月结按签单快照归档，不重算）`, v };
     }
     case "resale": return picked
       ? { text: `${qty} × ${fmt(meta || 0)}（转售采购价直接结转，不加成）`, v: qty * (meta || 0) }
@@ -220,8 +205,8 @@ function EntryRow({
     ipPickStore[rowKey] = { segId: pickedRow?.id ?? "", n: effQty };
   }, [rowKey, item.demo, pickedRow?.id, effQty]);
   const calc = useMemo(
-    () => calcAmount(item, effQty, meta, pickedRow, pickedList, sharedIds, poolPick),
-    [item, effQty, meta, pickedRow, pickedList, sharedIds, poolPick]
+    () => calcAmount(item, effQty, meta, pickedRow, pickedList, sharedIds, linePtype),
+    [item, effQty, meta, pickedRow, pickedList, sharedIds, linePtype]
   );
   const autoShare = ["share200", "share40", "asset"].includes(item.demo);
   const amount: number | null = useMemo(() => {
@@ -715,50 +700,25 @@ export default function Home() {
   }, [contract?.id]);
   usePoolSettle(); // 出口池月结数据变更时重渲染
   usePools();      // 出口池档案（R0）新增 / 变更时重渲染：组成含出口池的类型实时切换选池模式
-  /** 提交审批那一刻：锁存出口池预估快照（当时的池状态 + 每单预估，事后池子变化不改这张核算单） */
+  /** 提交审批那一刻：锁存签单预估快照（两步法：类型租金池 + 各出口切分明细 + 本单预估，事后不追改；月结按此归档） */
   const lockPoolEsts = () => {
     const snaps: Omit<PoolEst, "at">[] = [];
     for (const l of lines) {
       const picked = internetPickStore[l.id];
       if (!picked?.length) continue;
-      const groups = new Map<string, SourceRow[]>();
-      picked.forEach((r) => {
-        const g = groups.get(r.ptag ?? "") ?? [];
-        g.push(r);
-        groups.set(r.ptag ?? "", g);
+      const bwKey = [...rowsOf(l).ops, ...rowsOf(l).tech].find((rk) => itemByKey[rk.split("|")[0]]?.demo === "bwinternet");
+      const bw = bwKey ? (bwStore[bwKey] ?? 50) : 50;
+      // 成本跟着订单产品类型走；行内选定出口池（组成含出口池的类型）时，快照记录池与成员出口作为资源分配留痕
+      const tp = l.ptype || picked[0]?.ptag || "";
+      const pickedPool = poolPickStore[l.id] ? POOLS.find((p) => p.id === poolPickStore[l.id]) : undefined;
+      const { cost, pool } = marginalCost(tp, bw);
+      snaps.push({
+        orderId: l.id, orderName: l.name, pool: tp,
+        lineIds: pickedPool ? pickedPool.exitIds : picked.map((r) => r.id),
+        bw, rentTotal: Math.round(pool.rent), soldTotal: Math.round(pool.sold * 10) / 10,
+        est: Math.round(cost),
+        splits: pool.details.map((d) => ({ exitId: d.exitId, rent: Math.round(d.rent), sold: Math.round(d.sold * 10) / 10 })),
       });
-      for (const [ptag, rs] of groups) {
-        const bwKey = [...rowsOf(l).ops, ...rowsOf(l).tech].find((rk) => itemByKey[rk.split("|")[0]]?.demo === "bwinternet");
-        const bw = bwKey ? (bwStore[bwKey] ?? 50) : 50;
-        // 行内选定出口池（组成含出口池的类型，如 BGP / AI 专线）：以选定的 R0 池实体为准锁存（客户向池采购；成员出口月租聚合在池上）
-        const pickedPool = poolPickStore[l.id] ? POOLS.find((p) => p.id === poolPickStore[l.id]) : undefined;
-        if (pickedPool) {
-          snaps.push({
-            orderId: l.id, orderName: l.name, pool: pickedPool.name, lineIds: pickedPool.exitIds,
-            bw, rentTotal: pickedPool.monthlyCost, soldTotal: pickedPool.dynamic.usedM,
-            est: pickedPool.dynamic.usedM + bw > 0 ? (pickedPool.monthlyCost / (pickedPool.dynamic.usedM + bw)) * bw : 0,
-          });
-          continue;
-        }
-        // 兜底：按成员出口归属产品类型反查池（存量单无行内选池记录时的兼容）
-        const r0Pool = POOLS.find((p) => p.product === ptag);
-        if (r0Pool) {
-          snaps.push({
-            orderId: l.id, orderName: l.name, pool: ptag, lineIds: r0Pool.exitIds,
-            bw, rentTotal: r0Pool.monthlyCost, soldTotal: r0Pool.dynamic.usedM,
-            est: r0Pool.dynamic.usedM + bw > 0 ? (r0Pool.monthlyCost / (r0Pool.dynamic.usedM + bw)) * bw : 0,
-          });
-          continue;
-        }
-        const poolRows = SOURCES.lineinternet.rows.filter((r) => r.ptag === ptag);
-        const rentTotal = poolRows.reduce((s, r) => s + Number(r.meta || 0), 0);
-        const soldTotal = poolRows.reduce((s, r) => s + (r.pool?.usedM ?? 0), 0);
-        snaps.push({
-          orderId: l.id, orderName: l.name, pool: ptag, lineIds: rs.map((r) => r.id),
-          bw, rentTotal, soldTotal,
-          est: soldTotal + bw > 0 ? (rentTotal / (soldTotal + bw)) * bw : 0,
-        });
-      }
     }
     if (snaps.length) snapshotEsts(snaps);
   };
@@ -990,7 +950,7 @@ export default function Home() {
         </div>
         {l.cat === "isp" && (
           <div className="border-b bg-[#E8F3FF] px-4 py-2 text-xs leading-5 text-[#165DFF]">
-            出口 = 向运营商采购的线路，可多家客户共用。成本按<strong>归属产品类型</strong>合并计收（边际计价）：同类型所有出口月租合计 ÷（已售带宽 + 本单带宽）× 本单带宽——回答「新增这一单的成本」；月结按平均分摊（池成本 ÷ 已售带宽）做实际归属。<strong>例外：产品组成含「出口池」的类型（如 BGP 三网互通）不逐条选出口，改选「出口池」</strong>（由产品组成配置驱动：资源清单 → 产品组成加「出口池」即生效；客户向池采购、不指向具体出口，池已售/池月成本以 R0 出口池档案为准；选池即自动带出成员出口，作为 IP 搜索条件与快照留痕）。AI 专线、D-MAN 共享 BGP 出口按归属类型边际计价；一单可选多条线路。
+            出口 = 向运营商采购的线路，可多家客户共用。成本按<strong>两步法</strong>计收（《出口带宽成本计价口径设计 v1.4》）：① 出口租金按「各产品类型在该出口上的已售带宽占比」切分（无在役单 → 全额归归属类型）；② 同类型跨出口叠加为「产品类型租金池」，边际计价 ＝ 池租金 ÷（类型已售＋本单带宽）× 本单带宽——回答「新增这一单的成本」，签单锁定快照，月结按签单快照归档、不重算。成本跟着<strong>订单产品类型</strong>走：AI 专线、D-MAN 共享 BGP 出口时，按各自类型在出口上的占用占比切租金，不再随 BGP 池口径波动。<strong>产品组成含「出口池」的类型（如 BGP 三网互通）不逐条选出口，改选「出口池」</strong>（由产品组成配置驱动：资源清单 → 产品组成加「出口池」即生效；客户向池采购、不指向具体出口，池已售以 R0 出口池档案为准；池在成员出口上的分摊 ＝ 池已售 × 分摊权重，默认容量占比、可在池档案按路由策略修正；选池即自动带出成员出口，作为 IP 搜索条件与快照留痕）。一单可选多条线路。
           </div>
         )}
         {(() => {

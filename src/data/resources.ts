@@ -30,7 +30,7 @@ export interface ArchiveDef {
 // Resources 页 tab=r0 有独立的池化布局，且 ARCHIVES 被 chain/CostItems 按 key 查询，混入会误命中。
 const R0_POOL: ArchiveDef = {
   key: "r0", code: "R0", name: "出口池档案", materialKey: "mat_pool",
-  poolHint: "成本口径：客户向池采购带宽、不指向具体出口；池月租 = 成员出口合计，签单按边际计价（池月租 ÷（池已售＋本单）× 本单），月结按平均分摊做实际归属",
+  poolHint: "成本口径：客户向池采购带宽、不指向具体出口；两步法计价（出口租金按各类型占用占比切分 → 类型跨出口叠加边际计价）；成员出口「分摊权重」默认 ＝ 容量占比，可按路由策略手工修正（调整留痕）；签单锁定快照，月结按签单快照归档、不重算",
   fields: [],
 };
 export const ARCHIVES_OF_MATERIAL = (matKey: string): ArchiveDef[] =>
@@ -41,13 +41,13 @@ export const ARCHIVES_OF_MATERIAL = (matKey: string): ArchiveDef[] =>
 // BGP 三网互通 = 自建资源池（多出口自组、自有 BGP 调度），池是独立一等实体（见 @/data/pool）：
 // 客户向「池」采购带宽、不指向池内某一条出口；出口仍可被多个产品类型共用（含挂进池）。
 // 出口承载明细只列直接挂在该出口上的订单；BGP 类订单统一记在池上（存量数据加载时迁移）。
-// 成本计收口径（全出口统一，产品类型级池化）：
-// ① 录入测算（边际计价，决策依据）＝产品类型出口月租合计 ÷（该产品类型已售带宽合计 + 本单带宽）× 本单带宽
-//    ——回答「新增这一单要花多少钱」，新线爬坡期客户不会被全价吓退；
-// ② 月结归属（平均分摊，实际成本）＝池成本 ÷ 当时已售带宽 × 本单带宽（P07 月结模块）。
-// 共用出口（同一出口挂多产品类型）：月租按各类型占用带宽占比拆进各自类型池，再按上述口径计收。
-// 池化收益：新采购出口爬坡期闲置成本由全池客户共担，避免「单线单客户」成本畸高。
-// 已售带宽/容量均为商用参考指标（满载预警），不进核算逻辑。
+// 成本计收口径（《出口带宽成本计价口径设计 v1.4》定稿，两步法）：
+// ① 出口租金按「各产品类型在该出口上的已售带宽占比」切分（无在役单 → 全额归归属产品类型）；
+// ② 同类型跨出口叠加为「产品类型租金池」，边际计价 ＝ 池租金 ÷（类型已售 + 本单带宽）× 本单带宽
+//    ——回答「新增这一单要花多少钱」，签单锁定快照；月结按签单快照归档、不重算（前提 1）。
+// 池化（产品组成含出口池的类型，如 BGP）：客户向池采购、不指向具体出口；池在成员出口上的分摊 ＝
+// 池已售 × 分摊权重（默认容量占比、可按路由策略手工修正，前提 2），与其他直挂类型合并占坑后按 ① 切租金。
+// 台账冲减（退订/变更）以工单完工时点为准（前提 4）。已售/容量同时是商用参考指标（满载预警）。
 export interface R1Row {
   id: string; name: string;
   product: string;        // 归属产品类型（主）
@@ -110,24 +110,21 @@ export function r1PoolByProduct(product: string, rows: R1Row[] = R1_ROWS) {
 
 export const R1: ArchiveDef = {
   key: "r1", code: "R1", name: "出口线路档案", materialKey: "mat_exit",
-  poolHint: "成本口径：随单直接成本；同产品类型出口合并为一个池：录入按边际计价（池月租合计 ÷（已售＋本单带宽）× 本单带宽，决策依据），月结按平均分摊（池成本 ÷ 已售带宽）做实际归属；共用出口按各类型占用带宽占比拆池",
+  poolHint: "成本口径：随单直接成本；两步法（出口租金按各类型占用占比切分 → 类型跨出口叠加边际计价：池租金 ÷（已售＋本单带宽）× 本单带宽）；签单锁定快照，月结按签单快照归档、不重算",
   fields: [],  // 字段由资源目录归属类的属性模板驱动（ARCHIVE_FIELDS），此处仅兜底
 };
 
 // 预置出口线路：BGP 三网 = 电信/联通/移动三条（可多条）；AI 专线与 BGP 共用同批出口；D-MAN 共用电信出口
-export const R1_ROWS: R1Row[] = persistable("r1Rows", () => [
+export const R1_ROWS: R1Row[] = persistable("r1RowsV2", () => [
   {
     id: "E-CT-1", name: "电信-BGP出口-上海漕河泾-1G", product: "BGP 三网互通", sharedWith: "AI 专线、D-MAN",
     carrier: "电信", region: "上海市徐汇区漕河泾机房", contractNo: "CT-2026-018",
     capacityM: 1000, monthlyCost: 45000, effect: "2025-01-01", status: "生效",
     dynamic: {
-      usedM: 600, peakM: 410,
+      usedM: 150, peakM: 410,
       orders: [
-        { customer: "中海贸易（BGP）", bw: 200, since: "2025-09" },
-        { customer: "凯瑞传媒（BGP）", bw: 200, since: "2026-02" },
         { customer: "云启数据（AI 专线）", bw: 100, since: "2026-03" },
         { customer: "跃游网络（D-MAN）", bw: 50, since: "2026-06" },
-        { customer: "某科技公司（BGP，核算中）", bw: 50, since: "—" },
       ],
     },
   },
@@ -136,10 +133,8 @@ export const R1_ROWS: R1Row[] = persistable("r1Rows", () => [
     carrier: "联通", region: "上海市徐汇区漕河泾机房", contractNo: "CU-2026-033",
     capacityM: 1000, monthlyCost: 40000, effect: "2025-01-01", status: "生效",
     dynamic: {
-      usedM: 500, peakM: 300,
+      usedM: 100, peakM: 300,
       orders: [
-        { customer: "中海贸易（BGP）", bw: 200, since: "2025-09" },
-        { customer: "凯瑞传媒（BGP）", bw: 200, since: "2026-02" },
         { customer: "云启数据（AI 专线）", bw: 100, since: "2026-03" },
       ],
     },
@@ -149,10 +144,8 @@ export const R1_ROWS: R1Row[] = persistable("r1Rows", () => [
     carrier: "移动", region: "上海市徐汇区漕河泾机房", contractNo: "CM-2026-007",
     capacityM: 800, monthlyCost: 28000, effect: "2025-01-01", status: "生效",
     dynamic: {
-      usedM: 500, peakM: 390,
+      usedM: 100, peakM: 390,
       orders: [
-        { customer: "中海贸易（BGP）", bw: 200, since: "2025-09" },
-        { customer: "凯瑞传媒（BGP）", bw: 200, since: "2026-02" },
         { customer: "云启数据（AI 专线）", bw: 100, since: "2026-03" },
       ],
     },
