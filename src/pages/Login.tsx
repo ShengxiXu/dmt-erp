@@ -40,7 +40,7 @@ export default function Login() {
     setBusy(true);
     const r = loginByPassword(account, password);
     setBusy(false);
-    if (r.ok) navigate("/home", { replace: true });
+    if (r.ok) navigate("/workbench", { replace: true }); // 登录后默认落地页：工作台
     else setError(r.error ?? "登录失败，请重试");
   };
 
@@ -57,7 +57,7 @@ export default function Login() {
     setBusy(true);
     const r = loginBySms(phone, code);
     setBusy(false);
-    if (r.ok) navigate("/home", { replace: true });
+    if (r.ok) navigate("/workbench", { replace: true }); // 登录后默认落地页：工作台
     else setError(r.error ?? "登录失败，请重试");
   };
 
