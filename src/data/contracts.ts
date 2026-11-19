@@ -3,6 +3,7 @@
 import { useSyncExternalStore } from "react";
 import { DEMO_TODAY } from "@/data/settings";
 import { persistable, hasSnapshot } from "@/data/persist";
+import { GET_OPP, OPP_BACKFILL, ensureOpp } from "@/data/customers";
 
 export const SPECIAL_LEVELS = ["业务支撑部（业务条款）", "财务负责人（折扣与账期）", "管理层（例外与风险）"];
 
@@ -156,7 +157,7 @@ export const CONTRACTS: Contract[] = persistable("contracts", () => [
     versions: [{ v: 1, note: "初始版本（关联 SA-2026-011，折扣 12%）", at: "2026-10-22" }],
   },
   {
-    id: "HT-2026-018", entityId: "ENT-HQ", customer: "恒信证券", discount: 0,
+    id: "HT-2026-018", entityId: "ENT-HQ", customer: "恒信证券", dealId: "CJ-2026-007", discount: 0,
     seal: "online", pay: "季度付", start: "2026-10-01", end: "2027-09-30", amount: 42500,
     status: "已生效", step: 4,
     lines: [
@@ -165,7 +166,7 @@ export const CONTRACTS: Contract[] = persistable("contracts", () => [
     versions: [{ v: 1, note: "初始版本（标准合同）", at: "2026-09-20" }],
   },
   {
-    id: "HT-2026-023", entityId: "ENT-HQ", customer: "中海贸易", discount: 0,
+    id: "HT-2026-023", entityId: "ENT-HQ", customer: "中海贸易", dealId: "CJ-2026-008", discount: 0,
     seal: "offline", pay: "月付", start: "2026-11-15", end: "2027-11-14", amount: 38000,
     status: "签署中", step: 1,
     lines: [
@@ -174,7 +175,7 @@ export const CONTRACTS: Contract[] = persistable("contracts", () => [
     versions: [{ v: 1, note: "初始版本（标准合同）", at: "2026-10-24" }],
   },
   {
-    id: "HT-2026-024", entityId: "ENT-HQ", customer: "跃游网络", discount: 0,
+    id: "HT-2026-024", entityId: "ENT-HQ", customer: "跃游网络", dealId: "CJ-2026-009", discount: 0,
     seal: "online", pay: "年付", start: "2026-12-01", end: "2027-11-30", amount: 21000,
     status: "待出合同", step: 0,
     lines: [
@@ -196,7 +197,7 @@ export const CONTRACTS: Contract[] = persistable("contracts", () => [
     ],
   },
   {
-    id: "HT-2026-015", entityId: "ENT-HQ", customer: "正大物流", discount: 0,
+    id: "HT-2026-015", entityId: "ENT-HQ", customer: "正大物流", dealId: "CJ-2026-010", discount: 0,
     seal: "offline", pay: "月付", start: "2026-10-01", end: "2027-09-30", amount: 67200,
     status: "已生效", step: 4,
     lines: [
@@ -205,7 +206,7 @@ export const CONTRACTS: Contract[] = persistable("contracts", () => [
     versions: [{ v: 1, note: "初始版本（标准合同）", at: "2026-10-08" }],
   },
   {
-    id: "HT-2026-0202", entityId: "ENT-NET", customer: "某跨境电商", discount: 0,
+    id: "HT-2026-0202", entityId: "ENT-NET", customer: "某跨境电商", dealId: "CJ-2026-011", discount: 0,
     seal: "online", pay: "月付", start: "2025-09-01", end: "2027-08-31", amount: 230400,
     status: "已生效", step: 4,
     lines: [
@@ -214,7 +215,7 @@ export const CONTRACTS: Contract[] = persistable("contracts", () => [
     versions: [{ v: 1, note: "初始版本（标准合同）", at: "2025-08-20" }],
   },
   {
-    id: "HT-2026-0309", entityId: "ENT-BJ", customer: "博彦软件", discount: 0,
+    id: "HT-2026-0309", entityId: "ENT-BJ", customer: "博彦软件", dealId: "CJ-2026-012", discount: 0,
     seal: "online", pay: "月付", start: "2026-06-20", end: "2027-06-19", amount: 118800,
     status: "已生效", step: 4,
     lines: [
@@ -223,7 +224,7 @@ export const CONTRACTS: Contract[] = persistable("contracts", () => [
     versions: [{ v: 1, note: "初始版本（标准合同）", at: "2026-06-10" }],
   },
   {
-    id: "HT-2026-0341", entityId: "ENT-HQ", customer: "上海某科技公司", discount: 0,
+    id: "HT-2026-0341", entityId: "ENT-HQ", customer: "上海某科技公司", dealId: "CJ-2026-013", discount: 0,
     seal: "offline", pay: "月付", start: "2026-10-01", end: "2028-09-30", amount: 840000,
     status: "已生效", step: 4,
     lines: [
@@ -232,7 +233,7 @@ export const CONTRACTS: Contract[] = persistable("contracts", () => [
     versions: [{ v: 1, note: "初始版本（标准合同）", at: "2026-09-22" }],
   },
   {
-    id: "HT-2026-0338", entityId: "ENT-HQ", customer: "恒信证券", discount: 0,
+    id: "HT-2026-0338", entityId: "ENT-HQ", customer: "恒信证券", dealId: "CJ-2026-014", discount: 0,
     seal: "online", pay: "月付", start: "2026-09-01", end: "2027-08-31", amount: 696000,
     status: "已生效", step: 4,
     lines: [
@@ -241,7 +242,7 @@ export const CONTRACTS: Contract[] = persistable("contracts", () => [
     versions: [{ v: 1, note: "初始版本（标准合同）", at: "2026-08-18" }],
   },
   {
-    id: "HT-2026-0335", entityId: "ENT-HQ", customer: "澜石金融", discount: 0,
+    id: "HT-2026-0335", entityId: "ENT-HQ", customer: "澜石金融", dealId: "CJ-2026-006", discount: 0,
     seal: "online", pay: "月付", start: "2026-11-01", end: "2029-10-31", amount: 5472000,
     status: "已生效", step: 4,
     lines: [
@@ -250,7 +251,7 @@ export const CONTRACTS: Contract[] = persistable("contracts", () => [
     versions: [{ v: 1, note: "初始版本（标准合同）", at: "2026-10-15" }],
   },
   {
-    id: "HT-2026-0329", entityId: "ENT-HQ", customer: "跃游网络", discount: 0,
+    id: "HT-2026-0329", entityId: "ENT-HQ", customer: "跃游网络", dealId: "CJ-2026-015", discount: 0,
     seal: "online", pay: "月付", start: "2026-08-01", end: "2027-07-31", amount: 96000,
     status: "已生效", step: 4,
     lines: [
@@ -259,7 +260,7 @@ export const CONTRACTS: Contract[] = persistable("contracts", () => [
     versions: [{ v: 1, note: "初始版本（标准合同）", at: "2026-07-20" }],
   },
   {
-    id: "HT-2026-0326", entityId: "ENT-HQ", customer: "正大物流", discount: 0,
+    id: "HT-2026-0326", entityId: "ENT-HQ", customer: "正大物流", dealId: "CJ-2026-016", discount: 0,
     seal: "offline", pay: "月付", start: "2026-09-01", end: "2028-08-31", amount: 156000,
     status: "已生效", step: 4,
     lines: [
@@ -268,7 +269,7 @@ export const CONTRACTS: Contract[] = persistable("contracts", () => [
     versions: [{ v: 1, note: "初始版本（标准合同）", at: "2026-08-15" }],
   },
   {
-    id: "HT-2026-0302", entityId: "ENT-HQ", customer: "展鹏教育", discount: 0,
+    id: "HT-2026-0302", entityId: "ENT-HQ", customer: "展鹏教育", dealId: "CJ-2026-017", discount: 0,
     seal: "online", pay: "月付", start: "2025-12-01", end: "2026-11-30", amount: 81600,
     status: "已生效", step: 4,
     lines: [
@@ -338,12 +339,26 @@ export const dealSpecialInflight = (dealId: string): Special | null =>
 
 // 版本迁移（2026-11-18）：早前快照里的合同缺 dealId 关联（当时数据未回填），
 // 启动时经「合同 → 特批单 → 商机」链路原地补齐（导出引用不变，5 秒快照自动落盘）。
+// 2026-11-19 扩展：成本台账增加商机列，老快照再按「合同号 → 商机号」显式映射补齐，
+// 缺失的回填商机（OPP_BACKFILL）一并幂等插入商机台账。
 // 必须在组件体内调用，禁止模块加载时执行（与台账初始化时序解耦）。
+const DEAL_BACKFILL: Record<string, string> = {
+  "HT-2026-018": "CJ-2026-007", "HT-2026-023": "CJ-2026-008", "HT-2026-024": "CJ-2026-009",
+  "HT-2026-015": "CJ-2026-010", "HT-2026-0202": "CJ-2026-011", "HT-2026-0309": "CJ-2026-012",
+  "HT-2026-0341": "CJ-2026-013", "HT-2026-0338": "CJ-2026-014", "HT-2026-0335": "CJ-2026-006",
+  "HT-2026-0329": "CJ-2026-015", "HT-2026-0326": "CJ-2026-016", "HT-2026-0302": "CJ-2026-017",
+};
 export function ensureContractDealLink(): void {
   if (!hasSnapshot("contracts")) return;
   for (const c of CONTRACTS) {
-    if (c.dealId || !c.specialId) continue;
-    const sp = SPECIALS.find((s) => s.id === c.specialId);
-    if (sp?.dealId) c.dealId = sp.dealId;
+    if (!c.dealId) {
+      const sp = c.specialId ? SPECIALS.find((s) => s.id === c.specialId) : null;
+      if (sp?.dealId) c.dealId = sp.dealId;
+    }
+    if (!c.dealId && DEAL_BACKFILL[c.id]) c.dealId = DEAL_BACKFILL[c.id];
+    if (c.dealId && !GET_OPP(c.dealId)) {
+      const seed = OPP_BACKFILL.find((o) => o.id === c.dealId);
+      if (seed) ensureOpp(seed);
+    }
   }
 }

@@ -44,6 +44,22 @@ export interface Opportunity {
 
 // ---------- 轻量 store：商机跨页面共享（商机管理 / 客户档案 / 特批申请 / 合同） ----------
 // 商机台账本地持久化（persistable）：新增/改状态刷新不丢；原地修改保证快照引用稳定
+// 2026-11-19 回填批次：生效/在途合同补齐「客户 → 商机 → 合同」链路（成本台账 / 合同列表展示商机名称）。
+// 单独导出供 ensureContractDealLink 做快照迁移（老快照缺这批商机时幂等插入）。
+export const OPP_BACKFILL: Opportunity[] = [
+  { id: "CJ-2026-007", customerId: "CU-002", name: "营业部 BGP 接入项目", products: [{ cat: "ISP 互联网接入", ptype: "BGP 三网互通" }], expectAmount: 42500, expectMonths: 12, expectedCloseAt: "2026-09-20", stage: "赢单", source: "转介绍", sales: "张弛", createdAt: "2026-08-25", remark: "合同 HT-2026-018 已生效，商机自动关闭" },
+  { id: "CJ-2026-008", customerId: "CU-003", name: "外贸专线接入项目", products: [{ cat: "ISP 互联网接入", ptype: "BGP 三网互通" }], expectAmount: 456000, expectMonths: 12, expectedCloseAt: "2026-10-24", stage: "赢单", source: "陌拜", sales: "李骁", createdAt: "2026-09-28", remark: "合同 HT-2026-023 签署中" },
+  { id: "CJ-2026-009", customerId: "CU-004", name: "游戏加速线路项目", products: [{ cat: "ISP 互联网接入", ptype: "国内精品网" }], expectAmount: 252000, expectMonths: 12, expectedCloseAt: "2026-10-26", stage: "赢单", source: "市场活动", sales: "李骁", createdAt: "2026-09-30", remark: "合同 HT-2026-024 待出合同" },
+  { id: "CJ-2026-010", customerId: "CU-008", name: "园区 BGP 接入项目", products: [{ cat: "ISP 互联网接入", ptype: "BGP 三网互通" }], expectAmount: 67200, expectMonths: 12, expectedCloseAt: "2026-10-08", stage: "赢单", source: "陌拜", sales: "李骁", createdAt: "2026-08-20", remark: "合同 HT-2026-015 已生效，商机自动关闭" },
+  { id: "CJ-2026-011", customerId: "CU-010", name: "跨境专线项目", products: [{ cat: "ISP 互联网接入", ptype: "国际精品网" }], expectAmount: 230400, expectMonths: 24, expectedCloseAt: "2025-08-20", stage: "赢单", source: "转介绍", sales: "李骁", createdAt: "2025-07-15", remark: "合同 HT-2026-0202 已生效，商机自动关闭" },
+  { id: "CJ-2026-012", customerId: "CU-009", name: "软件园专线接入项目", products: [{ cat: "ISP 互联网接入", ptype: "国内精品网" }], expectAmount: 118800, expectMonths: 12, expectedCloseAt: "2026-06-10", stage: "赢单", source: "市场活动", sales: "张弛", createdAt: "2026-05-12", remark: "合同 HT-2026-0309 已生效，商机自动关闭" },
+  { id: "CJ-2026-013", customerId: "CU-011", name: "算力互联专线项目", products: [{ cat: "ISP 互联网接入", ptype: "AI 专线" }], expectAmount: 840000, expectMonths: 24, expectedCloseAt: "2026-09-22", stage: "赢单", source: "招标", sales: "张弛", createdAt: "2026-08-30", remark: "合同 HT-2026-0341 已生效，商机自动关闭" },
+  { id: "CJ-2026-014", customerId: "CU-002", name: "行情双线路项目", products: [{ cat: "ISP 互联网接入", ptype: "国内精品网" }], expectAmount: 696000, expectMonths: 12, expectedCloseAt: "2026-08-18", stage: "赢单", source: "转介绍", sales: "张弛", createdAt: "2026-07-10", remark: "合同 HT-2026-0338 已生效，商机自动关闭" },
+  { id: "CJ-2026-015", customerId: "CU-004", name: "带宽升级项目", products: [{ cat: "ISP 互联网接入", ptype: "国内精品网" }], expectAmount: 96000, expectMonths: 12, expectedCloseAt: "2026-07-20", stage: "赢单", source: "市场活动", sales: "李骁", createdAt: "2026-06-18", remark: "合同 HT-2026-0329 已生效，商机自动关闭" },
+  { id: "CJ-2026-016", customerId: "CU-008", name: "仓储网络项目", products: [{ cat: "ISP 互联网接入", ptype: "国内精品网" }], expectAmount: 156000, expectMonths: 24, expectedCloseAt: "2026-08-15", stage: "赢单", source: "陌拜", sales: "李骁", createdAt: "2026-07-22", remark: "合同 HT-2026-0326 已生效，商机自动关闭" },
+  { id: "CJ-2026-017", customerId: "CU-012", name: "校园网接入项目", products: [{ cat: "ISP 互联网接入", ptype: "国内精品网" }], expectAmount: 81600, expectMonths: 12, expectedCloseAt: "2025-11-18", stage: "赢单", source: "陌拜", sales: "李骁", createdAt: "2025-10-20", remark: "合同 HT-2026-0302 已生效，商机自动关闭" },
+];
+
 const opps: Opportunity[] = persistable("opps", () => [
   { id: "CJ-2026-001", customerId: "CU-001", name: "AI 算力一期 · AI 专线扩容", products: [{ cat: "ISP 互联网接入", ptype: "AI 专线" }], expectAmount: 2304000, expectMonths: 24, expectedCloseAt: "2026-10-20", stage: "赢单", source: "老客户续扩", sales: "张弛", createdAt: "2026-09-02", remark: "合同 HT-2026-021 签署中，生效后自动关闭" },
   { id: "CJ-2026-002", customerId: "CU-001", name: "二期算力扩容 · BGP 三网互通", products: [{ cat: "ISP 互联网接入", ptype: "BGP 三网互通" }, { cat: "ISP 互联网接入", ptype: "AI 专线" }], expectAmount: 2112000, expectMonths: 24, expectedCloseAt: "2026-11-15", stage: "已报价", source: "老客户续扩", sales: "张弛", createdAt: "2026-10-10" },
@@ -51,6 +67,7 @@ const opps: Opportunity[] = persistable("opps", () => [
   { id: "CJ-2026-004", customerId: "CU-006", name: "总部带宽升级项目", products: [{ cat: "ISP 互联网接入", ptype: "BGP 三网互通" }], expectAmount: 360000, expectMonths: 12, expectedCloseAt: "2026-11-01", stage: "赢单", source: "老客户续扩", sales: "李骁", createdAt: "2026-10-08", remark: "特批 SA-2026-013 被驳回，重新谈判中" },
   { id: "CJ-2026-005", customerId: "CU-007", name: "临港算力 10G AI 专线", products: [{ cat: "ISP 互联网接入", ptype: "AI 专线" }, { cat: "IDC", ptype: "机柜托管" }], expectAmount: 5400000, expectMonths: 36, expectedCloseAt: "2026-12-20", stage: "已报价", source: "市场活动", sales: "张弛", createdAt: "2026-10-25" },
   { id: "CJ-2026-006", customerId: "CU-005", name: "核心系统长账期专线项目", products: [{ cat: "数据专线", ptype: "OTN" }], expectAmount: 936000, expectMonths: 36, expectedCloseAt: "2026-12-31", stage: "跟进中", source: "招标", sales: "张弛", createdAt: "2026-10-20" },
+  ...OPP_BACKFILL,
 ]);
 
 let version = 0;
@@ -80,6 +97,12 @@ export function addOpp(patch: Omit<Opportunity, "id" | "createdAt">) {
   opps.unshift({ ...patch, id, createdAt: "2026-10-27" });
   bump();
   return id;
+}
+/** 幂等补齐指定 ID 的商机（版本迁移用）：已存在则不动，缺失则按给定数据插入 */
+export function ensureOpp(data: Opportunity) {
+  if (opps.some((d) => d.id === data.id)) return;
+  opps.push(data);
+  bump();
 }
 export function updateOpp(id: string, patch: Partial<Opportunity>) {
   const d = opps.find((x) => x.id === id);

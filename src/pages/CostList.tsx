@@ -2,7 +2,8 @@ import { useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { Download } from "lucide-react";
 import { SHEETS, fmt, type SheetStatus } from "@/data/sheets";
-import { CONTRACTS } from "@/data/contracts";
+import { CONTRACTS, ensureContractDealLink } from "@/data/contracts";
+import { GET_OPP } from "@/data/customers";
 import { inDataScope, scopeBanner } from "@/data/users";
 import { ownerOfDeal } from "@/data/ownership";
 import { DEMO_TODAY } from "@/data/settings";
@@ -31,11 +32,18 @@ export default function CostList() {
   const [f, setF] = useState<(typeof FILTERS)[number]>(initStatus && FILTERS.includes(initStatus) ? initStatus : "全部");
   const [onlyPending, setOnlyPending] = useState(sp.get("pending") === "1");
   const [kw, setKw] = useState(sp.get("kw") ?? "");
+  ensureContractDealLink(); // 老快照合同补 dealId 关联（商机列解析的数据前提）
   // 数据权限：核算单沿「合同 → 商机 / 客户」链路解析归属人后按角色数据范围过滤
   const sheetOwner = (s: (typeof SHEETS)[number]) => {
     const cid = s.contract.split(" ")[0];
     const c = CONTRACTS.find((x) => x.id === cid);
     return ownerOfDeal(c?.dealId, s.customer);
+  };
+  /** 核算单 → 合同 → 商机名称（合同未关联商机时回退空串） */
+  const sheetDeal = (s: (typeof SHEETS)[number]) => {
+    const cid = s.contract.split(" ")[0];
+    const c = CONTRACTS.find((x) => x.id === cid);
+    return c?.dealId ? (GET_OPP(c.dealId)?.name ?? "") : "";
   };
   // scoped 不做 memo：会话角色切换时数据范围要即时重算（数组很小，每次渲染重算无压力）
   const scoped = SHEETS.filter((s) => inDataScope(sheetOwner(s)));
@@ -78,8 +86,8 @@ export default function CostList() {
               ))}
             </div>
             <Input className="ml-2 w-48" placeholder="搜索核算单号 / 客户 / 合同" value={kw} onChange={(e) => setKw(e.target.value)} />
-            <button onClick={() => exportCsv(`成本台账_${DEMO_TODAY}`, ["核算单号", "客户", "合同", "订单行", "月成本(元)", "合同月额(元)", "毛利", "业务支撑部", "技术部", "状态", "当前节点", "更新时间"],
-              rows.map((s) => [s.id, s.customer, s.contract, s.lines, s.monthlyCost, s.contractValue, `${s.margin}%`, s.opsDone ? "已提交" : "未提交", s.techDone ? "已提交" : "未提交", s.status, s.curNode ?? "", s.updated]))}
+            <button onClick={() => exportCsv(`成本台账_${DEMO_TODAY}`, ["核算单号", "客户", "商机", "合同", "订单行", "月成本(元)", "合同月额(元)", "毛利", "业务支撑部", "技术部", "状态", "当前节点", "更新时间"],
+              rows.map((s) => [s.id, s.customer, sheetDeal(s), s.contract, s.lines, s.monthlyCost, s.contractValue, `${s.margin}%`, s.opsDone ? "已提交" : "未提交", s.techDone ? "已提交" : "未提交", s.status, s.curNode ?? "", s.updated]))}
               className="flex items-center gap-1 rounded-[2px] border border-[#E5E6EB] px-2.5 py-1.5 text-xs text-[#4E5969] hover:border-[#165DFF] hover:text-[#165DFF]">
               <Download size={12} /> 导出
             </button>
@@ -96,6 +104,7 @@ export default function CostList() {
             <thead>
               <tr className="border-b bg-[#F7F8FA] text-left text-[#4E5969]">
                 <th className="px-3 py-2">核算单号</th><th className="px-3 py-2">客户 / 合同</th>
+                <th className="px-3 py-2">商机</th>
                 <th className="px-3 py-2">订单行</th><th className="px-3 py-2">月成本(元)</th><th className="px-3 py-2">合同月额(元)</th>
                 <th className="px-3 py-2">毛利</th><th className="px-3 py-2">两部门填报</th>
                 <th className="px-3 py-2">状态 / 当前节点</th><th className="px-3 py-2">更新时间</th><th className="px-3 py-2"></th>
@@ -107,6 +116,7 @@ export default function CostList() {
                   onClick={() => nav(["审批中", "已通过", "已驳回", "变更中"].includes(s.status) ? `/approval?id=${s.id}` : `/home?contract=${s.contract.split(" ")[0]}`)}>
                   <td className="px-3 py-2.5 font-mono font-medium text-[#165DFF]">{s.id}</td>
                   <td className="px-3 py-2.5"><div className="font-medium text-[#1D2129]">{s.customer}</div><div className="text-[#86909C]">{s.contract}</div></td>
+                  <td className="max-w-44 truncate px-3 py-2.5 text-[#4E5969]" title={sheetDeal(s)}>{sheetDeal(s) || "—"}</td>
                   <td className="px-3 py-2.5">{s.lines}</td>
                   <td className="px-3 py-2.5 font-mono">{fmt(s.monthlyCost)}</td>
                   <td className="px-3 py-2.5 font-mono">{fmt(s.contractValue)}</td>
@@ -132,7 +142,7 @@ export default function CostList() {
                   </td>
                 </tr>
               ))}
-              {!rows.length && <tr><td colSpan={10} className="px-3 py-10 text-center text-[#86909C]">无匹配核算单</td></tr>}
+              {!rows.length && <tr><td colSpan={11} className="px-3 py-10 text-center text-[#86909C]">无匹配核算单</td></tr>}
             </tbody>
           </table>
         </section>
