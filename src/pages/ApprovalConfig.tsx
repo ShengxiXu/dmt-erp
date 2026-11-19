@@ -266,6 +266,7 @@ export default function ApprovalConfig() {
   const [selId, setSelId] = useState(flows[0]?.id ?? "");
   const [kw, setKw] = useState("");
   const [newOpen, setNewOpen] = useState(false);
+  const [view, setView] = useState<"list" | "canvas">("list"); // 默认落地：列表页；「配置」进入画布
   const sel = flows.find((f) => f.id === selId) ?? flows[0];
   const [draft, setDraft] = useState<ApprovalFlow | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -309,15 +310,66 @@ export default function ApprovalConfig() {
       <main className="space-y-4 p-6">
         {/* 页头：标题 + 统计 + 新建 */}
         <div className="flex items-center justify-between rounded-[8px] border border-[#E5E6EB] bg-white px-4 py-2.5">
-          <div className="flex items-baseline gap-3">
-            <span className="text-sm font-semibold text-[#1D2129]">审批流配置</span>
-            <span className="text-[11px] text-[#86909C]">
-              审批流 {flows.filter((f) => f.enabled).length}/{flows.length} 启用 · 在途 {active} · 今日完成 {doneToday}
-            </span>
+          <div className="flex items-center gap-3">
+            <div className="flex items-baseline gap-3">
+              <span className="text-sm font-semibold text-[#1D2129]">审批流配置</span>
+              <span className="hidden text-[11px] text-[#86909C] xl:block">
+                审批流 {flows.filter((f) => f.enabled).length}/{flows.length} 启用 · 在途 {active} · 今日完成 {doneToday}
+              </span>
+            </div>
+            <div className="flex rounded-[2px] border border-[#E5E6EB] p-0.5">
+              {([["list", "列表"], ["canvas", "画布配置"]] as const).map(([k, label]) => (
+                <button key={k} onClick={() => setView(k)}
+                  className={`rounded-[2px] px-3 py-0.5 text-xs transition-colors ${view === k ? "bg-[#165DFF] text-white" : "text-[#4E5969] hover:bg-[#F2F3F5]"}`}>{label}</button>
+              ))}
+            </div>
           </div>
           <Button size="sm" onClick={() => setNewOpen(true)}>＋ 新建审批流</Button>
         </div>
 
+        {view === "list" && (
+          <div className="overflow-x-auto rounded-[8px] border border-[#E5E6EB] bg-white">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b bg-[#F7F8FA] text-left text-[#4E5969]">
+                  <th className="px-3 py-2">审批流名称</th><th className="px-3 py-2">挂接单据动作</th>
+                  <th className="px-3 py-2">触发条件</th><th className="px-3 py-2">分支 / 节点</th>
+                  <th className="px-3 py-2">状态</th><th className="px-3 py-2">最近更新</th><th className="px-3 py-2 text-right">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {shown.map((f) => (
+                  <tr key={f.id} className="border-b last:border-0 hover:bg-[#F7F8FA]">
+                    <td className="px-3 py-2.5">
+                      <button className="font-medium text-[#165DFF] hover:underline" onClick={() => { setSelId(f.id); setView("canvas"); }}>{f.name}</button>
+                      <div className="mt-0.5 font-mono text-[10px] text-[#86909C]">{f.id}{f.isDefault ? " · 出厂默认" : ""}</div>
+                    </td>
+                    <td className="px-3 py-2.5 text-[#4E5969]">{f.docType}</td>
+                    <td className="max-w-[220px] truncate px-3 py-2.5 text-[#4E5969]" title={condsText(f.conds)}>{condsText(f.conds) || "全部单据"}</td>
+                    <td className="px-3 py-2.5 text-[#4E5969]">
+                      {f.branches.filter((b) => b.enabled).length}/{f.branches.length} 分支
+                      <span className="ml-1 text-[#86909C]">· {Math.min(...f.branches.filter((b) => b.enabled).map((b) => b.nodes.length))}~{Math.max(...f.branches.map((b) => b.nodes.length))} 节点</span>
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <button onClick={() => toggleFlow(f.id)} title="点击切换启用/停用"
+                        className={`rounded-[2px] px-1.5 py-0.5 text-[10px] ${f.enabled ? "bg-[#E8F8F2] text-[#00B42A]" : "bg-[#F2F3F5] text-[#86909C]"}`}>{f.enabled ? "启用" : "停用"}</button>
+                    </td>
+                    <td className="px-3 py-2.5 font-mono text-[10px] text-[#86909C]">{f.updatedAt}<br />{f.updatedBy}</td>
+                    <td className="px-3 py-2.5 text-right">
+                      <button className="rounded-[2px] border border-[#E5E6EB] px-2 py-0.5 text-[11px] text-[#4E5969] hover:border-[#165DFF] hover:text-[#165DFF]"
+                        onClick={() => { setSelId(f.id); setView("canvas"); }}>配置</button>
+                      <button className="ml-1.5 rounded-[2px] border border-[#E5E6EB] px-2 py-0.5 text-[11px] text-[#F53F3F] hover:bg-[#FFECE8]"
+                        onClick={() => { if (confirm(`删除审批流「${f.name}」？该单据动作将不再走审批，变更留痕。`)) { const e = removeFlow(f.id); if (e) alert(e); } }}>删除</button>
+                    </td>
+                  </tr>
+                ))}
+                {!shown.length && <tr><td colSpan={7} className="px-3 py-10 text-center text-[#C9CDD4]">无匹配审批流</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {view === "canvas" && (
         <div className="flex gap-4">
           {/* 左：审批流列表 */}
           <div className="w-60 shrink-0 self-start rounded-[8px] border border-[#E5E6EB] bg-white">
@@ -488,6 +540,7 @@ export default function ApprovalConfig() {
             </div>
           )}
         </div>
+        )}
 
         <SimPanel />
 
