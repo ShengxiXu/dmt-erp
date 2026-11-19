@@ -427,7 +427,7 @@ export default function ContractDetail() {
         {c.status === "已生效" && (
           <div className="flex flex-wrap items-center gap-3 rounded-[4px] border border-[#7BD9A8] bg-[#E8F8F2] px-4 py-3">
             <span className="text-xs text-[#00701A]">合同已生效：订单同步生效，可进入成本核算与开通交付。</span>
-            <Link to={`/?contract=${c.id}`}><Button size="sm">进入成本核算（带入订单行）</Button></Link>
+            <Link to={`/home?contract=${c.id}`}><Button size="sm">进入成本核算（带入订单行）</Button></Link>
             <Link to="/delivery"><Button size="sm" variant="outline">查看开通工单</Button></Link>
             <Link to="/lifecycle"><Button size="sm" variant="outline">变更 / 退订</Button></Link>
           </div>

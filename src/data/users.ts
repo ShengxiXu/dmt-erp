@@ -54,7 +54,7 @@ const ALL_PATHS = ALL_MENUS.map((m) => m.to);
 
 /** 路径是否命中菜单授权：「/」核算单录入表单已并入成本台账（持 /cost 即可进入）；其余菜单含其下所有详情页（前缀匹配） */
 export function pathAllowed(menus: string[], path: string): boolean {
-  if (path === "/") return menus.includes("/cost");
+  if (path === "/home") return menus.includes("/cost"); // 核算单录入表单（原 "/"）
   return menus.some((m) => path === m || path.startsWith(m + "/"));
 }
 

@@ -119,7 +119,7 @@ export function ShellLayout() {
                 <button onClick={() => navigate("/workbench")} title="到工作台切换演示角色" className="shrink-0 rounded-[2px] border border-[#E5E6EB] px-1 text-[10px] text-[#165DFF] hover:bg-[#F0F5FF]">切换</button>
               </div>
             </div>
-            <button onClick={() => { logout(); navigate("/login"); }} title="退出登录"
+            <button onClick={() => { logout(); navigate("/"); }} title="退出登录"
               className="shrink-0 rounded-[2px] border border-[#E5E6EB] px-1.5 py-0.5 text-[10px] text-[#86909C] hover:bg-[#FFECE8] hover:text-[#F53F3F]">退出</button>
           </div>
         </div>

@@ -681,7 +681,7 @@ function linesFromContract(c: Contract): OrderLine[] {
 
 export default function Home() {
   const [sp] = useSearchParams();
-  /** 合同来源：/?contract=HT-xxxx 由合同详情「进入成本核算」带入（仅已生效合同） */
+  /** 合同来源：/home?contract=HT-xxxx 由合同详情「进入成本核算」带入（仅已生效合同） */
   const contract = CONTRACTS.find((c) => c.id === sp.get("contract") && c.status === "已生效") ?? null;
   const fromContract = !!contract;
   const [lines, setLines] = useState<OrderLine[]>(contract ? linesFromContract(contract) : INIT_LINES);

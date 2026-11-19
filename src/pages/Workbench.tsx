@@ -40,7 +40,7 @@ function buildTodos(role: Role): Todo[] {
     case "业务支撑部": {
       const t: Todo[] = [];
       SHEETS.filter((s) => s.status === "待填写").forEach((s) =>
-        t.push({ title: `核算单 ${s.id} · ${s.customer}`, sub: `新单待起草 · 合同行已带入（${s.updated.slice(5, 10)} 更新）`, link: `/?contract=${contractNo(s.contract)}`, cta: "去填报" }));
+        t.push({ title: `核算单 ${s.id} · ${s.customer}`, sub: `新单待起草 · 合同行已带入（${s.updated.slice(5, 10)} 更新）`, link: `/home?contract=${contractNo(s.contract)}`, cta: "去填报" }));
       SHEETS.filter((s) => s.status === "待对方提交").forEach((s) =>
         t.push({ title: `核算单 ${s.id} · ${s.customer}`, sub: "你方条目已完成，等技术部提交", link: `/cost?status=待对方提交&kw=${s.id}`, cta: "查看进度" }));
       SHEETS.filter((s) => (s.pendingLink ?? 0) > 0).forEach((s) =>
@@ -50,7 +50,7 @@ function buildTodos(role: Role): Todo[] {
     case "技术部": {
       const t: Todo[] = [];
       SHEETS.filter((s) => !s.techDone && s.status === "待对方提交").forEach((s) =>
-        t.push({ title: `核算单 ${s.id} · ${s.customer}`, sub: "支撑部已提交，等你方填技术类条目", link: `/?contract=${contractNo(s.contract)}`, cta: "去填报" }));
+        t.push({ title: `核算单 ${s.id} · ${s.customer}`, sub: "支撑部已提交，等你方填技术类条目", link: `/home?contract=${contractNo(s.contract)}`, cta: "去填报" }));
       [...WORK_ORDERS].filter((w) => w.step < 6).sort((a, b) => a.deadline.localeCompare(b.deadline))
         .forEach((w, i) =>
           t.push({ title: `工单 ${w.id} · ${w.customer}`, sub: `当前节点：${STEP_NAMES[w.step]} · 要求 ${w.deadline.slice(5)} 前完成`, link: `/delivery/detail?id=${w.id}`, cta: "去处理", hot: i === 0 }));

@@ -59,10 +59,13 @@ export default function App() {
   return (
     <div key={syncKey}>
     <Routes>
-      <Route path="/login" element={<Login />} />
+      {/* 系统入口默认页 = 登录页（"/"）；已废弃的 /login 兼容跳转 */}
+      <Route path="/" element={<Login />} />
+      <Route path="/login" element={<Navigate to="/" replace />} />
       <Route element={<RequireAuth />}>
       <Route element={<ShellLayout />}>
-      <Route path="/" element={<Home />} />
+      {/* 核算单录入表单（原 "/"）迁至 "/home"，仅登录后可进入 */}
+      <Route path="/home" element={<Home />} />
       <Route path="/workbench" element={<Workbench />} />
       <Route path="/analytics" element={<Analytics />} />
       <Route path="/resources" element={<Navigate to="/resources/r1" replace />} />
@@ -117,6 +120,6 @@ export default function App() {
 /** 路由守卫：未登录一律跳 /login（订阅会话变化，登录/退出即时生效） */
 function RequireAuth() {
   useSessionRole(); // 订阅会话 bump，登录后无需手动刷新
-  if (!isLoggedIn()) return <Navigate to="/login" replace />;
+  if (!isLoggedIn()) return <Navigate to="/" replace />;
   return <Outlet />;
 }

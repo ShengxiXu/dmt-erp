@@ -104,7 +104,7 @@ export default function CostList() {
             <tbody>
               {rows.map((s) => (
                 <tr key={s.id} className="cursor-pointer border-b last:border-0 hover:bg-[#F7F8FA]"
-                  onClick={() => nav(["审批中", "已通过", "已驳回", "变更中"].includes(s.status) ? `/approval?id=${s.id}` : `/?contract=${s.contract.split(" ")[0]}`)}>
+                  onClick={() => nav(["审批中", "已通过", "已驳回", "变更中"].includes(s.status) ? `/approval?id=${s.id}` : `/home?contract=${s.contract.split(" ")[0]}`)}>
                   <td className="px-3 py-2.5 font-mono font-medium text-[#165DFF]">{s.id}</td>
                   <td className="px-3 py-2.5"><div className="font-medium text-[#1D2129]">{s.customer}</div><div className="text-[#86909C]">{s.contract}</div></td>
                   <td className="px-3 py-2.5">{s.lines}</td>
@@ -126,9 +126,9 @@ export default function CostList() {
                   </td>
                   <td className="px-3 py-2.5 text-[#86909C]">{s.updated}</td>
                   <td className="px-3 py-2.5">
-                    {(s.pendingLink ?? 0) > 0 && <Button size="sm" variant="outline" className="mr-1 border-[#FFCF8B] text-[#FF7D00] hover:bg-[#FFF7E8]" onClick={(e) => { e.stopPropagation(); nav(`/?contract=${s.contract.split(" ")[0]}`); }}>补关联</Button>}
+                    {(s.pendingLink ?? 0) > 0 && <Button size="sm" variant="outline" className="mr-1 border-[#FFCF8B] text-[#FF7D00] hover:bg-[#FFF7E8]" onClick={(e) => { e.stopPropagation(); nav(`/home?contract=${s.contract.split(" ")[0]}`); }}>补关联</Button>}
                     {s.status === "审批中" && <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); nav(`/approval?id=${s.id}`); }}>去审批</Button>}
-                    {(s.status === "待填写" || s.status === "待对方提交") && <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); nav(`/?contract=${s.contract.split(" ")[0]}`); }}>去填写</Button>}
+                    {(s.status === "待填写" || s.status === "待对方提交") && <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); nav(`/home?contract=${s.contract.split(" ")[0]}`); }}>去填写</Button>}
                   </td>
                 </tr>
               ))}
