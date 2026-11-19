@@ -572,16 +572,28 @@ function AddItemPanel({
 }) {
   const [kw, setKw] = useState("");
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
   const place = () => {
     if (!anchor) return;
     const r = anchor.getBoundingClientRect();
-    setPos({ top: r.bottom + 4, left: r.left });
+    const pw = panelRef.current?.offsetWidth ?? 520;
+    // 高度取实测值，但保底 280，避免视口突变后面板被 maxHeight 压成 1px 后误判
+    const ph = Math.max(panelRef.current?.offsetHeight ?? 320, 280);
+    // 横向：贴右缘时左移到视口内
+    const left = Math.max(8, Math.min(r.left, window.innerWidth - pw - 8));
+    // 纵向：下方放不下就翻到触发按钮上方
+    const below = r.bottom + 4;
+    const top = below + ph <= window.innerHeight - 8 ? below : Math.max(8, r.top - ph - 4);
+    setPos({ top, left });
   };
   useEffect(() => {
     place();
+    // 首帧后再校一次：初算时面板可能还没拿到最终高度 / 视口尺寸
+    const raf = requestAnimationFrame(() => place());
     window.addEventListener("scroll", place, true);
     window.addEventListener("resize", place);
     return () => {
+      cancelAnimationFrame(raf);
       window.removeEventListener("scroll", place, true);
       window.removeEventListener("resize", place);
     };
@@ -592,7 +604,7 @@ function AddItemPanel({
       (!kw || i.name.includes(kw) || (SUBJECTS[i.key] ?? "").includes(kw))
   );
   return (
-    <div className="fixed z-40 mt-0 w-[520px] max-w-[90vw] rounded-[4px] border border-[#E5E6EB] bg-white shadow-2xl"
+    <div ref={panelRef} className="fixed z-40 mt-0 w-[520px] max-w-[90vw] rounded-[4px] border border-[#E5E6EB] bg-white shadow-2xl"
       style={{ top: pos?.top ?? 0, left: pos?.left ?? 0, maxHeight: pos ? `calc(100vh - ${pos.top + 8}px)` : undefined }}>
       <div className="flex items-center justify-between border-b px-3 py-2">
         <span className="text-sm font-medium text-[#4E5969]">
@@ -689,8 +701,7 @@ export default function Home() {
   const [removed, setRemoved] = useState<Record<string, string[]>>({});
   /** 每行补回的绑定条目（条目 key，须与本行交付模式/类别有绑定关系） */
   const [extra, setExtra] = useState<Record<string, string[]>>({});
-  const [addOpen, setAddOpen] = useState<string | null>(null); // `${lineId}:${dept}`
-  const addAnchorRef = useRef<HTMLDivElement | null>(null); // 增补弹层锚点（触发按钮容器）
+  const [addOpen, setAddOpen] = useState<{ key: string; anchor: HTMLElement } | null>(null); // key=`${lineId}:${costType}:${dept}`，anchor=实际点击的按钮（每节各自锚定）
   const [submitted, setSubmitted] = useState<Record<string, boolean>>({ ops: false, tech: false });
   const [sent, setSent] = useState(false);
   /** 合同带入：进入即为本合同建档核算单（单号即时可见，台账同步可查；金额提交时回填） */
@@ -991,23 +1002,26 @@ export default function Home() {
             </td></tr>
           );
           const addButtons = (ct: "一次性" | "周期性") => (
-            <div ref={addAnchorRef} className="relative flex items-center gap-2">
+            <div className="relative flex items-center gap-2">
               {(["ops", "tech"] as const).map((dept) => (
                 <button key={dept} type="button" disabled={submitted[dept]}
                   className="text-xs text-[#165DFF] hover:underline disabled:cursor-not-allowed disabled:text-[#C9CDD4]"
-                  onClick={() => setAddOpen(addOpen === `${l.id}:${ct}:${dept}` ? null : `${l.id}:${ct}:${dept}`)}>
+                  onClick={(e) => {
+                    const key = `${l.id}:${ct}:${dept}`;
+                    setAddOpen(addOpen?.key === key ? null : { key, anchor: e.currentTarget });
+                  }}>
                   ＋{deptName(dept)}增补
                 </button>
               ))}
-              {addOpen?.startsWith(`${l.id}:${ct}`) && (() => {
-                const dept = addOpen!.endsWith(":ops") ? "ops" : "tech";
+              {addOpen?.key.startsWith(`${l.id}:${ct}`) && (() => {
+                const dept = addOpen!.key.endsWith(":ops") ? "ops" : "tech";
                 return (
                   <AddItemPanel
                     dept={dept}
                     allowedKeys={boundKeys}
                     excludeKeys={presentKeys}
                     costType={ct}
-                    anchor={addAnchorRef.current}
+                    anchor={addOpen!.anchor}
                     onAdd={(k) => addRow(l.id, k)}
                     onClose={() => setAddOpen(null)}
                   />
