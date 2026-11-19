@@ -154,6 +154,22 @@ function Step({ node, index, total, open, onToggle, onChange, onMove, onRemove }
   );
 }
 
+// ---------- 分页条（列表页 / 画布左栏共用） ----------
+function Pager({ total, page, size, onPage }: { total: number; page: number; size: number; onPage: (p: number) => void }) {
+  const pages = Math.max(1, Math.ceil(total / size));
+  return (
+    <div className="flex items-center justify-between border-t border-[#F2F3F5] px-3 py-1.5 text-[11px] text-[#86909C]">
+      <span>共 {total} 条 · 第 {page}/{pages} 页</span>
+      <div className="flex items-center gap-1">
+        <button disabled={page <= 1} onClick={() => onPage(page - 1)}
+          className="rounded-[2px] border border-[#E5E6EB] px-2 py-0.5 hover:border-[#165DFF] hover:text-[#165DFF] disabled:cursor-not-allowed disabled:opacity-40">上一页</button>
+        <button disabled={page >= pages} onClick={() => onPage(page + 1)}
+          className="rounded-[2px] border border-[#E5E6EB] px-2 py-0.5 hover:border-[#165DFF] hover:text-[#165DFF] disabled:cursor-not-allowed disabled:opacity-40">下一页</button>
+      </div>
+    </div>
+  );
+}
+
 // ---------- 新建审批流 ----------
 function NewFlowModal({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState("");
@@ -266,7 +282,9 @@ export default function ApprovalConfig() {
   const [selId, setSelId] = useState(flows[0]?.id ?? "");
   const [kw, setKw] = useState("");
   const [newOpen, setNewOpen] = useState(false);
-  const [view, setView] = useState<"list" | "canvas">("list"); // 默认落地：列表页；「配置」进入画布
+  const [view, setView] = useState<"list" | "canvas">("list"); // 默认落地：列表页；「配置」进入配置详情页（画布）
+  const [listPage, setListPage] = useState(1);   // 列表页分页
+  const [sidePage, setSidePage] = useState(1);   // 配置详情页左侧流程列表分页
   const sel = flows.find((f) => f.id === selId) ?? flows[0];
   const [draft, setDraft] = useState<ApprovalFlow | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -281,6 +299,15 @@ export default function ApprovalConfig() {
 
   const dirty = useMemo(() => draft && sel ? JSON.stringify(draft) !== JSON.stringify(sel) : false, [draft, sel]);
   const shown = flows.filter((f) => !kw || f.name.includes(kw) || f.docType.includes(kw));
+  const LIST_SIZE = 10;
+  const listPages = Math.max(1, Math.ceil(shown.length / LIST_SIZE));
+  const safeListPage = Math.min(listPage, listPages);
+  const listRows = shown.slice((safeListPage - 1) * LIST_SIZE, safeListPage * LIST_SIZE);
+  // 配置详情页左侧列表同样分页（8 条/页），避免流程多了无限拉长
+  const SIDE_SIZE = 8;
+  const sidePages = Math.max(1, Math.ceil(shown.length / SIDE_SIZE));
+  const safeSidePage = Math.min(sidePage, sidePages);
+  const sideRows = shown.slice((safeSidePage - 1) * SIDE_SIZE, safeSidePage * SIDE_SIZE);
   const active = instances.filter((i) => i.status === "审批中").length;
   const doneToday = instances.filter((i) => i.status !== "审批中" && i.results.some((r) => r.time.startsWith(DEMO_TODAY))).length;
   const sorted = draft ? sortBranches(draft.branches) : [];
@@ -338,7 +365,7 @@ export default function ApprovalConfig() {
                 </tr>
               </thead>
               <tbody>
-                {shown.map((f) => (
+                {listRows.map((f) => (
                   <tr key={f.id} className="border-b last:border-0 hover:bg-[#F7F8FA]">
                     <td className="px-3 py-2.5">
                       <button className="font-medium text-[#165DFF] hover:underline" onClick={() => { setSelId(f.id); setView("canvas"); }}>{f.name}</button>
@@ -366,6 +393,7 @@ export default function ApprovalConfig() {
                 {!shown.length && <tr><td colSpan={7} className="px-3 py-10 text-center text-[#C9CDD4]">无匹配审批流</td></tr>}
               </tbody>
             </table>
+            <Pager total={shown.length} page={safeListPage} size={LIST_SIZE} onPage={setListPage} />
           </div>
         )}
 
@@ -374,10 +402,10 @@ export default function ApprovalConfig() {
           {/* 左：审批流列表 */}
           <div className="w-60 shrink-0 self-start rounded-[8px] border border-[#E5E6EB] bg-white">
             <div className="border-b border-[#F2F3F5] p-3">
-              <Input placeholder="搜索审批流 / 单据动作" value={kw} onChange={(e) => setKw(e.target.value)} />
+              <Input placeholder="搜索审批流 / 单据动作" value={kw} onChange={(e) => { setKw(e.target.value); setSidePage(1); setListPage(1); }} />
             </div>
-            <div className="max-h-[720px] overflow-y-auto p-2">
-              {shown.map((f) => (
+            <div className="max-h-[640px] overflow-y-auto p-2">
+              {sideRows.map((f) => (
                 <button key={f.id} onClick={() => pick(f.id)}
                   className={`mb-1 w-full rounded-[8px] border px-3 py-2.5 text-left transition-all ${sel?.id === f.id ? "border-[#165DFF] bg-[#F7FAFF]" : "border-transparent hover:bg-[#F7F8FA]"}`}>
                   <div className="flex items-center gap-2">
@@ -389,6 +417,7 @@ export default function ApprovalConfig() {
               ))}
               {!shown.length && <div className="py-10 text-center text-[11px] text-[#C9CDD4]">无匹配审批流</div>}
             </div>
+            <Pager total={shown.length} page={safeSidePage} size={SIDE_SIZE} onPage={setSidePage} />
           </div>
 
           {/* 右：单流画布 */}
