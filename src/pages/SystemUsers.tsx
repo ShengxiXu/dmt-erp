@@ -33,6 +33,8 @@ export default function SystemUsers() {
     if (!editing?.name?.trim() || !editing?.role) return;
     saveUser({
       name: editing.name.trim(), role: editing.role, dept: editing.dept ?? deptNames()[0] ?? "综合管理部", phone: editing.phone ?? "",
+      account: (editing.account ?? "").trim() || (editing.email ?? "").split("@")[0] || `u${Date.now().toString().slice(-5)}`,
+      password: editing.password?.trim() ? editing.password.trim() : editing.id ? USERS.find((u) => u.id === editing.id)?.password : undefined,
       email: editing.email, status: editing.status ?? "启用", id: editing.id,
       lastLoginAt: editing.lastLoginAt,
     });
@@ -102,6 +104,16 @@ export default function SystemUsers() {
               <div>
                 <div className="mb-0.5 text-xs text-[#4E5969]">邮箱</div>
                 <Input value={editing.email ?? ""} onChange={(e) => setEditing({ ...editing, email: e.target.value })} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <div className="mb-0.5 text-xs text-[#4E5969]">登录账号 <span className="text-[#F53F3F]">*</span></div>
+                <Input value={editing.account ?? ""} placeholder="如 zhangsan" onChange={(e) => setEditing({ ...editing, account: e.target.value })} />
+              </div>
+              <div>
+                <div className="mb-0.5 text-xs text-[#4E5969]">登录密码 {editing.id ? <span className="text-[#86909C]">（留空不修改）</span> : <span className="text-[#86909C]">（默认 123456）</span>}</div>
+                <Input type="password" value={editing.password ?? ""} placeholder={editing.id ? "不修改请留空" : ""} onChange={(e) => setEditing({ ...editing, password: e.target.value })} />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -197,7 +209,7 @@ function UsersTab({ onEdit, onPreview }: { onEdit: (u: User) => void; onPreview:
     if (fRole !== "全部" && u.role !== fRole) return false;
     if (fDept !== "全部" && u.dept !== fDept) return false;
     if (fStatus !== "全部" && u.status !== fStatus) return false;
-    if (kw && ![u.name, u.id, u.phone, u.email ?? "", u.dept].some((x) => x.includes(kw))) return false;
+    if (kw && ![u.name, u.id, u.account, u.phone, u.email ?? "", u.dept].some((x) => x.includes(kw))) return false;
     return true;
   });
 
@@ -237,7 +249,7 @@ function UsersTab({ onEdit, onPreview }: { onEdit: (u: User) => void; onPreview:
         <table className="w-full text-xs">
           <thead>
             <tr className="border-b bg-[#F7F8FA] text-left text-[#4E5969]">
-              <th className="px-3 py-2">账号</th><th className="px-3 py-2">姓名</th><th className="px-3 py-2">部门</th><th className="px-3 py-2">角色</th>
+              <th className="px-3 py-2">工号</th><th className="px-3 py-2">姓名</th><th className="px-3 py-2">登录账号</th><th className="px-3 py-2">部门</th><th className="px-3 py-2">角色</th>
               <th className="px-3 py-2">联系方式</th><th className="px-3 py-2">最近登录</th><th className="px-3 py-2">状态</th><th className="px-3 py-2 text-right">操作</th>
             </tr>
           </thead>
@@ -246,6 +258,7 @@ function UsersTab({ onEdit, onPreview }: { onEdit: (u: User) => void; onPreview:
               <tr key={u.id} className="border-b last:border-0 hover:bg-[#F7F8FA]">
                 <td className="px-3 py-2.5 font-mono text-[#86909C]">{u.id}</td>
                 <td className="px-3 py-2.5 font-medium text-[#1D2129]">{u.name}</td>
+                <td className="px-3 py-2.5 font-mono text-[#4E5969]">{u.account}</td>
                 <td className="px-3 py-2.5">
                   <span className="rounded-[2px] bg-[#F2F3F5] px-1.5 py-0.5 text-[11px] text-[#4E5969]">{u.dept}</span>
                 </td>

@@ -3,6 +3,7 @@
 //       所有 KPI / 账龄 / 催收行动由 @/data/finance 统一派生，页面不重算。
 // 页签规划：ledger 应收台账 ✅ / invoice 开票任务 ✅ / pay 收款核销（第 3 步）/ collect 催收行动（第 3 步）/ dash 对账看板（第 4 步）。
 // 旧版页面保留：/billing、/finance/invoices、/finance/payments、/finance/overdue（顶部有入口提示）。
+import { currentUser } from "@/data/users";
 import { useState, Fragment } from "react";
 import { useSearchParams, Link } from "react-router";
 import ArcoShell from "@/components/ArcoShell";
@@ -353,7 +354,7 @@ const REQ = <span className="text-[#F53F3F]"> *</span>;
 
 function CollectRecordForm({ inv, onClose }: { inv: Receivable; onClose: () => void }) {
   const last = getCollectRecords().find((c) => c.invNo === inv.invNo);
-  const [by, setBy] = useState("许晟熙");
+  const [by, setBy] = useState(currentUser()?.name ?? "许晟熙");
   const [role, setRole] = useState<CollectRecord["role"]>("业务支撑");
   const [channel, setChannel] = useState<CollectRecord["channel"]>("电话");
   const [content, setContent] = useState("");

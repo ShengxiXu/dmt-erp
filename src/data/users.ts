@@ -29,6 +29,8 @@ export const DATA_SCOPE_DESC: Record<DataScope, string> = {
 export interface User {
   id: string;              // U-xxx
   name: string;
+  account: string;         // 登录账号（唯一；默认同邮箱前缀）
+  password?: string;       // 登录密码（演示：默认 123456；正式环境走后端校验，本字段下线）
   role: string;            // 角色名（= Role.name）—— 决定菜单权限与数据范围模板
   dept: string;            // 所属部门（= DEPARTMENTS 之一）—— 决定「本部门数据」范围
   phone: string;
@@ -79,15 +81,21 @@ export const ROLES: Role[] = persistable("roles", () => [
 
 // ---------- 用户账号 ----------
 export const USERS: User[] = persistable("users", () => [
-  { id: "U-001", name: "许晟熙", role: "业务支撑部", dept: "业务支撑部", phone: "138-0000-0101", email: "xusx@dmt.example", status: "启用", lastLoginAt: "2026-11-10 08:52" },
-  { id: "U-002", name: "张弛", role: "销售部", dept: "销售部", phone: "138-0000-0102", email: "zhangchi@dmt.example", status: "启用", lastLoginAt: "2026-11-09 18:20" },
-  { id: "U-003", name: "李骁", role: "销售部", dept: "销售部", phone: "138-0000-0103", email: "lixiao@dmt.example", status: "启用", lastLoginAt: "2026-11-08 09:41" },
-  { id: "U-004", name: "周远", role: "技术部", dept: "技术部", phone: "138-0000-0104", email: "zhouyuan@dmt.example", status: "启用", lastLoginAt: "2026-11-10 09:05" },
-  { id: "U-005", name: "陈静", role: "财务", dept: "财务部", phone: "138-0000-0105", email: "chenjing@dmt.example", status: "启用", lastLoginAt: "2026-11-10 08:47" },
-  { id: "U-006", name: "赵鹏", role: "管理层", dept: "综合管理部", phone: "138-0000-0106", email: "zhaopeng@dmt.example", status: "启用", lastLoginAt: "2026-11-07 14:12" },
-  { id: "U-007", name: "王芳", role: "系统管理员", dept: "综合管理部", phone: "138-0000-0107", email: "wangfang@dmt.example", status: "启用", lastLoginAt: "2026-11-09 16:33" },
-  { id: "U-008", name: "王敏", role: "技术部", dept: "技术部", phone: "138-0000-0108", email: "wangmin@dmt.example", status: "启用", lastLoginAt: "2026-11-06 11:26" },
+  { id: "U-001", name: "许晟熙", account: "xusx", role: "业务支撑部", dept: "业务支撑部", phone: "138-0000-0101", email: "xusx@dmt.example", status: "启用", lastLoginAt: "2026-11-10 08:52" },
+  { id: "U-002", name: "张弛", account: "zhangchi", role: "销售部", dept: "销售部", phone: "138-0000-0102", email: "zhangchi@dmt.example", status: "启用", lastLoginAt: "2026-11-09 18:20" },
+  { id: "U-003", name: "李骁", account: "lixiao", role: "销售部", dept: "销售部", phone: "138-0000-0103", email: "lixiao@dmt.example", status: "启用", lastLoginAt: "2026-11-08 09:41" },
+  { id: "U-004", name: "周远", account: "zhouyuan", role: "技术部", dept: "技术部", phone: "138-0000-0104", email: "zhouyuan@dmt.example", status: "启用", lastLoginAt: "2026-11-10 09:05" },
+  { id: "U-005", name: "陈静", account: "chenjing", role: "财务", dept: "财务部", phone: "138-0000-0105", email: "chenjing@dmt.example", status: "启用", lastLoginAt: "2026-11-10 08:47" },
+  { id: "U-006", name: "赵鹏", account: "zhaopeng", role: "管理层", dept: "综合管理部", phone: "138-0000-0106", email: "zhaopeng@dmt.example", status: "启用", lastLoginAt: "2026-11-07 14:12" },
+  { id: "U-007", name: "王芳", account: "wangfang", role: "系统管理员", dept: "综合管理部", phone: "138-0000-0107", email: "wangfang@dmt.example", status: "启用", lastLoginAt: "2026-11-09 16:33" },
+  { id: "U-008", name: "王敏", account: "wangmin", role: "技术部", dept: "技术部", phone: "138-0000-0108", email: "wangmin@dmt.example", status: "启用", lastLoginAt: "2026-11-06 11:26" },
 ]);
+
+// ---------- 旧快照回填：账号 / 默认密码 ----------
+USERS.forEach((u) => {
+  if (!u.account) u.account = (u.email ?? "").split("@")[0] || u.id.toLowerCase();
+  if (!u.password) u.password = "123456";
+});
 
 // ---------- 旧快照回填：用户补所属部门（部门与角色解耦前的快照没有 dept，按角色推断） ----------
 const DEPT_BY_ROLE: Record<string, string> = { 业务支撑部: "业务支撑部", 技术部: "技术部", 财务: "财务部", 销售部: "销售部" };
@@ -112,14 +120,32 @@ ROLES.forEach((r) => {
   if (!r.dataScope) r.dataScope = r.name === "销售部" ? "仅本人数据" : "全部数据";
 });
 
-// ---------- 全局会话（当前演示角色） ----------
-const sessionBox = persistable("session", () => ({ role: "业务支撑部" }));
+// ---------- 全局会话（当前登录用户 + 演示角色） ----------
+// 登录态独立于演示数据快照（dmt-erp-demo-v1）：单独键按标签页持久化。
+// 原因：多标签页打开时，各页 5 秒例行快照互相覆盖——若 session 放在快照里，
+// 任一标签页都会把其他标签页的登录/退出状态顶掉（来回互踢）。按标签页独立才符合真实系统行为。
+interface SessionBox { role: string; userId: string | null }
+function loadSession(): SessionBox {
+  try {
+    const raw = localStorage.getItem("dmt-erp-session");
+    if (raw) {
+      const p = JSON.parse(raw) as Partial<SessionBox>;
+      if (p && typeof p.role === "string") return { role: p.role, userId: p.userId ?? null };
+    }
+  } catch { /* 快照损坏时按未登录处理 */ }
+  return { role: "业务支撑部", userId: null };
+}
+const sessionBox: SessionBox = loadSession();
+function persistSession() {
+  try { localStorage.setItem("dmt-erp-session", JSON.stringify(sessionBox)); } catch { /* 存储被禁用时静默 */ }
+}
 let sVersion = 0;
 const sListeners = new Set<() => void>();
 const sBump = () => { sVersion += 1; sListeners.forEach((f) => f()); };
 export const sessionRole = () => sessionBox.role;
 export function setSessionRole(role: string) {
   sessionBox.role = role;
+  persistSession();
   sBump();
 }
 export function useSessionRole(): string {
@@ -133,6 +159,74 @@ export function useSessionRole(): string {
   return sessionBox.role;
 }
 export const currentRole = () => ROLES.find((r) => r.name === sessionBox.role) ?? ROLES[0];
+
+// ---------- 登录态（账号密码 / 手机验证码） ----------
+export const isLoggedIn = () => !!sessionBox.userId;
+export function logout() {
+  sessionBox.userId = null;
+  persistSession();
+  sBump();
+}
+/** 当前登录用户：优先按登录身份；未登录时按演示角色取第一个启用用户（兼容旧行为） */
+export const sessionUser = (): User | undefined =>
+  USERS.find((u) => u.id === sessionBox.userId) ?? USERS.find((u) => u.role === sessionBox.role && u.status === "启用");
+
+const normPhone = (p: string) => p.replace(/\D/g, "");
+export const findByPhone = (phone: string) => USERS.find((u) => normPhone(u.phone) === normPhone(phone));
+
+function loginAs(u: User) {
+  sessionBox.userId = u.id;
+  sessionBox.role = u.role;
+  u.lastLoginAt = demoNow();
+  persistSession();
+  uBump();
+  sBump();
+}
+
+/** 账号密码登录：账号支持 登录账号 / 姓名 / 手机号 三种输入 */
+export function loginByPassword(input: string, password: string): { ok: boolean; error?: string } {
+  const q = input.trim();
+  if (!q) return { ok: false, error: "请输入账号" };
+  if (!password) return { ok: false, error: "请输入密码" };
+  const u = USERS.find((x) => x.account.toLowerCase() === q.toLowerCase()) ?? USERS.find((x) => x.name === q) ?? findByPhone(q);
+  if (!u) return { ok: false, error: "账号不存在，请核对后重试" };
+  if (u.status !== "启用") return { ok: false, error: "该账号已停用，请联系系统管理员" };
+  if ((u.password ?? "123456") !== password) return { ok: false, error: "密码不正确，请重试" };
+  loginAs(u);
+  return { ok: true };
+}
+
+// 验证码（演示：无短信网关，验证码生成后直接在页面提示，10 分钟有效、用后作废）
+const SMS_KEY = "dmt-erp-sms-codes";
+const smsStore = (): Record<string, { code: string; exp: number }> => {
+  try { return JSON.parse(localStorage.getItem(SMS_KEY) ?? "{}"); } catch { return {}; }
+};
+export function sendSmsCode(phone: string): { ok: boolean; code?: string; error?: string } {
+  const p = normPhone(phone);
+  if (!/^1\d{10}$/.test(p)) return { ok: false, error: "请输入正确的 11 位手机号" };
+  const u = findByPhone(p);
+  if (!u) return { ok: false, error: "该手机号未绑定系统账号" };
+  if (u.status !== "启用") return { ok: false, error: "该账号已停用，请联系系统管理员" };
+  const code = String(Math.floor(100000 + Math.random() * 900000));
+  const all = smsStore();
+  all[p] = { code, exp: Date.now() + 10 * 60 * 1000 };
+  try { localStorage.setItem(SMS_KEY, JSON.stringify(all)); } catch { /* ignore */ }
+  return { ok: true, code };
+}
+export function loginBySms(phone: string, code: string): { ok: boolean; error?: string } {
+  const p = normPhone(phone);
+  const rec = smsStore()[p];
+  if (!rec) return { ok: false, error: "请先获取验证码" };
+  if (Date.now() > rec.exp) return { ok: false, error: "验证码已过期，请重新获取" };
+  if (rec.code !== code.trim()) return { ok: false, error: "验证码不正确，请重试" };
+  const u = findByPhone(p);
+  if (!u) return { ok: false, error: "该手机号未绑定系统账号" };
+  const all = smsStore();
+  delete all[p];
+  try { localStorage.setItem(SMS_KEY, JSON.stringify(all)); } catch { /* ignore */ }
+  loginAs(u);
+  return { ok: true };
+}
 
 // ---------- 用户 store ----------
 let uVersion = 0;
@@ -268,7 +362,7 @@ export function duplicateRole(srcName: string, newName: string): string | null {
 
 // ---------- 数据权限判定 ----------
 /** 演示身份：当前会话角色下第一个启用账号（正式环境 = 登录用户本人） */
-export const currentUser = (): User | undefined => USERS.find((u) => u.role === sessionBox.role && u.status === "启用");
+export const currentUser = (): User | undefined => sessionUser();
 /** 指定角色（默认当前会话角色）的数据权限范围 */
 export const dataScopeOf = (roleName?: string): DataScope =>
   ROLES.find((r) => r.name === (roleName ?? sessionBox.role))?.dataScope ?? "全部数据";

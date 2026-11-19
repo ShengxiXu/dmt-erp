@@ -53,6 +53,9 @@ export function saveNow(): void {
 /** 一键重置：清掉本地快照并整页刷新，回到出厂演示数据 */
 export function resetDemoData(): void {
   try { localStorage.removeItem(KEY); } catch { /* ignore */ }
+  // 登录态与短信验证码随重置一并清除，回到「未登录」出厂状态
+  try { localStorage.removeItem("dmt-erp-session"); } catch { /* ignore */ }
+  try { localStorage.removeItem("dmt-erp-sms-codes"); } catch { /* ignore */ }
   location.reload();
 }
 

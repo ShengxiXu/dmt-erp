@@ -13,7 +13,7 @@ import { R1_ROWS } from "@/data/resources";
 import { exitTotalSold } from "@/data/exitPricing";
 import { POOLS, poolMeasureDue } from "@/data/pool";
 import { getBatches, useSettle } from "@/data/settle";
-import { useSessionRole, setSessionRole, USERS } from "@/data/users";
+import { useSessionRole, setSessionRole, USERS, currentUser } from "@/data/users";
 import { getOpps, OPP_STAGES } from "@/data/customers";
 import { getNotices, unreadCount, useNotices } from "@/data/notices";
 import { bills } from "@/data/bills";
@@ -283,7 +283,7 @@ export default function Workbench() {
                 <span className="rounded-full border border-white/20 bg-white/10 px-2.5 py-0.5 text-[12px] text-white/90 backdrop-blur-sm">{role}</span>
                 <span className="rounded-full border border-white/20 bg-white/10 px-2.5 py-0.5 text-[12px] text-white/70 backdrop-blur-sm">{dateStr}</span>
               </div>
-              <h1 className="mt-4 text-[34px] font-semibold leading-tight tracking-tight">{greet}，许晟熙</h1>
+              <h1 className="mt-4 text-[34px] font-semibold leading-tight tracking-tight">{greet}，{currentUser()?.name ?? "同事"}</h1>
               <p className="mt-2 max-w-[560px] text-[15px] leading-7 text-white/70">
                 {role === "业务支撑部" && <>今天有 {todos.length} 项待办：起草核算单、补关联。核算单由合同流程带入，从下方待办或「成本台账」进入处理。</>}
                 {role === "技术部" && <>{todos.length} 项待办：核算单技术条目、在途工单处理。工单从「开通工单」列表按 deadline 推进。</>}

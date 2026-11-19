@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
-import { Routes, Route, Navigate } from 'react-router'
+import { Routes, Route, Navigate, Outlet } from 'react-router'
 import { ShellLayout } from './components/ArcoShell'
+import { isLoggedIn, useSessionRole } from './data/users'
+import Login from './pages/Login'
 import Home from './pages/Home'
 import Workbench from './pages/Workbench'
 import Analytics from './pages/Analytics'
@@ -57,6 +59,8 @@ export default function App() {
   return (
     <div key={syncKey}>
     <Routes>
+      <Route path="/login" element={<Login />} />
+      <Route element={<RequireAuth />}>
       <Route element={<ShellLayout />}>
       <Route path="/" element={<Home />} />
       <Route path="/workbench" element={<Workbench />} />
@@ -104,7 +108,15 @@ export default function App() {
       <Route path="/finance/settle" element={<Settle />} />
       <Route path="/notifications" element={<Notifications />} />
       </Route>
+      </Route>
     </Routes>
     </div>
   )
+}
+
+/** 路由守卫：未登录一律跳 /login（订阅会话变化，登录/退出即时生效） */
+function RequireAuth() {
+  useSessionRole(); // 订阅会话 bump，登录后无需手动刷新
+  if (!isLoggedIn()) return <Navigate to="/login" replace />;
+  return <Outlet />;
 }

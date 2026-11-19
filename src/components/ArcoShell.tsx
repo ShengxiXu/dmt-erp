@@ -7,7 +7,7 @@ import { SHEETS } from "@/data/sheets";
 import GlobalSearch from "@/components/GlobalSearch";
 import NoticeBell from "@/components/NoticeBell";
 import { NAV_GROUPS } from "@/components/navConfig";
-import { currentRole, pathAllowed, useSessionRole } from "@/data/users";
+import { currentRole, pathAllowed, useSessionRole, currentUser, logout } from "@/data/users";
 
 /** 面包屑上下文：ShellLayout 持有状态并下发 setter，页面在渲染期写入，顶栏同帧刷新 */
 const BreadcrumbCtx = createContext<string>("工作台");
@@ -111,14 +111,16 @@ export function ShellLayout() {
 
         <div className="border-t border-[#F2F3F5] p-3">
           <div className="flex items-center gap-2.5 px-1">
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#6366F1] to-[#8B5CF6] text-[13px] font-medium text-white shadow-md">许</span>
-            <div className="text-[12px] leading-tight">
-              <div className="font-medium text-[#1D2129]">许晟熙</div>
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#6366F1] to-[#8B5CF6] text-[13px] font-medium text-white shadow-md">{(currentUser()?.name ?? "许").slice(0, 1)}</span>
+            <div className="min-w-0 flex-1 text-[12px] leading-tight">
+              <div className="truncate font-medium text-[#1D2129]">{currentUser()?.name ?? "—"}</div>
               <div className="mt-0.5 flex items-center gap-1 text-[#86909C]">
-                <span>{role.name}</span>
-                <button onClick={() => navigate("/workbench")} title="到工作台切换演示角色" className="rounded-[2px] border border-[#E5E6EB] px-1 text-[10px] text-[#165DFF] hover:bg-[#F0F5FF]">切换</button>
+                <span className="truncate">{role.name}</span>
+                <button onClick={() => navigate("/workbench")} title="到工作台切换演示角色" className="shrink-0 rounded-[2px] border border-[#E5E6EB] px-1 text-[10px] text-[#165DFF] hover:bg-[#F0F5FF]">切换</button>
               </div>
             </div>
+            <button onClick={() => { logout(); navigate("/login"); }} title="退出登录"
+              className="shrink-0 rounded-[2px] border border-[#E5E6EB] px-1.5 py-0.5 text-[10px] text-[#86909C] hover:bg-[#FFECE8] hover:text-[#F53F3F]">退出</button>
           </div>
         </div>
       </aside>
@@ -135,7 +137,7 @@ export function ShellLayout() {
             <NoticeBell />
             <span className="hidden rounded-[2px] bg-[#F0F5FF] px-1.5 py-0.5 text-[11px] text-[#165DFF] lg:block">{role.name}</span>
             <span className="hidden text-[13px] tabular-nums text-[#86909C] lg:block">{dateStr}</span>
-            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-[#6366F1] to-[#8B5CF6] text-[13px] font-medium text-white shadow-md ring-2 ring-white">许</span>
+            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-[#6366F1] to-[#8B5CF6] text-[13px] font-medium text-white shadow-md ring-2 ring-white">{(currentUser()?.name ?? "许").slice(0, 1)}</span>
           </div>
         </header>
         <BreadcrumbCtx.Provider value={crumb}>
