@@ -76,7 +76,7 @@ function calcAmount(item: CatalogItem, qty: number, meta: number, picked?: Sourc
 }
 
 const DEFAULT_QTY: Record<string, number > = {
-  bwbase: 50, bwinternet: 50, resale: 100, device: 2, cabinet: 10, ippool: 1,
+  bwbase: 50, bwinternet: 50, resale: 100, device: 1, cabinet: 10, ippool: 1,
   manday: 4, port: 100, otu: 2, bgpplat: 50, maintain: 50, material: 2,
   sla: 1000, plain800: 800, plain1500: 1500, plain300: 300, plain250: 250,
 };

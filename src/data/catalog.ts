@@ -375,7 +375,7 @@ export const ITEMS: CatalogItem[] = [
       { kind: "enum", field: "供给方式", label: "枚举：库存直绑 / 按单采购" },
       { kind: "calc", field: "amount", label: "台数 × 采购单价，自动算" },
     ],
-    hint: "2 台 × 4,500 元 = 9,000 元（一次性，报价已含）",
+    hint: "台数 × 采购单价，自动计算（台数按实际需要填写，默认 1 台）",
     demo: "device",
   },
   {
