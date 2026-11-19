@@ -3,9 +3,10 @@
 // 特批必须挂在「商机」上（客户 → 商机 → 特批 → 合同），发起时先选客户再选该客户的商机
 import { useState } from "react";
 import { useNavigate } from "react-router";
-import { SPECIALS, useSpecials, addSpecial, decideSpecial, SPECIAL_LEVELS, dealSpecialInflight, dealContractBlock, type Special } from "@/data/contracts";
+import { SPECIALS, useSpecials, addSpecial, decideSpecial, SPECIAL_LEVELS, dealSpecialInflight, dealContractBlock, syncSpecialStatus, type Special } from "@/data/contracts";
 import { CUSTOMERS, useOpps, getOpps, GET_OPP, type Opportunity } from "@/data/customers";
-import { inDataScope, scopeBanner } from "@/data/users";
+import { inDataScope, scopeBanner, currentUser } from "@/data/users";
+import { useApprovalFlow, INSTANCE_OF_DOC, submitForApproval, approveInstance, rejectInstance, resolveApprover, nodeLabel, getFlows, type ApprovalInstance } from "@/data/approvalFlow";
 import { ownerOfDeal } from "@/data/ownership";
 import ArcoShell from "@/components/ArcoShell";
 import CenterModal from "@/components/CenterModal";
@@ -19,9 +20,10 @@ const STATUS_CLS: Record<string, string> = {
   已驳回: "bg-[#FFECE8] text-[#F53F3F]",
 };
 
-function SpecialDetail({ sp, onClose, onDecide }: { sp: Special; onClose: () => void; onDecide: (id: string, level: number, result: "通过" | "驳回", comment: string) => void }) {
+function SpecialDetail({ sp, inst, myName, onClose, onDecide }: { sp: Special; inst: ApprovalInstance | undefined; myName: string; onClose: () => void; onDecide: (id: string, level: number, result: "通过" | "驳回", comment: string) => void }) {
   const [comment, setComment] = useState("");
-  const pendingLevel = sp.status === "审批中" ? sp.current : null;
+  const pendingLevel = !inst && sp.status === "审批中" ? sp.current : null;   // 历史单（无引擎实例）：页面默认三级模板
+  const pendingNode = inst && inst.status === "审批中" ? inst.snapshot.nodes[inst.curNodeIdx] : undefined; // 引擎单：当前节点
   const deal = GET_OPP(sp.dealId);
   return (
     <CenterModal title={sp.id} sub={`${sp.customer} · ${deal ? `${deal.name}（${deal.id}） · ` : ""}${sp.applicant} · ${sp.createdAt}`} width={560} onClose={onClose}>
@@ -43,9 +45,26 @@ function SpecialDetail({ sp, onClose, onDecide }: { sp: Special; onClose: () => 
             <div className="text-[#1D2129]">{sp.reason}</div>
           </div>
           <div>
-            <div className="mb-2 text-xs font-semibold text-[#4E5969]">三级审批进度（并入可配置审批流引擎，默认模板）</div>
+            <div className="mb-2 text-xs font-semibold text-[#4E5969]">
+              {inst ? <>审批进度（审批流「{inst.flowName}」{inst.branchName ? ` · ${inst.branchName}` : ""}）</> : <>三级审批进度（页面默认模板 · 可在「审批流配置」挂接「特批申请单 · 提交」自定义）</>}
+            </div>
             <div className="space-y-2">
-              {sp.flows.map((f) => (
+              {inst ? inst.snapshot.nodes.map((n, i) => {
+                const res = inst.results.find((r) => r.nodeIdx === i);
+                const isCur = inst.status === "审批中" && i === inst.curNodeIdx;
+                return (
+                  <div key={i} className={`rounded-[4px] border p-3 text-xs ${res?.action === "驳回" ? "border-[#F53F3F]" : res?.action === "通过" ? "border-[#E5E6EB]" : isCur ? "border-[#165DFF] bg-[#F7FAFF]" : "border-dashed border-[#E5E6EB] opacity-60"}`}>
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium text-[#1D2129]">第{i + 1}级 · {nodeLabel(n)}</span>
+                      <span className={`rounded-[2px] px-1.5 py-0.5 text-[10px] ${res?.action === "通过" ? "bg-[#E8F8F2] text-[#00B42A]" : res?.action === "驳回" ? "bg-[#FFECE8] text-[#F53F3F]" : isCur ? "bg-[#BEDAFF] text-[#165DFF]" : "bg-[#F2F3F5] text-[#86909C]"}`}>
+                        {res?.action ?? (isCur ? "待审批" : "未开始")}
+                      </span>
+                    </div>
+                    <div className="mt-1 text-[#86909C]">{res ? `${res.by} · ${res.time}` : `审批方式：${n.mode} · 限时 ${n.timeoutHours}h`}</div>
+                    {res && res.comment !== "—" && <div className="mt-1 leading-5 text-[#4E5969]">意见：{res.comment}</div>}
+                  </div>
+                );
+              }) : sp.flows.map((f) => (
                 <div key={f.level} className={`rounded-[4px] border p-3 text-xs ${f.result === "驳回" ? "border-[#F53F3F]" : f.result === "通过" ? "border-[#E5E6EB]" : f.level === pendingLevel ? "border-[#165DFF] bg-[#F7FAFF]" : "border-dashed border-[#E5E6EB] opacity-60"}`}>
                   <div className="flex items-center justify-between">
                     <span className="font-medium text-[#1D2129]">第{f.level}级 · {f.role}</span>
@@ -59,15 +78,24 @@ function SpecialDetail({ sp, onClose, onDecide }: { sp: Special; onClose: () => 
               ))}
             </div>
           </div>
-          {pendingLevel !== null && (
+          {(pendingNode || pendingLevel !== null) && (
             <div className="rounded-[4px] border border-[#BEDAFF] bg-[#F7FAFF] p-3">
-              <div className="mb-1.5 text-xs font-semibold text-[#165DFF]">当前登录人待办：{SPECIAL_LEVELS[pendingLevel - 1]}</div>
+              <div className="mb-1.5 text-xs font-semibold text-[#165DFF]">当前登录人待办：{pendingNode ? nodeLabel(pendingNode) : SPECIAL_LEVELS[pendingLevel! - 1]}</div>
               <Input placeholder="审批意见（驳回时必填）" value={comment} onChange={(e) => setComment(e.target.value)} />
               <div className="mt-2 flex gap-2">
-                <Button size="sm" onClick={() => onDecide(sp.id, pendingLevel, "通过", comment)}>通过</Button>
-                <Button size="sm" variant="outline" className="text-[#F53F3F]" onClick={() => comment.trim() ? onDecide(sp.id, pendingLevel, "驳回", comment) : alert("驳回必须填写审批意见")}>驳回</Button>
+                <Button size="sm" onClick={() => {
+                  if (inst) { const err = approveInstance(inst.id, myName, comment); if (err) alert(err); else onClose(); }
+                  else onDecide(sp.id, pendingLevel!, "通过", comment);
+                }}>通过</Button>
+                <Button size="sm" variant="outline" className="text-[#F53F3F]" onClick={() => {
+                  if (!comment.trim()) return alert("驳回必须填写审批意见");
+                  if (inst) { const err = rejectInstance(inst.id, myName, comment); if (err) alert(err); else onClose(); }
+                  else onDecide(sp.id, pendingLevel!, "驳回", comment);
+                }}>驳回</Button>
               </div>
-              <div className="mt-2 text-[10px] leading-4 text-[#86909C]">原型 mock：通过后自动流转下一级，三级全过 → 特批单「已通过」，合同可引用；驳回 → 「已驳回」并通知销售</div>
+              <div className="mt-2 text-[10px] leading-4 text-[#86909C]">
+                审批动作经可配置审批流引擎写回：全节点通过 → 特批单「已通过」，合同可引用；驳回 → 「已驳回」并通知发起人（驳回策略：{inst?.snapshot.rejectPolicy ?? "退回发起人修改后重报"}）
+              </div>
             </div>
           )}
         </div>
@@ -78,6 +106,7 @@ function SpecialDetail({ sp, onClose, onDecide }: { sp: Special; onClose: () => 
 export default function Special() {
   useOpps();
   useSpecials(); // 订阅共享特批台账：审批结果实时反映，且合同起草页可引用同一份数据
+  useApprovalFlow(); // 订阅审批引擎：实例进度 / 审批流配置变化实时反映
   const navigate = useNavigate();
   const [tab, setTab] = useState<"mine" | "todo">("mine");
   const list = SPECIALS; // 直接读共享台账（发起 / 审批原地修改，刷新不丢）
@@ -86,9 +115,16 @@ export default function Special() {
   const [form, setForm] = useState({ customer: "", dealId: "", discount: "", terms: "", reason: "" });
   const [kw, setKw] = useState("");
 
-  // 当前登录人视角：业务支撑部（一级）/ 财务负责人（二级）/ 管理层（三级）——原型合并演示
-  const myName = "周敏";
-  const todoList = list.filter((s) => s.status === "审批中" && s.flows[s.current - 1]?.name.includes(myName));
+  // 当前登录人视角：引擎单按「当前节点审批人 = 登录人」匹配；历史单按页面默认模板中的固定审批人（演示数据）匹配
+  const myName = currentUser()?.name ?? "";
+  const todoList = list.filter((s) => {
+    if (s.status !== "审批中") return false;
+    const inst = INSTANCE_OF_DOC(s.id);
+    if (inst) return inst.status === "审批中" && !!inst.snapshot.nodes[inst.curNodeIdx] && resolveApprover(inst.snapshot.nodes[inst.curNodeIdx]).includes(myName);
+    return /周敏|陈立|赵启明/.test(s.flows[s.current - 1]?.name ?? "");
+  });
+  // 是否已配置「特批申请单 · 提交」的启用审批流（未配置时提交走页面默认三级模板）
+  const engineFlowReady = getFlows().some((f) => f.docType === "特批申请单 · 提交" && f.enabled);
   // 数据权限：「我的申请」按归属（商机/客户）过滤；「待我审批」是审批职责不受数据范围限制
   const scopedList = list.filter((s) => inDataScope(ownerOfDeal(s.dealId, s.customer)));
   const banner = scopeBanner(list.length - scopedList.length);
@@ -112,9 +148,13 @@ export default function Special() {
     if (inflight) return alert(`该商机已有一张在途特批申请（${inflight.id}），请勿重复发起；如条款变更请先由原单走完审批（或驳回后重新发起）`);
     const blk = dealContractBlock(form.dealId);
     if (blk) return alert(`该商机已关联合同 ${blk.id}（${blk.status}），折扣与条款应在合同发起前完成特批，请勿再发起特批申请`);
-    addSpecial({ customer: form.customer, dealId: form.dealId, discount: Number(form.discount), terms: form.terms, reason: form.reason });
+    const id = addSpecial({ customer: form.customer, dealId: form.dealId, discount: Number(form.discount), terms: form.terms, reason: form.reason });
+    const opp = GET_OPP(form.dealId);
+    const r = submitForApproval("特批申请单 · 提交", id, `${form.customer} · 折扣 ${form.discount}%`, { discount: Number(form.discount), amount: opp?.expectAmount ?? 0 }, myName || "张弛（销售）");
     setCreating(false);
     setForm({ customer: "", dealId: "", discount: "", terms: "", reason: "" });
+    if (r.hit) alert(`已提交审批：命中审批流「${r.instance!.flowName}」（${r.instance!.branchName}）· 当前节点 ${nodeLabel(r.instance!.snapshot.nodes[0])}；进度见详情或「审批中心」`);
+    else { syncSpecialStatus(id, "已通过"); alert(`未命中已启用的特批审批流（${r.reason ?? "未配置"}）：本单按页面默认三级模板在途流转（见详情），管理员可在「审批流配置 → 新建审批流」挂接「特批申请单 · 提交」自定义审批链`); }
   };
 
   return (
@@ -170,7 +210,7 @@ export default function Special() {
         </div>
       </main>
 
-      {sel && <SpecialDetail sp={sel} onClose={() => setSel(null)} onDecide={decide} />}
+      {sel && <SpecialDetail sp={sel} inst={INSTANCE_OF_DOC(sel.id)} myName={myName} onClose={() => setSel(null)} onDecide={decide} />}
 
       {creating && (
         <CenterModal title="发起特批申请" onClose={() => setCreating(false)} width={520}>
@@ -209,9 +249,11 @@ export default function Special() {
             </div>
             <div className="flex justify-end gap-2 border-t border-[#F2F3F5] pt-3">
               <Button variant="outline" size="sm" onClick={() => setCreating(false)}>取消</Button>
-              <Button size="sm" onClick={submitNew}>提交（进入三级审批）</Button>
+              <Button size="sm" onClick={submitNew}>提交（进入审批）</Button>
             </div>
-            <div className="text-[10px] leading-4 text-[#86909C]">提交后：业务支撑部（业务条款）→ 财务负责人（折扣与账期）→ 管理层（例外与风险），任一级驳回 → 终止并通知</div>
+            {engineFlowReady
+              ? <div className="text-[10px] leading-4 text-[#86909C]">提交后进入可配置审批流：按「审批流配置」中「特批申请单 · 提交」的命中分支流转；任一级驳回 → 终止并通知发起人</div>
+              : <div className="rounded-[4px] bg-[#FFF7E8] px-2 py-1.5 text-[10px] leading-4 text-[#FF7D00]">尚未配置特批审批流：提交后按页面默认三级模板流转（业务支撑部 → 财务 → 管理层）；管理员可在「审批流配置 → 新建审批流」挂接动作「特批申请单 · 提交」，按折扣率等条件自定义审批链</div>}
           </div>
         </CenterModal>
       )}

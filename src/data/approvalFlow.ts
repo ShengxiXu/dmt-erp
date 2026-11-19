@@ -9,13 +9,14 @@ import { demoNow } from "@/data/settings";
 import { SHEETS } from "@/data/sheets";
 import { spawnWorkOrdersForSheet } from "@/data/delivery";
 import { USERS } from "@/data/users";
+import { syncSpecialStatus } from "@/data/contracts";
 import { resolveDeptLeader } from "@/data/departments";
 
 // ---------- 挂接单据候选集 ----------
 export const DOC_TYPES = [
   "成本核算单 · 提交", "采购单 · 提交", "采购需求单 · 关闭", "到货验收单 · 提交", "资源分配申请 · 提交",
   "核算变更单 · 提交", "变更申请单 · 提交", "退订申请单 · 提交", "退订审核单 · 提交",
-  "收款红冲 · 提交", "坏账申请单 · 提交", "付款申请单 · 提交", "合同/订单建档 · 提交",
+  "收款红冲 · 提交", "坏账申请单 · 提交", "付款申请单 · 提交", "合同/订单建档 · 提交", "特批申请单 · 提交",
 ] as const;
 export type DocType = (typeof DOC_TYPES)[number];
 
@@ -38,6 +39,10 @@ export const FIELD_DEFS: Record<string, { key: string; label: string; kind: "num
   "合同/订单建档 · 提交": [
     { key: "amount", label: "合同月租合计(元)", kind: "number" },
     { key: "discount", label: "折扣率(%)", kind: "number" },
+  ],
+  "特批申请单 · 提交": [
+    { key: "discount", label: "折扣率(%)", kind: "number" },
+    { key: "amount", label: "预计合同额(元)", kind: "number" },
   ],
 };
 
@@ -364,6 +369,8 @@ export type DocWriteBackStatus = "审批中" | "已通过" | "已驳回";
 export type DocWriteBack = (docId: string, status: DocWriteBackStatus, comment?: string) => void;
 const writeBacks: Partial<Record<DocType, DocWriteBack>> = {};
 export function registerDocWriteBack(docType: DocType, fn: DocWriteBack) { writeBacks[docType] = fn; }
+// 特批申请：审批动作（提交/通过/驳回）写回特批台账（contracts 模块），合同起草页实时可见
+registerDocWriteBack("特批申请单 · 提交", (docId, status) => syncSpecialStatus(docId, status));
 
 function syncSheet(inst: ApprovalInstance) {
   const s = SHEETS.find((x) => x.id === inst.docId);

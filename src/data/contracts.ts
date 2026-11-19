@@ -98,6 +98,16 @@ export function decideSpecial(id: string, level: number, result: "通过" | "驳
   spBump();
 }
 
+/** 特批申请审批写回（由审批引擎回调，见 approvalFlow 写回注册表）：同步特批台账状态；
+ *  进度明细以引擎实例为准（特批页优先展示实例），此处只落单据状态，合同起草页实时可见 */
+export function syncSpecialStatus(id: string, status: "审批中" | "已通过" | "已驳回") {
+  const s = SPECIALS.find((x) => x.id === id);
+  if (!s) return;
+  s.status = status;
+  if (status === "已通过") s.current = 4;
+  spBump();
+}
+
 // ---------- 合同（含订单行，合二为一） ----------
 export type SealChannel = "online" | "offline";
 // 待出合同 = 合同申请审批已通过，业务支撑部待出具正式合同并上传；上传登记后进入「待用章」
