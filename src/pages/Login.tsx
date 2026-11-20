@@ -74,7 +74,7 @@ export default function Login() {
         </div>
         <div>
           <div className="text-[28px] font-semibold leading-snug text-white">合同签订之后的交付与核算，<br />一条主线管到底。</div>
-          <div className="mt-4 max-w-md text-[13px] leading-6 text-white/60">CRM 同步商机 → 成本核算双部门填报 → 审批 → 开通工单 → 资源绑定扣减 → 计费出账与月结。</div>
+          <div className="mt-4 max-w-md text-[13px] leading-6 text-white/60">已签合同同步建档 → 成本核算双部门填报 → 审批 → 开通工单 → 资源绑定扣减 → 计费出账与月结。</div>
         </div>
         <div className="text-[12px] text-white/40">上海地面通信息网络有限公司 · 第一期原型</div>
       </div>
