@@ -515,7 +515,7 @@ function EntryRow({
               </span>
             )
           )}
-          {qf && (hasText || item.demo.startsWith("plain")) && item.demo !== "ippool" && (
+          {qf && (hasText || item.demo === "device" || item.demo.startsWith("plain")) && item.demo !== "ippool" && (
             <label className="flex items-center gap-1.5 text-sm text-[#4E5969]">
               <span className="whitespace-nowrap text-xs text-[#86909C]">{qf.label}</span>
               <Input
