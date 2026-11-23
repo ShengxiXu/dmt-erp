@@ -1103,7 +1103,7 @@ export default function Home() {
           <div className="w-[520px] max-w-full rounded-[4px] border border-[#E5E6EB] bg-white p-8 text-center">
             <div className="text-base font-semibold text-[#1D2129]">核算单填报请从成本台账或合同详情进入</div>
             <div className="mt-2 text-xs leading-5 text-[#86909C]">
-              核算单基于已生效合同建立（进入时自动建档）；CRM 签订前的商机业务不在本系统。
+              核算单基于已生效合同建立（进入时自动建档）；合同签订前的商机业务不在本系统。
               成本台账「去填写」与合同详情「进入成本核算」都会带入合同上下文直达本页。
             </div>
             <div className="mt-5 flex justify-center gap-2">
@@ -1160,7 +1160,7 @@ export default function Home() {
               { label: "折扣 / 特批", node: contract?.specialId
                   ? <span className="text-sm font-medium">折扣 <span className="font-mono text-[#FF7D00]">{contract.discount}%</span> · <Link className="font-mono text-[13px] text-[#165DFF] hover:underline" to="/special">{contract.specialId}</Link></span>
                   : <span className="text-sm font-medium">{contract ? "标准合同 · 无折扣" : "—"}</span> },
-              { label: "销售员（提成在 CRM 核算）", node: <span className="text-sm font-medium">张伟</span> },
+              { label: "销售员", node: <span className="text-sm font-medium">张伟</span> },
             ].map((c, i) => (
               <div key={c.label} className={`min-w-0 flex-1 px-4 py-1 ${i > 0 ? "border-l border-[#F2F3F5]" : ""}`}>
                 <div className="text-xs text-[#86909C]">{c.label}</div>

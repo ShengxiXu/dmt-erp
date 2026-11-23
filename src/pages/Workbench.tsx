@@ -196,7 +196,7 @@ export default function Workbench() {
     销售部: [
       { label: "我的待办", value: `${todos.length} 项`, delta: "按紧急度排序", good: true, to: "#todo" },
       { label: "在跟进商机", value: `${getOpps().filter((o) => o.stage === "跟进中" || o.stage === "已报价").length} 个`, delta: "数据范围：仅本人数据", good: true, to: "/opportunity" },
-      { label: "本月赢单", value: `${getOpps().filter((o) => o.stage === "赢单").length} 单`, delta: "CRM 同步赢单回写", good: true, to: "/opportunity" },
+      { label: "本月赢单", value: `${getOpps().filter((o) => o.stage === "赢单").length} 单`, delta: "商机赢单自动关闭", good: true, to: "/opportunity" },
       { label: "未读通知", value: `${unreadCount()} 条`, delta: "消息通知中心", good: unreadCount() === 0, to: "/notifications" },
     ],
   };

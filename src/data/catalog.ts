@@ -286,7 +286,7 @@ export const SOURCES: Record<string, { name: string; rows: SourceRow[] }> = {
   resale: {
     name: "转售采购档案（运营商线路 / 裸光纤 / 设备批发价 · 转买转卖直接结转）",
     rows: [
-      { id: "RS-CT", title: "电信线路批发价（转售采购）", sub: "60 元/Mbps·月｜合同 CT-2026-018｜转售价由 CRM 合同决定，成本 = 采购价", meta: "60" },
+      { id: "RS-CT", title: "电信线路批发价（转售采购）", sub: "60 元/Mbps·月｜合同 CT-2026-018｜转售价由销售合同决定，成本 = 采购价", meta: "60" },
       { id: "RS-DEDI", title: "电信 CN2 GIA 独享出口线路（一对一专享 · 转售采购）· 100M", sub: "整线批发 80 元/Mbps·月（一条只转售一个客户）｜合同 CT-2026-051｜一对一运营商线路仅存在于转售业务", meta: "80" },
       { id: "RS-CU", title: "联通线路批发价（转售采购）", sub: "55 元/Mbps·月｜合同 CU-2026-033", meta: "55" },
       { id: "RS-CM", title: "移动线路批发价（转售采购）", sub: "50 元/Mbps·月｜合同 CM-2026-007", meta: "50" },
@@ -349,7 +349,7 @@ export const ITEMS: CatalogItem[] = [
     key: "op1a", name: "基础线路租用费",dept: "ops",
     costType: "周期性", unit: "元/月", required: "是（接入类 + 数据专线）", cats: ["isp", "otn"], modes: ["PT-AI", "PT-BGP", "PT-PON", "PT-DMAN", "PT-DOM", "PT-INTL"],
     methods: [
-      { kind: "readonly", field: "订单带宽", label: "从订单行带入（CRM 同步），只读" },
+      { kind: "readonly", field: "订单带宽", label: "从订单行带入（合同生效数据），只读" },
       { kind: "search", field: "基础线路资源", label: "搜索选择基础线路：向运营商租的整条线，单客户专用；不同产品类别可共用同一条线（勾选「共用」计 0，成本计于先关联的行），不重复采购；一单可含多条（一般 1 条，冗余 2 条）；不绑定 IP；无采购订单可关联时转手工填入", source: "linebase" },
       { kind: "calc", field: "amount", label: "Σ（条数 × 整条月租；共用线路计 0），自动算" },
     ],
@@ -360,7 +360,7 @@ export const ITEMS: CatalogItem[] = [
     key: "op1b", name: "出口带宽租用费",dept: "ops",
     costType: "周期性", unit: "元/月", required: "是（ISP 类）", cats: ["isp"], modes: ["PT-AI", "PT-BGP", "PT-PON", "PT-DMAN", "PT-DOM", "PT-INTL"],
     methods: [
-      { kind: "readonly", field: "订单带宽", label: "从订单行带入（CRM 同步），只读" },
+      { kind: "readonly", field: "订单带宽", label: "从订单行带入（合同生效数据），只读" },
       { kind: "search", field: "出口线路", label: "搜索选择出口线路：向运营商采购的线路（归属某产品类型，可标记共享给其他产品）；一单可含多条；成本按两步法计收（出口租金按各类型占用占比切分 → 订单产品类型跨出口叠加边际计价，同池多条只计一次）；无采购订单可关联时转手工填入", source: "lineinternet" },
       { kind: "calc", field: "amount", label: "两步法自动算（《出口带宽成本计价口径设计 v1.4》）：① 出口租金按各类型已售占比切分 → ② 订单产品类型跨出口叠加为租金池，池租金 ÷（类型已售＋本单带宽）× 本单带宽（多条线路同属一个产品类型池时只计一次）" },
     ],
@@ -396,10 +396,10 @@ export const ITEMS: CatalogItem[] = [
     methods: [
       { kind: "readonly", field: "出口线路", label: "由本行「出口带宽租用费」条目选定后带入，作为 IP 查询条件（IP 与线路绑定；基础线路不绑定 IP）" },
       { kind: "search", field: "绑定 IP 地址", label: "以出口线路为查询条件搜索选择，仅列出该线路绑定的 IP（出口线路均为共享线路，绑定整段 C 段按需分配；无绑定档案时转手工填入，留痕）", source: "lineip" },
-      { kind: "text", field: "本单分配数量", label: "直接填空（默认 = CRM 需求数量；一对多 C 段按需分配，不整段计费）" },
+      { kind: "text", field: "本单分配数量", label: "直接填空（默认 = 合同需求数量；一对多 C 段按需分配，不整段计费）" },
       { kind: "calc", field: "amount", label: "地址单价 × 本单分配数量，自动算出" },
     ],
-    hint: "选定电信共享出口 I-101 → 查询出绑定 C 段 58.40.0.0/24（共 256 个），本单分配 4 个（默认 = CRM 需求）：39 元 × 4 = 156 元/月；同段其余地址仍可供其他订单分配（共享 C 段不整段计费）",
+    hint: "选定电信共享出口 I-101 → 查询出绑定 C 段 58.40.0.0/24（共 256 个），本单分配 4 个（默认 = 合同需求）：39 元 × 4 = 156 元/月；同段其余地址仍可供其他订单分配（共享 C 段不整段计费）",
     demo: "ippool",
   },
   {
@@ -461,7 +461,7 @@ export const ITEMS: CatalogItem[] = [
       { kind: "text", field: "数量", label: "直接填空（带宽 M / 光纤对数）" },
       { kind: "calc", field: "amount", label: "数量 × 采购单价，直接结转（不加成）" },
     ],
-    hint: "电信线路批发 60 元/M × 100M = 6,000 元/月（转售价 80 元/M，毛利 CRM 合同侧体现）",
+    hint: "电信线路批发 60 元/M × 100M = 6,000 元/月（转售价 80 元/M，毛利在销售合同侧体现）",
     demo: "resale",
   },
   {
@@ -589,7 +589,7 @@ export const METHOD_META: Record<MethodKind, { label: string; color: string; bg:
   enum: { label: "枚举下拉", color: "text-green-700", bg: "bg-green-100 border-green-300", desc: "从字典固定选项中选" },
   search: { label: "搜索选择", color: "text-blue-700", bg: "bg-blue-100 border-blue-300", desc: "从其他业务档案搜索并选择，带出关联数据" },
   calc: { label: "自动计算", color: "text-purple-700", bg: "bg-purple-100 border-purple-300", desc: "系统按公式自动算出，只读" },
-  readonly: { label: "只读带入", color: "text-gray-600", bg: "bg-gray-100 border-gray-300", desc: "上游节点/CRM 同步带入，不可改" },
+  readonly: { label: "只读带入", color: "text-gray-600", bg: "bg-gray-100 border-gray-300", desc: "上游节点 / 合同生效数据带入，不可改" },
 };
 
 // ---------- 三层模型配置（2026-10-20 修订） ----------
