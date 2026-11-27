@@ -1,24 +1,15 @@
-# Logs
-logs
+# ===== monorepo 白名单：只跟踪三个项目目录，工作区其它内容（文档/截图/临时产物）不入库 =====
+/*
+
+!/dmt-server/
+!/dmt-web/
+!/cost-form-prototype/
+
+# 通用产物（各层级生效；项目自带 .gitignore 继续叠加）
+node_modules/
+dist/
+target/
+build/
 *.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
-
-node_modules
-dist
-dist-ssr
-*.local
-
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
+*.tsbuildinfo
 .DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?

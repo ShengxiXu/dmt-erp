@@ -1,0 +1,1 @@
+{"customerId":1,"opportunityId":1,"entityId":1,"discount":0,"payCycle":"月付","seal":"online","startDate":"2026-12-01","endDate":"2027-11-30","amount":96000,"lines":[{"cat":"专线","ptype":"BGP 互联网专线","specs":{"bwM":"300","ipCount":"4","sla":"99.9%"},"price":96000}]}

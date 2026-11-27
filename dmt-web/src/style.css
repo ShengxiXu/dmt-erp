@@ -1,0 +1,18 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: Inter, -apple-system, 'PingFang SC', 'Hiragino Sans GB', 'noto sans',
+    'Microsoft YaHei', 'Helvetica Neue', Arial, sans-serif;
+  background: #f7f8fa;
+  color: #1d2129;
+}
